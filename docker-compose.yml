@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: revenio_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: revenio
+      POSTGRES_PASSWORD: revenio_dev
+      POSTGRES_DB: revenio
+    volumes:
+      - revenio_pgdata:/var/lib/postgresql/data
+
+volumes:
+  revenio_pgdata:
