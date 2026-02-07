@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Revenio Leads Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div>
+        <h1>Revenio · Leads</h1>
+        <p class="subtitle">Panel en vivo desde el API local</p>
+      </div>
+      <div class="header-actions">
+        <button id="refreshBtn" class="btn">Refrescar</button>
+        <span id="lastUpdated" class="muted">Última actualización: —</span>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="cards">
+        <div class="card">
+          <div class="card-label">Total leads</div>
+          <div id="totalLeads" class="card-value">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Nuevos</div>
+          <div id="newLeads" class="card-value">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Con intentos</div>
+          <div id="withAttempts" class="card-value">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Últimas 24h</div>
+          <div id="last24h" class="card-value">—</div>
+        </div>
+      </section>
+
+      <section class="table-section">
+        <div class="table-header">
+          <h2>Leads recientes</h2>
+          <input id="searchInput" class="input" placeholder="Buscar por nombre o teléfono" />
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Nombre</th>
+                <th>Teléfono</th>
+                <th>Status</th>
+                <th>Intentos</th>
+              </tr>
+            </thead>
+            <tbody id="leadsTbody">
+              <tr><td colspan="5" class="muted">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="muted">Fuente: http://localhost:3000/leads</span>
+      <span id="errorMsg" class="error"></span>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
