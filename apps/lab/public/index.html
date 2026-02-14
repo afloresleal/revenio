@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Revenio Call Lab</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Revenio Lab</p>
+        <h1>Pruebas de llamadas Vapi/Twilio</h1>
+        <p class="sub">Configura credenciales, valida IDs y lanza llamadas.</p>
+      </div>
+      <div class="badge">Local</div>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Landing de campana</h2>
+        <p style="margin-top:0;color:var(--muted);">Vista simplificada para capturar lead y disparar llamada.</p>
+        <div class="actions">
+          <a href="/campaign.html" class="button-link">Abrir landing de campaña</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Conexión</h2>
+        <div class="grid-2">
+          <div>
+            <label>API base</label>
+            <input id="api_base" placeholder="http://localhost:3000" />
+          </div>
+          <div class="actions">
+            <button id="btn_validate" class="secondary">Validar IDs</button>
+            <button id="btn_load" class="ghost">Cargar historial</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Credenciales Vapi</h2>
+        <div class="grid-2">
+          <div>
+            <label>VAPI API Key (privada)</label>
+            <input id="vapi_api_key" placeholder="pegala aquí" />
+          </div>
+          <div>
+            <label>Assistant ID</label>
+            <input id="vapi_assistant_id" placeholder="0729e12a-..." />
+          </div>
+          <div>
+            <label>Phone Number ID</label>
+            <input id="vapi_phone_number_id" placeholder="a2e74332-..." />
+          </div>
+          <div>
+            <label>Número destino (E.164)</label>
+            <input id="to_number" placeholder="+5255..." />
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:12px;">
+          <div>
+            <label>Assistants (desde Vapi)</label>
+            <select id="assistant_select"></select>
+          </div>
+          <div>
+            <label>Phone Numbers (desde Vapi)</label>
+            <select id="phone_select"></select>
+          </div>
+          <div class="actions">
+            <button id="btn_load_assistants" class="ghost">Cargar assistants</button>
+            <button id="btn_load_numbers" class="ghost">Cargar números</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Lead</h2>
+        <div class="grid-2">
+          <div>
+            <label>Nombre</label>
+            <input id="lead_name" placeholder="Test" />
+          </div>
+          <div>
+            <label>Fuente</label>
+            <input id="lead_source" placeholder="manual" />
+          </div>
+          <div>
+            <label>Lead ID (opcional)</label>
+            <input id="lead_id" placeholder="si ya existe" />
+          </div>
+          <div class="actions">
+            <button id="btn_call" class="primary">Crear lead + Llamar</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Respuesta</h2>
+        <pre id="out">Listo.</pre>
+      </section>
+
+      <section class="card">
+        <h2>Historial</h2>
+        <div class="grid-2" style="margin-bottom:10px;">
+          <div>
+            <label>Filtrar por status</label>
+            <input id="filter_status" placeholder="sent, failed, etc." />
+          </div>
+          <div>
+            <label>Filtrar por lead (nombre o tel)</label>
+            <input id="filter_lead" placeholder="Test o +52..." />
+          </div>
+          <div>
+            <label>Desde (YYYY-MM-DD)</label>
+            <input id="filter_from" placeholder="2026-02-01" />
+          </div>
+          <div>
+            <label>Hasta (YYYY-MM-DD)</label>
+            <input id="filter_to" placeholder="2026-02-28" />
+          </div>
+          <div class="actions">
+            <button id="btn_export" class="secondary">Exportar CSV</button>
+            <button id="btn_apply_filters" class="ghost">Aplicar filtros</button>
+          </div>
+        </div>
+        <div id="history" class="history">Sin datos.</div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span>Revenio Lab — local only</span>
+    </footer>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

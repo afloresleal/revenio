@@ -281,6 +281,183 @@ app.post("/call/test", async (req, res) => {
 
   return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
 });
+
+const callDirectSchema = z.object({
+  vapi_api_key: z.string().min(10),
+  vapi_phone_number_id: z.string().min(6),
+  vapi_assistant_id: z.string().min(6),
+  to_number: z.string().min(6),
+  lead_id: z.string().uuid().optional(),
+  lead_name: z.string().min(1).optional(),
+  lead_source: z.string().min(1).optional(),
+});
+
+app.post("/call/test/direct", async (req, res) => {
+  const parsed = callDirectSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const { vapi_api_key, vapi_phone_number_id, vapi_assistant_id, to_number, lead_id, lead_name, lead_source } =
+    parsed.data;
+
+  const lead =
+    lead_id
+      ? await prisma.lead.findUnique({ where: { id: lead_id } })
+      : await prisma.lead.create({
+          data: {
+            name: lead_name ?? "Test",
+            phone: to_number,
+            source: lead_source ?? "manual",
+            events: { create: { type: "lead_received", detail: { source: lead_source ?? null } } },
+          },
+        });
+
+  if (!lead) return res.status(404).json({ error: "lead_not_found" });
+
+  const attempt = await prisma.callAttempt.create({
+    data: {
+      leadId: lead.id,
+      status: "initiated",
+    },
+  });
+
+  const payload = {
+    phoneNumberId: vapi_phone_number_id,
+    assistantId: vapi_assistant_id,
+    customer: { number: to_number },
+    metadata: { lead_id: lead.id, attempt_id: attempt.id },
+  };
+
+  const resp = await fetch("https://api.vapi.ai/call/phone", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${vapi_api_key}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  await prisma.event.create({
+    data: {
+      leadId: lead.id,
+      type: "vapi_call_request",
+      detail: { request: payload, response: data, status: resp.status },
+    },
+  });
+
+  if (!resp.ok) {
+    return res.status(502).json({ error: "vapi_call_failed", status: resp.status, data });
+  }
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: { status: "sent", providerId: data?.id ?? null },
+  });
+
+  return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
+});
+
+const validateSchema = z.object({
+  vapi_api_key: z.string().min(10),
+  vapi_phone_number_id: z.string().min(6),
+  vapi_assistant_id: z.string().min(6),
+});
+
+app.post("/vapi/validate", async (req, res) => {
+  const parsed = validateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const { vapi_api_key, vapi_phone_number_id, vapi_assistant_id } = parsed.data;
+  const headers = { Authorization: `Bearer ${vapi_api_key}` };
+
+  const [assistantsResp, phoneResp] = await Promise.all([
+    fetch("https://api.vapi.ai/assistant", { headers }),
+    fetch("https://api.vapi.ai/phone-number", { headers }),
+  ]);
+
+  const assistants = await assistantsResp.json().catch(() => []);
+  const phoneNumbers = await phoneResp.json().catch(() => []);
+
+  const assistantOk = Array.isArray(assistants) && assistants.some((a) => a?.id === vapi_assistant_id);
+  const phoneOk = Array.isArray(phoneNumbers) && phoneNumbers.some((p) => p?.id === vapi_phone_number_id);
+
+  return res.json({
+    ok: assistantsResp.ok && phoneResp.ok,
+    assistantOk,
+    phoneOk,
+    assistantStatus: assistantsResp.status,
+    phoneStatus: phoneResp.status,
+  });
+});
+
+const vapiKeySchema = z.object({
+  vapi_api_key: z.string().min(10),
+});
+
+app.post("/vapi/assistants", async (req, res) => {
+  const parsed = vapiKeySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+  const headers = { Authorization: `Bearer ${parsed.data.vapi_api_key}` };
+  const resp = await fetch("https://api.vapi.ai/assistant", { headers });
+  const data = await resp.json().catch(() => []);
+  return res.status(resp.status).json(data);
+});
+
+app.post("/vapi/phone-numbers", async (req, res) => {
+  const parsed = vapiKeySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+  const headers = { Authorization: `Bearer ${parsed.data.vapi_api_key}` };
+  const resp = await fetch("https://api.vapi.ai/phone-number", { headers });
+  const data = await resp.json().catch(() => []);
+  return res.status(resp.status).json(data);
+});
+
+app.get("/lab/history", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 50), 200);
+  const from = req.query.from ? new Date(String(req.query.from)) : undefined;
+  const to = req.query.to ? new Date(String(req.query.to)) : undefined;
+
+  if (from && Number.isNaN(from.getTime())) {
+    return res.status(400).json({ error: "invalid_query", field: "from" });
+  }
+  if (to && Number.isNaN(to.getTime())) {
+    return res.status(400).json({ error: "invalid_query", field: "to" });
+  }
+
+  const attempts = await prisma.callAttempt.findMany({
+    where: {
+      ...(from || to
+        ? {
+            createdAt: {
+              ...(from ? { gte: from } : {}),
+              ...(to ? { lte: to } : {}),
+            },
+          }
+        : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: { lead: true },
+  });
+
+  const leadIds = Array.from(new Set(attempts.map((a) => a.leadId)));
+  const events = await prisma.event.findMany({
+    where: { leadId: { in: leadIds } },
+    orderBy: { createdAt: "desc" },
+    take: limit * 4,
+  });
+
+  return res.json({ attempts, events });
+});
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);
 });

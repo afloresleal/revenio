@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "npm -w apps/api run dev",
     "build": "npm -w apps/api run build",
-    "start": "npm -w apps/api run start"
+    "start": "npm -w apps/api run start",
+    "lab": "npm -w apps/lab run dev"
   },
   "keywords": [],
   "author": "",
