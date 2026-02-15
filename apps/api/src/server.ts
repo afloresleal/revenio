@@ -67,6 +67,7 @@ const leadListSchema = z.object({
   to: z.string().optional(),
   hasAttempts: z.coerce.boolean().optional(),
 });
+type LeadListQuery = z.infer<typeof leadListSchema>;
 
 app.get("/leads", async (req, res) => {
   const parsed = leadListSchema.safeParse(req.query);
@@ -74,7 +75,7 @@ app.get("/leads", async (req, res) => {
     return res.status(400).json({ error: "invalid_query", issues: parsed.error.issues });
   }
 
-  const { page, pageSize, status, from, to, hasAttempts } = parsed.data;
+  const { page, pageSize, status, from, to, hasAttempts } = parsed.data as LeadListQuery;
   const fromDate = from ? new Date(from) : undefined;
   if (from && Number.isNaN(fromDate?.getTime())) {
     return res.status(400).json({ error: "invalid_query", field: "from" });
@@ -449,7 +450,7 @@ app.get("/lab/history", async (req, res) => {
     include: { lead: true },
   });
 
-  const leadIds = Array.from(new Set(attempts.map((a) => a.leadId)));
+  const leadIds = Array.from(new Set(attempts.map((a: { leadId: string }) => a.leadId)));
   const events = await prisma.event.findMany({
     where: { leadId: { in: leadIds } },
     orderBy: { createdAt: "desc" },
