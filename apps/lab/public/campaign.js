@@ -43,7 +43,10 @@ async function post(path, body) {
 
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    throw new Error(data?.error || `request_failed_${resp.status}`);
+    const error = new Error(data?.error || `request_failed_${resp.status}`);
+    error.status = resp.status;
+    error.details = data;
+    throw error;
   }
   return data;
 }
@@ -80,7 +83,11 @@ form.addEventListener("submit", async (ev) => {
     $("to_number").value = "";
   } catch (error) {
     setStatus(`No se pudo enviar: ${error.message}`, "error");
-    showResult({ error: error.message });
+    showResult({
+      error: error.message,
+      status: error.status ?? null,
+      details: error.details ?? null,
+    });
   } finally {
     submitBtn.disabled = false;
   }
