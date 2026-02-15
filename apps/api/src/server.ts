@@ -166,6 +166,20 @@ function extractAttemptId(payload: unknown): string | null {
   return null;
 }
 
+function extractVapiCallId(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const call = p.call as Record<string, unknown> | undefined;
+  const msg = p.message as Record<string, unknown> | undefined;
+  const msgCall = msg?.call as Record<string, unknown> | undefined;
+
+  const candidates = [p.id, call?.id, msg?.id, msgCall?.id];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
+}
+
 app.post("/webhooks/twilio/status", async (req, res) => {
   const leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
   const status = (req.body?.CallStatus as string | undefined) ?? "unknown";
@@ -187,10 +201,22 @@ app.post("/webhooks/twilio/status", async (req, res) => {
 });
 
 app.post("/webhooks/vapi/result", async (req, res) => {
-  const leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
-  const attemptId = extractAttemptId(req.body);
+  let leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
+  let attemptId = extractAttemptId(req.body);
+  const providerId = extractVapiCallId(req.body);
 
-  console.log("vapi_result", { leadId, attemptId });
+  if (!attemptId && providerId) {
+    const attemptByProvider = await prisma.callAttempt.findFirst({
+      where: { providerId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (attemptByProvider) {
+      attemptId = attemptByProvider.id;
+      leadId = leadId ?? attemptByProvider.leadId;
+    }
+  }
+
+  console.log("vapi_result", { leadId, attemptId, providerId });
 
   if (leadId) {
     await prisma.event.create({
