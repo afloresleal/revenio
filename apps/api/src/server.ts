@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { z } from "zod";
-import { PrismaClient, LeadStatus } from "@prisma/client";
+import { Prisma, PrismaClient, LeadStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -252,22 +252,34 @@ app.post("/call/test", async (req, res) => {
     },
   };
 
-  const resp = await fetch("https://api.vapi.ai/call/phone", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${VAPI_API_KEY}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await resp.json().catch(() => ({}));
+  let resp: Response;
+  let data: any = {};
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    resp = await fetch("https://api.vapi.ai/call/phone", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${VAPI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    data = await resp.json().catch(() => ({}));
+  } catch (error) {
+    return res.status(502).json({
+      error: "vapi_network_error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   await prisma.event.create({
     data: {
       leadId: lead.id,
       type: "vapi_call_request",
-      detail: { request: payload, response: data, status: resp.status },
+      detail: { request: payload, response: data, status: resp.status } as Prisma.InputJsonValue,
     },
   });
 
@@ -277,7 +289,7 @@ app.post("/call/test", async (req, res) => {
 
   await prisma.callAttempt.update({
     where: { id: attempt.id },
-    data: { status: "sent", providerId: data?.id ?? null },
+    data: { status: "sent", providerId: typeof data.id === "string" ? data.id : null },
   });
 
   return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
@@ -330,22 +342,34 @@ app.post("/call/test/direct", async (req, res) => {
     metadata: { lead_id: lead.id, attempt_id: attempt.id },
   };
 
-  const resp = await fetch("https://api.vapi.ai/call/phone", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${vapi_api_key}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await resp.json().catch(() => ({}));
+  let resp: Response;
+  let data: any = {};
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    resp = await fetch("https://api.vapi.ai/call/phone", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${vapi_api_key}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    data = await resp.json().catch(() => ({}));
+  } catch (error) {
+    return res.status(502).json({
+      error: "vapi_network_error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   await prisma.event.create({
     data: {
       leadId: lead.id,
       type: "vapi_call_request",
-      detail: { request: payload, response: data, status: resp.status },
+      detail: { request: payload, response: data, status: resp.status } as Prisma.InputJsonValue,
     },
   });
 
@@ -355,7 +379,7 @@ app.post("/call/test/direct", async (req, res) => {
 
   await prisma.callAttempt.update({
     where: { id: attempt.id },
-    data: { status: "sent", providerId: data?.id ?? null },
+    data: { status: "sent", providerId: typeof data.id === "string" ? data.id : null },
   });
 
   return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
