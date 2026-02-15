@@ -122,12 +122,20 @@ function getMetadataCandidates(payload: unknown): Record<string, unknown>[] {
   const call = p.call as Record<string, unknown> | undefined;
   const msg = p.message as Record<string, unknown> | undefined;
   const msgCall = msg?.call as Record<string, unknown> | undefined;
+  const assistantOverrides = p.assistantOverrides as Record<string, unknown> | undefined;
+  const callAssistantOverrides = call?.assistantOverrides as Record<string, unknown> | undefined;
+  const msgAssistantOverrides = msg?.assistantOverrides as Record<string, unknown> | undefined;
+  const msgCallAssistantOverrides = msgCall?.assistantOverrides as Record<string, unknown> | undefined;
 
   const candidates: Array<Record<string, unknown> | undefined> = [
     p.metadata as Record<string, unknown> | undefined,
+    assistantOverrides?.metadata as Record<string, unknown> | undefined,
     call?.metadata as Record<string, unknown> | undefined,
+    callAssistantOverrides?.metadata as Record<string, unknown> | undefined,
     msg?.metadata as Record<string, unknown> | undefined,
+    msgAssistantOverrides?.metadata as Record<string, unknown> | undefined,
     msgCall?.metadata as Record<string, unknown> | undefined,
+    msgCallAssistantOverrides?.metadata as Record<string, unknown> | undefined,
   ];
 
   return candidates.filter((c): c is Record<string, unknown> => !!c && typeof c === "object");
