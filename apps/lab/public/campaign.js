@@ -1,14 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const storageFields = [
-  "api_base",
-  "vapi_api_key",
-  "vapi_assistant_id",
-  "vapi_phone_number_id",
-  "lead_source",
-  "lead_name",
-  "to_number",
-];
+const storageFields = ["lead_name", "to_number"];
 
 for (const key of storageFields) {
   const el = $(key);
@@ -18,12 +10,10 @@ for (const key of storageFields) {
   el.addEventListener("input", () => localStorage.setItem(key, el.value));
 }
 
-if (!$("api_base").value) {
-  $("api_base").value = "http://localhost:3000";
-}
-if (!$("lead_source").value) {
-  $("lead_source").value = "landing_campaign";
-}
+const DEFAULT_API_BASE =
+  window.location.hostname === "localhost" ? "http://localhost:3000" : "https://revenioapi-production.up.railway.app";
+const API_BASE = (localStorage.getItem("campaign_api_base") || DEFAULT_API_BASE).replace(/\/$/, "");
+const LEAD_SOURCE = "landing_campaign";
 
 const form = $("campaign_form");
 const statusEl = $("status");
@@ -45,8 +35,7 @@ function validPhone(value) {
 }
 
 async function post(path, body) {
-  const base = $("api_base").value.trim().replace(/\/$/, "");
-  const resp = await fetch(`${base}${path}`, {
+  const resp = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -64,10 +53,6 @@ form.addEventListener("submit", async (ev) => {
 
   const lead_name = $("lead_name").value.trim();
   const to_number = $("to_number").value.trim();
-  const vapi_api_key = $("vapi_api_key").value.trim();
-  const vapi_assistant_id = $("vapi_assistant_id").value.trim();
-  const vapi_phone_number_id = $("vapi_phone_number_id").value.trim();
-  const lead_source = $("lead_source").value.trim() || "landing_campaign";
 
   if (!lead_name || !to_number) {
     setStatus("Completa nombre y telefono.", "error");
@@ -79,22 +64,14 @@ form.addEventListener("submit", async (ev) => {
     return;
   }
 
-  if (!vapi_api_key || !vapi_assistant_id || !vapi_phone_number_id) {
-    setStatus("Faltan credenciales Vapi en 'Configuracion de campana'.", "error");
-    return;
-  }
-
   submitBtn.disabled = true;
   setStatus("Disparando llamada...");
 
   try {
     const payload = {
-      vapi_api_key,
-      vapi_assistant_id,
-      vapi_phone_number_id,
       to_number,
       lead_name,
-      lead_source,
+      lead_source: LEAD_SOURCE,
     };
     const data = await post("/call/test/direct", payload);
     setStatus("Llamada enviada correctamente.", "ok");

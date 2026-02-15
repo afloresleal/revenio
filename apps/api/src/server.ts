@@ -304,9 +304,9 @@ app.post("/call/test", async (req, res) => {
 });
 
 const callDirectSchema = z.object({
-  vapi_api_key: z.string().min(10),
-  vapi_phone_number_id: z.string().min(6),
-  vapi_assistant_id: z.string().min(6),
+  vapi_api_key: z.string().min(10).optional(),
+  vapi_phone_number_id: z.string().min(6).optional(),
+  vapi_assistant_id: z.string().min(6).optional(),
   to_number: z.string().min(6),
   lead_id: z.string().uuid().optional(),
   lead_name: z.string().min(1).optional(),
@@ -321,6 +321,16 @@ app.post("/call/test/direct", async (req, res) => {
 
   const { vapi_api_key, vapi_phone_number_id, vapi_assistant_id, to_number, lead_id, lead_name, lead_source } =
     parsed.data;
+  const resolvedVapiApiKey = vapi_api_key ?? VAPI_API_KEY;
+  const resolvedVapiPhoneNumberId = vapi_phone_number_id ?? VAPI_PHONE_NUMBER_ID;
+  const resolvedVapiAssistantId = vapi_assistant_id ?? VAPI_ASSISTANT_ID;
+
+  if (!resolvedVapiApiKey || !resolvedVapiPhoneNumberId || !resolvedVapiAssistantId) {
+    return res.status(400).json({
+      error: "missing_vapi_config",
+      required: ["VAPI_API_KEY", "VAPI_PHONE_NUMBER_ID", "VAPI_ASSISTANT_ID"],
+    });
+  }
 
   const lead =
     lead_id
@@ -344,8 +354,8 @@ app.post("/call/test/direct", async (req, res) => {
   });
 
   const payload = {
-    phoneNumberId: vapi_phone_number_id,
-    assistantId: vapi_assistant_id,
+    phoneNumberId: resolvedVapiPhoneNumberId,
+    assistantId: resolvedVapiAssistantId,
     customer: { number: to_number },
     metadata: { lead_id: lead.id, attempt_id: attempt.id },
   };
@@ -359,7 +369,7 @@ app.post("/call/test/direct", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${vapi_api_key}`,
+        Authorization: `Bearer ${resolvedVapiApiKey}`,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
