@@ -25,7 +25,10 @@ fields.forEach((k) => {
 });
 
 if (!$('api_base').value) {
-  $('api_base').value = 'http://localhost:3000';
+  $('api_base').value =
+    window.location.hostname === "localhost"
+      ? "http://localhost:3000"
+      : "https://revenioapi-production.up.railway.app";
 }
 
 const out = $("out");
@@ -37,19 +40,39 @@ let lastHistory = null;
 const apiBase = () => $("api_base").value.trim().replace(/\/$/, "");
 
 async function post(path, body) {
-  const resp = await fetch(`${apiBase()}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await resp.json().catch(() => ({}));
-  return { status: resp.status, data };
+  try {
+    const resp = await fetch(`${apiBase()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json().catch(() => ({}));
+    return { status: resp.status, data };
+  } catch (error) {
+    return {
+      status: 0,
+      data: {
+        error: "network_error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 }
 
 async function get(path) {
-  const resp = await fetch(`${apiBase()}${path}`);
-  const data = await resp.json().catch(() => ({}));
-  return { status: resp.status, data };
+  try {
+    const resp = await fetch(`${apiBase()}${path}`);
+    const data = await resp.json().catch(() => ({}));
+    return { status: resp.status, data };
+  } catch (error) {
+    return {
+      status: 0,
+      data: {
+        error: "network_error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 }
 
 $("btn_validate").addEventListener("click", async () => {
@@ -71,6 +94,7 @@ $("btn_load_assistants").addEventListener("click", async () => {
     out.textContent = JSON.stringify(result, null, 2);
     return;
   }
+  const currentAssistantId = $("vapi_assistant_id").value.trim();
   assistantSelect.innerHTML = "";
   result.data.forEach((a) => {
     const opt = document.createElement("option");
@@ -79,7 +103,10 @@ $("btn_load_assistants").addEventListener("click", async () => {
     assistantSelect.appendChild(opt);
   });
   if (assistantSelect.options.length) {
-    $("vapi_assistant_id").value = assistantSelect.options[0].value;
+    const optionValues = Array.from(assistantSelect.options).map((o) => o.value);
+    const selectedValue = optionValues.includes(currentAssistantId) ? currentAssistantId : assistantSelect.options[0].value;
+    assistantSelect.value = selectedValue;
+    $("vapi_assistant_id").value = selectedValue;
   }
   out.textContent = `Assistants cargados: ${result.data.length}`;
 });
@@ -92,6 +119,7 @@ $("btn_load_numbers").addEventListener("click", async () => {
     out.textContent = JSON.stringify(result, null, 2);
     return;
   }
+  const currentPhoneNumberId = $("vapi_phone_number_id").value.trim();
   phoneSelect.innerHTML = "";
   result.data.forEach((p) => {
     const opt = document.createElement("option");
@@ -100,7 +128,10 @@ $("btn_load_numbers").addEventListener("click", async () => {
     phoneSelect.appendChild(opt);
   });
   if (phoneSelect.options.length) {
-    $("vapi_phone_number_id").value = phoneSelect.options[0].value;
+    const optionValues = Array.from(phoneSelect.options).map((o) => o.value);
+    const selectedValue = optionValues.includes(currentPhoneNumberId) ? currentPhoneNumberId : phoneSelect.options[0].value;
+    phoneSelect.value = selectedValue;
+    $("vapi_phone_number_id").value = selectedValue;
   }
   out.textContent = `Números cargados: ${result.data.length}`;
 });
