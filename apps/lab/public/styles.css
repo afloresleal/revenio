@@ -180,6 +180,31 @@ pre {
   flex-wrap: wrap;
 }
 
+.call-outcome {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.call-outcome.neutral {
+  background: #0f151f;
+  color: var(--muted);
+}
+
+.call-outcome.ok {
+  background: #112117;
+  border-color: #1f5f36;
+  color: #8ce3a9;
+}
+
+.call-outcome.error {
+  background: #241316;
+  border-color: #6b2a33;
+  color: #ff9ca7;
+}
+
 .json {
   margin-top: 8px;
   background: #0c1118;

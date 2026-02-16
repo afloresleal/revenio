@@ -51,6 +51,43 @@ async function post(path, body) {
   return data;
 }
 
+async function get(path) {
+  const resp = await fetch(`${API_BASE}${path}`);
+  const data = await resp.json().catch(() => ({}));
+  return { status: resp.status, data };
+}
+
+function mapEndedMessage(statusData) {
+  const endedMessage = statusData?.endedMessage || "";
+  const endedReason = statusData?.endedReason || "";
+  const lower = `${endedReason} ${endedMessage}`.toLowerCase();
+  if (lower.includes("unverified") && lower.includes("trial")) {
+    return "Llamada bloqueada por Twilio Trial: el numero destino no esta verificado.";
+  }
+  if (statusData?.status === "ended" && endedMessage) {
+    return `Llamada terminada: ${endedMessage}`;
+  }
+  if (statusData?.status) {
+    return `Estado actual: ${statusData.status}`;
+  }
+  return "Solicitud enviada. Pendiente de estado final.";
+}
+
+async function pollAttemptStatus(attemptId) {
+  if (!attemptId) return null;
+  let last = null;
+  for (let i = 0; i < 4; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const { status, data } = await get(`/lab/call-status/${attemptId}`);
+    if (status !== 200) {
+      continue;
+    }
+    last = data;
+    if (data?.status === "ended" || data?.status === "in-progress") break;
+  }
+  return last;
+}
+
 form.addEventListener("submit", async (ev) => {
   ev.preventDefault();
 
@@ -77,8 +114,16 @@ form.addEventListener("submit", async (ev) => {
       lead_source: LEAD_SOURCE,
     };
     const data = await post("/call/test/direct", payload);
-    setStatus("Llamada enviada correctamente.", "ok");
-    showResult(data);
+    setStatus("Solicitud de llamada enviada.", "ok");
+    const attemptStatus = await pollAttemptStatus(data?.attempt_id);
+    if (attemptStatus) {
+      const msg = mapEndedMessage(attemptStatus);
+      const kind = attemptStatus?.status === "ended" && attemptStatus?.endedMessage ? "error" : "ok";
+      setStatus(msg, kind);
+      showResult({ ...data, attemptStatus });
+    } else {
+      showResult(data);
+    }
     $("lead_name").value = "";
     $("to_number").value = "";
   } catch (error) {

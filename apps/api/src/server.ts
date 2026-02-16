@@ -180,6 +180,24 @@ function extractVapiCallId(payload: unknown): string | null {
   return null;
 }
 
+function buildTranscriptFromMessages(messages: unknown): string | null {
+  if (!Array.isArray(messages)) return null;
+  const lines = messages
+    .map((m) => {
+      if (!m || typeof m !== "object") return null;
+      const msg = m as Record<string, unknown>;
+      const role = typeof msg.role === "string" ? msg.role : null;
+      const text = typeof msg.message === "string" ? msg.message : null;
+      if (!text) return null;
+      if (!role) return text;
+      if (role === "assistant") return `AI: ${text}`;
+      if (role === "user") return `User: ${text}`;
+      return `${role}: ${text}`;
+    })
+    .filter((x): x is string => !!x);
+  return lines.length ? lines.join("\n") : null;
+}
+
 app.post("/webhooks/twilio/status", async (req, res) => {
   const leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
   const status = (req.body?.CallStatus as string | undefined) ?? "unknown";
@@ -527,6 +545,104 @@ app.get("/lab/history", async (req, res) => {
 
   return res.json({ attempts, events });
 });
+
+app.post("/lab/sync-attempt/:id", async (req, res) => {
+  const attempt = await prisma.callAttempt.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!attempt) {
+    return res.status(404).json({ error: "attempt_not_found" });
+  }
+  if (!attempt.providerId) {
+    return res.status(400).json({ error: "missing_provider_id" });
+  }
+  if (!VAPI_API_KEY) {
+    return res.status(400).json({
+      error: "missing_vapi_config",
+      required: ["VAPI_API_KEY"],
+    });
+  }
+
+  const resp = await fetch(`https://api.vapi.ai/call/${attempt.providerId}`, {
+    headers: {
+      Authorization: `Bearer ${VAPI_API_KEY}`,
+    },
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    return res.status(502).json({ error: "vapi_call_lookup_failed", status: resp.status, data });
+  }
+
+  const transcript =
+    (typeof data?.artifact?.transcript === "string" && data.artifact.transcript) ||
+    buildTranscriptFromMessages(data?.messages) ||
+    null;
+  const detail = transcript ? { ...data, transcript } : data;
+
+  await prisma.event.create({
+    data: {
+      leadId: attempt.leadId,
+      type: "vapi_result",
+      detail: detail as Prisma.InputJsonValue,
+    },
+  });
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: { resultJson: detail as Prisma.InputJsonValue },
+  });
+
+  return res.json({
+    ok: true,
+    attempt_id: attempt.id,
+    provider_id: attempt.providerId,
+    transcript_found: Boolean(transcript),
+    status: typeof data?.status === "string" ? data.status : null,
+    endedReason: typeof data?.endedReason === "string" ? data.endedReason : null,
+    endedMessage: typeof data?.endedMessage === "string" ? data.endedMessage : null,
+  });
+});
+
+app.get("/lab/call-status/:id", async (req, res) => {
+  const attempt = await prisma.callAttempt.findUnique({
+    where: { id: req.params.id },
+  });
+  if (!attempt) {
+    return res.status(404).json({ error: "attempt_not_found" });
+  }
+  if (!attempt.providerId) {
+    return res.status(400).json({ error: "missing_provider_id" });
+  }
+  if (!VAPI_API_KEY) {
+    return res.status(400).json({
+      error: "missing_vapi_config",
+      required: ["VAPI_API_KEY"],
+    });
+  }
+
+  const resp = await fetch(`https://api.vapi.ai/call/${attempt.providerId}`, {
+    headers: {
+      Authorization: `Bearer ${VAPI_API_KEY}`,
+    },
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    return res.status(502).json({ error: "vapi_call_lookup_failed", status: resp.status, data });
+  }
+
+  return res.json({
+    ok: true,
+    attempt_id: attempt.id,
+    provider_id: attempt.providerId,
+    status: typeof data?.status === "string" ? data.status : null,
+    endedReason: typeof data?.endedReason === "string" ? data.endedReason : null,
+    endedMessage: typeof data?.endedMessage === "string" ? data.endedMessage : null,
+    vapi: data,
+  });
+});
+
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);
 });

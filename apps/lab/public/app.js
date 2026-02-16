@@ -197,21 +197,36 @@ async function loadHistory() {
   const events = result.data.events ?? [];
   const byLead = new Map();
   const byAttempt = new Map();
+  const attemptsByProvider = new Map(
+    attempts.filter((a) => !!a.providerId).map((a) => [a.providerId, a.id])
+  );
 
   const getAttemptId = (ev) =>
+    ev?.detail?.attempt_id ||
+    ev?.detail?.attemptId ||
+    ev?.detail?.assistantOverrides?.metadata?.attempt_id ||
+    ev?.detail?.assistantOverrides?.metadata?.attemptId ||
     ev?.detail?.message?.call?.metadata?.attempt_id ||
     ev?.detail?.message?.call?.metadata?.attemptId ||
+    ev?.detail?.call?.assistantOverrides?.metadata?.attempt_id ||
+    ev?.detail?.call?.assistantOverrides?.metadata?.attemptId ||
     ev?.detail?.call?.metadata?.attempt_id ||
     ev?.detail?.call?.metadata?.attemptId ||
     ev?.detail?.metadata?.attempt_id ||
     ev?.detail?.metadata?.attemptId ||
     null;
 
+  const getProviderId = (ev) =>
+    ev?.detail?.id ||
+    ev?.detail?.call?.id ||
+    ev?.detail?.message?.call?.id ||
+    null;
+
   events.forEach((ev) => {
     const arr = byLead.get(ev.leadId) ?? [];
     arr.push(ev);
     byLead.set(ev.leadId, arr);
-    const attemptId = getAttemptId(ev);
+    const attemptId = getAttemptId(ev) || attemptsByProvider.get(getProviderId(ev));
     if (attemptId) {
       const list = byAttempt.get(attemptId) ?? [];
       list.push(ev);
@@ -291,16 +306,30 @@ async function loadHistory() {
         return `<div class="msg ${cls}"><div class="role">${role}</div><div>${text}</div></div>`;
       })
       .join("");
+    const resultJson = a.resultJson ?? vapiResultWithTranscript?.detail ?? null;
+    const finalStatus = resultJson?.status ?? null;
+    const endedReason = resultJson?.endedReason ?? null;
+    const endedMessage = resultJson?.endedMessage ?? null;
+    const finalError = endedMessage || endedReason;
+    const outcomeClass = finalError ? "error" : finalStatus === "ended" ? "ok" : "neutral";
+    const outcomeText = finalError
+      ? `Llamada fallida: ${endedMessage || endedReason}`
+      : finalStatus
+      ? `Estado final: ${finalStatus}`
+      : "Sin estado final recibido";
     const el = document.createElement("div");
+    const canSyncTranscript = !transcript && !!a.providerId;
     el.className = "item";
     el.innerHTML = `
       <div><strong>${a.lead?.name ?? "(sin nombre)"}</strong> — ${a.lead?.phone ?? ""}</div>
       <small>${new Date(a.createdAt).toLocaleString()} • status: ${a.status ?? "-"}</small>
       <div>attemptId: ${a.id}</div>
       <div>providerId: ${a.providerId ?? "-"}</div>
+      <div class="call-outcome ${outcomeClass}">${outcomeText}</div>
       <div class="history-actions">
         <span class="pill">${a.status ?? "unknown"}</span>
         <button class="ghost" data-retry="${a.leadId}" data-phone="${a.lead?.phone ?? ""}">Reintentar llamada</button>
+        ${canSyncTranscript ? `<button class="ghost" data-sync-transcript="${a.id}">Sincronizar transcript</button>` : ""}
       </div>
       ${recordingUrl || stereoUrl ? `<div class="links" style="margin-top:6px;">
         ${recordingUrl ? `<a href="${recordingUrl}" target="_blank" rel="noreferrer">Audio (mono)</a>` : ""}
@@ -368,6 +397,27 @@ async function loadHistory() {
       }
       await navigator.clipboard.writeText(transcript);
       out.textContent = "Transcript copiado.";
+    });
+  });
+
+  historyEl.querySelectorAll("button[data-sync-transcript]").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      const attemptId = ev.currentTarget.getAttribute("data-sync-transcript");
+      if (!attemptId) return;
+      out.textContent = "Sincronizando transcript desde Vapi...";
+      try {
+        const result = await post(`/lab/sync-attempt/${attemptId}`, {});
+        out.textContent = JSON.stringify(result, null, 2);
+        await loadHistory();
+      } catch (error) {
+        out.textContent = JSON.stringify(
+          {
+            error: error.message,
+          },
+          null,
+          2
+        );
+      }
     });
   });
 }
