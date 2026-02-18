@@ -5,8 +5,8 @@ import { z } from "zod";
 import { Prisma, PrismaClient, LeadStatus } from "@prisma/client";
 
 // Import route modules
-import metricsRouter from "./routes/metrics";
-import webhooksRouter from "./routes/webhooks";
+import metricsRouter from "./routes/metrics.js";
+import webhooksRouter from "./routes/webhooks.js";
 
 const prisma = new PrismaClient();
 const app = express();

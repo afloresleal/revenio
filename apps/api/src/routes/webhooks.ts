@@ -5,8 +5,8 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma';
-import { deriveSentiment, determineOutcome, isAbandonedReason, isNormalEndReason } from '../lib/sentiment';
+import { prisma } from '../lib/prisma.js';
+import { deriveSentiment, determineOutcome, isAbandonedReason, isNormalEndReason } from '../lib/sentiment.js';
 
 const router = Router();
 
