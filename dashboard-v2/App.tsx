@@ -32,9 +32,6 @@ import {
 } from 'lucide-react';
 import { fetchAllData, fetchRecent } from './src/lib/api';
 
-// Toggle for development - set to false to use real API
-const USE_MOCK_DATA = false;
-
 // --- Types ---
 
 type SentimentType = 'positive' | 'neutral' | 'negative';
@@ -84,50 +81,6 @@ interface DashboardData {
   daily: DailyData[];
   recent: RecentCall[];
 }
-
-// --- Mock Data ---
-
-const MOCK_DATA: DashboardData = {
-  summary: {
-    totalCalls: 47,
-    transferRate: 0.81,
-    abandonRate: 0.12,
-    avgTimeToTransfer: 24,
-    inProgressCount: 2,
-    deltas: {
-      totalCalls: 0.08,
-      transferRate: 0.03,
-      abandonRate: -0.02,
-      avgTimeToTransfer: -0.15
-    },
-    sentimentCounts: {
-      positive: 38,
-      neutral: 5,
-      negative: 4
-    }
-  },
-  daily: [
-    { date: "2026-02-12", day: "Lun", calls: 32, transfers: 25, abandoned: 4 },
-    { date: "2026-02-13", day: "Mar", calls: 38, transfers: 30, abandoned: 5 },
-    { date: "2026-02-14", day: "Mié", calls: 41, transfers: 34, abandoned: 4 },
-    { date: "2026-02-15", day: "Jue", calls: 45, transfers: 37, abandoned: 5 },
-    { date: "2026-02-16", day: "Vie", calls: 52, transfers: 43, abandoned: 6 },
-    { date: "2026-02-17", day: "Sáb", calls: 28, transfers: 22, abandoned: 3 },
-    { date: "2026-02-18", day: "Hoy", calls: 47, transfers: 38, abandoned: 6 }
-  ],
-  recent: [
-    { phone: "+52 55 **** 5678", outcome: "transfer_success", sentiment: "positive", duration: 32, ago: "hace 5 min" },
-    { phone: "+52 33 **** 4321", outcome: "abandoned", sentiment: "negative", duration: 18, ago: "hace 12 min" },
-    { phone: "+52 81 **** 3333", outcome: "in_progress", sentiment: null, duration: null, ago: "hace 1 min" },
-    { phone: "+52 55 **** 9012", outcome: "in_progress", sentiment: null, duration: null, ago: "hace 30s" },
-    { phone: "+52 55 **** 0000", outcome: "transfer_success", sentiment: "positive", duration: 41, ago: "hace 23 min" },
-    { phone: "+52 33 **** 2222", outcome: "completed", sentiment: "neutral", duration: 95, ago: "hace 31 min" },
-    { phone: "+52 81 **** 7777", outcome: "transfer_success", sentiment: "positive", duration: 28, ago: "hace 45 min" },
-    { phone: "+52 44 **** 1111", outcome: "failed", sentiment: "negative", duration: 5, ago: "hace 48 min" },
-    { phone: "+52 55 **** 6666", outcome: "abandoned", sentiment: "negative", duration: 8, ago: "hace 52 min" },
-    { phone: "+52 33 **** 8888", outcome: "transfer_success", sentiment: "positive", duration: 36, ago: "hace 1h" }
-  ]
-};
 
 // --- Helper Components ---
 
@@ -234,21 +187,11 @@ export default function App() {
   // State for errors
   const [error, setError] = useState<Error | null>(null);
 
-  // Data fetching - uses real API or mock data
-  const fetchData = async (isRefresh = false) => {
+  // Data fetching - real API only
+  const fetchData = async () => {
     setLoading(true);
     setError(null);
-    
-    if (USE_MOCK_DATA) {
-      // Simulate network delay for mock data
-      setTimeout(() => {
-        setData(MOCK_DATA);
-        setLastUpdated(new Date());
-        setLoading(false);
-      }, isRefresh ? 800 : 1200);
-      return;
-    }
-    
+
     // Real API call
     try {
       const dashboardData = await fetchAllData(period);
@@ -257,8 +200,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to fetch data:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch data'));
-      // Fallback to mock data on error
-      setData(MOCK_DATA);
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -266,7 +208,7 @@ export default function App() {
 
   // Fetch filtered recent calls when filters change
   useEffect(() => {
-    if (USE_MOCK_DATA || !data) return;
+    if (!data) return;
     
     const fetchFiltered = async () => {
       try {
@@ -290,7 +232,7 @@ export default function App() {
   }, [period]);
 
   const handleRefresh = () => {
-    fetchData(true);
+    fetchData();
   };
 
   const handleClearFilters = () => {
@@ -338,6 +280,32 @@ export default function App() {
         <div className="flex flex-col items-center gap-4">
           <Activity className="animate-spin text-blue-500" size={32} />
           <p className="text-sm font-mono tracking-wide">INITIALIZING SYSTEM...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data && error) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="w-full max-w-2xl rounded-xl border border-rose-500/30 bg-rose-950/20 p-6 text-rose-200">
+          <div className="flex items-center gap-2 text-lg font-semibold">
+            <AlertTriangle size={20} />
+            No se pudieron cargar datos reales
+          </div>
+          <p className="mt-3 text-sm text-rose-200/90">
+            {error.message}
+          </p>
+          <p className="mt-2 text-xs text-rose-200/70 font-mono">
+            Verifica `VITE_API_URL` en Railway y que el endpoint `/api/metrics/summary` responda 200.
+          </p>
+          <button
+            onClick={handleRefresh}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-3 py-2 text-sm text-rose-100 hover:bg-rose-900/30"
+          >
+            <RefreshCw size={15} />
+            Reintentar
+          </button>
         </div>
       </div>
     );
