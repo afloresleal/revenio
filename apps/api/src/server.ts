@@ -499,10 +499,19 @@ app.post("/call/test/direct", async (req, res) => {
 
 const callVapiSchema = z.object({
   to_number: z.string().min(6),
-  lead_name: z.string().min(1).optional(),
+  lead_name: z.string().min(1).max(80).optional(),
   lead_id: z.string().uuid().optional(),
   lead_source: z.string().min(1).optional(),
 });
+
+/** Sanitize name for TTS: collapse whitespace, remove control chars, trim */
+function sanitizeName(name: string): string {
+  return name
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/\s+/g, ' ')            // Collapse whitespace
+    .trim()
+    .slice(0, 80);                   // Enforce max length
+}
 
 app.post("/call/vapi", async (req, res) => {
   // 🚫 VALIDATE BUSINESS HOURS FIRST
@@ -528,7 +537,7 @@ app.post("/call/vapi", async (req, res) => {
   }
 
   const { to_number, lead_name, lead_id, lead_source } = parsed.data;
-  const safeName = lead_name?.trim() || null;
+  const safeName = lead_name ? sanitizeName(lead_name) : null;
 
   // Get or create lead
   const lead =
@@ -562,8 +571,10 @@ app.post("/call/vapi", async (req, res) => {
   };
 
   if (safeName) {
-    // CON nombre: usar variable, config default del assistant
+    // CON nombre: override firstMessage with personalized greeting
     payload.assistantOverrides = {
+      firstMessage: `Hola, ¿hablo con ${safeName}?`,
+      firstMessageMode: 'assistant-speaks-first',
       variableValues: { name: safeName },
       metadata: { lead_id: lead.id, attempt_id: attempt.id },
     };
