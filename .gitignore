@@ -21,3 +21,6 @@ yarn-error.log*
 # Environment
 .env
 .env.local
+
+# Local handoff docs
+CLAWDBOT_HANDOFF.md
