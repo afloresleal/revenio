@@ -113,7 +113,7 @@ form.addEventListener("submit", async (ev) => {
       lead_name,
       lead_source: LEAD_SOURCE,
     };
-    const data = await post("/call/test/direct", payload);
+    const data = await post("/call/vapi", payload);
     setStatus("Solicitud de llamada enviada.", "ok");
     const attemptStatus = await pollAttemptStatus(data?.attempt_id);
     if (attemptStatus) {
