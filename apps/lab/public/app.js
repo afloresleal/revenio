@@ -35,44 +35,75 @@ const out = $("out");
 const historyEl = $("history");
 const assistantSelect = $("assistant_select");
 const phoneSelect = $("phone_select");
+const retryLastBtn = $("btn_retry_last");
 let lastHistory = null;
+let retryLastAction = null;
 
 const apiBase = () => $("api_base").value.trim().replace(/\/$/, "");
+const RETRY_DELAYS_MS = [700, 1400, 2200];
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryable(status, data) {
+  if (status === 0) return true;
+  if ([502, 503, 504].includes(status)) return true;
+  const msg = String(data?.message || data?.error || "").toLowerCase();
+  return msg.includes("failed to fetch") || msg.includes("network_error") || msg.includes("application failed to respond");
+}
+
+function setRetryAction(label, action) {
+  retryLastAction = action;
+  retryLastBtn.style.display = "inline-flex";
+  retryLastBtn.textContent = `Reintentar: ${label}`;
+}
+
+function clearRetryAction() {
+  retryLastAction = null;
+  retryLastBtn.style.display = "none";
+}
+
+retryLastBtn.addEventListener("click", async () => {
+  if (!retryLastAction) return;
+  await retryLastAction();
+});
+
+async function requestWithRetry(method, path, body) {
+  let lastResult = { status: 0, data: { error: "network_error", message: "Unknown error" } };
+  for (let i = 0; i <= RETRY_DELAYS_MS.length; i += 1) {
+    try {
+      const resp = await fetch(`${apiBase()}${path}`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
+      });
+      const data = await resp.json().catch(() => ({}));
+      lastResult = { status: resp.status, data };
+    } catch (error) {
+      lastResult = {
+        status: 0,
+        data: {
+          error: "network_error",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+
+    if (!isRetryable(lastResult.status, lastResult.data) || i === RETRY_DELAYS_MS.length) {
+      return lastResult;
+    }
+    await sleep(RETRY_DELAYS_MS[i]);
+  }
+  return lastResult;
+}
 
 async function post(path, body) {
-  try {
-    const resp = await fetch(`${apiBase()}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await resp.json().catch(() => ({}));
-    return { status: resp.status, data };
-  } catch (error) {
-    return {
-      status: 0,
-      data: {
-        error: "network_error",
-        message: error instanceof Error ? error.message : String(error),
-      },
-    };
-  }
+  return requestWithRetry("POST", path, body);
 }
 
 async function get(path) {
-  try {
-    const resp = await fetch(`${apiBase()}${path}`);
-    const data = await resp.json().catch(() => ({}));
-    return { status: resp.status, data };
-  } catch (error) {
-    return {
-      status: 0,
-      data: {
-        error: "network_error",
-        message: error instanceof Error ? error.message : String(error),
-      },
-    };
-  }
+  return requestWithRetry("GET", path);
 }
 
 $("btn_validate").addEventListener("click", async () => {
@@ -83,6 +114,12 @@ $("btn_validate").addEventListener("click", async () => {
     vapi_phone_number_id: $("vapi_phone_number_id").value.trim(),
   };
   const result = await post("/vapi/validate", payload);
+  if (result.status === 0) {
+    result.data.hint = "No se pudo conectar al API. Verifica API base o intenta en unos segundos.";
+    setRetryAction("Validar IDs", async () => $("btn_validate").click());
+  } else {
+    clearRetryAction();
+  }
   out.textContent = JSON.stringify(result, null, 2);
 });
 
@@ -90,7 +127,14 @@ $("btn_load_assistants").addEventListener("click", async () => {
   out.textContent = "Cargando assistants...";
   const payload = { vapi_api_key: $("vapi_api_key").value.trim() };
   const result = await post("/vapi/assistants", payload);
+  if (result.status === 0) {
+    result.data.hint = "Error de red. El API puede estar dormido o inaccesible temporalmente.";
+    setRetryAction("Cargar assistants", async () => $("btn_load_assistants").click());
+    out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
   if (result.status !== 200 || !Array.isArray(result.data)) {
+    setRetryAction("Cargar assistants", async () => $("btn_load_assistants").click());
     out.textContent = JSON.stringify(result, null, 2);
     return;
   }
@@ -108,6 +152,7 @@ $("btn_load_assistants").addEventListener("click", async () => {
     assistantSelect.value = selectedValue;
     $("vapi_assistant_id").value = selectedValue;
   }
+  clearRetryAction();
   out.textContent = `Assistants cargados: ${result.data.length}`;
 });
 
@@ -115,7 +160,14 @@ $("btn_load_numbers").addEventListener("click", async () => {
   out.textContent = "Cargando números...";
   const payload = { vapi_api_key: $("vapi_api_key").value.trim() };
   const result = await post("/vapi/phone-numbers", payload);
+  if (result.status === 0) {
+    result.data.hint = "Error de red. El API puede estar dormido o inaccesible temporalmente.";
+    setRetryAction("Cargar números", async () => $("btn_load_numbers").click());
+    out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
   if (result.status !== 200 || !Array.isArray(result.data)) {
+    setRetryAction("Cargar números", async () => $("btn_load_numbers").click());
     out.textContent = JSON.stringify(result, null, 2);
     return;
   }
@@ -133,6 +185,7 @@ $("btn_load_numbers").addEventListener("click", async () => {
     phoneSelect.value = selectedValue;
     $("vapi_phone_number_id").value = selectedValue;
   }
+  clearRetryAction();
   out.textContent = `Números cargados: ${result.data.length}`;
 });
 
@@ -156,6 +209,12 @@ $("btn_call").addEventListener("click", async () => {
     lead_id: $("lead_id").value.trim() || undefined,
   };
   const result = await post("/call/test/direct", payload);
+  if (result.status === 0) {
+    result.data.hint = "No se pudo enviar por red. Reintenta la acción.";
+    setRetryAction("Crear lead + Llamar", async () => $("btn_call").click());
+  } else {
+    clearRetryAction();
+  }
   out.textContent = JSON.stringify(result, null, 2);
   await loadHistory();
 });
@@ -219,9 +278,21 @@ async function loadHistory() {
   if (to) params.set("to", to);
   const result = await get(`/lab/history?${params.toString()}`);
   if (result.status !== 200 || !result.data?.attempts) {
+    if (result.status === 0) {
+      setRetryAction("Cargar historial", loadHistory);
+    }
     historyEl.textContent = "No se pudo cargar el historial.";
+    out.textContent = JSON.stringify(
+      {
+        ...result,
+        hint: "Revisa API base o usa 'Reintentar última acción'.",
+      },
+      null,
+      2
+    );
     return;
   }
+  clearRetryAction();
 
   lastHistory = result.data;
   let attempts = result.data.attempts;
