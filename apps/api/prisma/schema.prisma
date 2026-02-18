@@ -46,3 +46,34 @@ model Event {
   type      String
   detail    Json?
 }
+
+// Dashboard Metrics - Voice Agent Performance
+model CallMetric {
+  id              String    @id @default(uuid())
+  callId          String    @unique @map("call_id")
+  phoneNumber     String    @map("phone_number")
+  assistantId     String?   @map("assistant_id")
+  
+  startedAt       DateTime? @map("started_at")
+  transferredAt   DateTime? @map("transferred_at")
+  endedAt         DateTime? @map("ended_at")
+  
+  durationSec     Int?      @map("duration_sec")
+  endedReason     String?   @map("ended_reason")
+  outcome         String?   // transfer_success, abandoned, completed, failed, in_progress
+  sentiment       String?   // positive, neutral, negative
+  
+  inProgress      Boolean   @default(true) @map("in_progress")
+  lastEventType   String?   @map("last_event_type")
+  lastEventAt     DateTime? @map("last_event_at")
+  
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("call_metric")
+  @@index([startedAt])
+  @@index([outcome])
+  @@index([sentiment])
+  @@index([startedAt, outcome])
+  @@index([sentiment, outcome])
+}

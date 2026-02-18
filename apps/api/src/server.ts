@@ -4,12 +4,32 @@ import cors from "cors";
 import { z } from "zod";
 import { Prisma, PrismaClient, LeadStatus } from "@prisma/client";
 
+// Import route modules
+import metricsRouter from "./routes/metrics";
+import webhooksRouter from "./routes/webhooks";
+
 const prisma = new PrismaClient();
 const app = express();
 
-app.use(cors());
+// CORS configuration for dashboard
+app.use(cors({
+  origin: [
+    'http://localhost:3001',
+    'http://localhost:5173',
+    'http://127.0.0.1:3001',
+    'http://127.0.0.1:5173',
+    'https://revenio.austack.app',
+    process.env.DASHBOARD_URL,
+  ].filter(Boolean) as string[],
+  credentials: true,
+}));
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// Mount route modules
+app.use('/api/metrics', metricsRouter);
+app.use('/webhooks', webhooksRouter);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "revenio-api" });

@@ -1,0 +1,5 @@
+{
+  "name": "Revenio Voice Metrics",
+  "description": "A mission-critical operational dashboard for monitoring AI voice agent performance in real-time.",
+  "requestFramePermissions": []
+}
