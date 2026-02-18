@@ -401,9 +401,64 @@ const callDirectSchema = z.object({
   vapi_assistant_id: z.string().min(6).optional(),
   to_number: z.string().min(6),
   lead_id: z.string().uuid().optional(),
-  lead_name: z.string().min(1).optional(),
+  lead_name: z.string().min(1).max(80).optional(),
   lead_source: z.string().min(1).optional(),
 });
+
+// ============ SHARED HELPERS FOR CALL ENDPOINTS ============
+
+/** Sanitize name for TTS: collapse whitespace, remove control chars, trim */
+function sanitizeName(name: string): string {
+  return name
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/\s+/g, ' ')            // Collapse whitespace
+    .trim()
+    .slice(0, 80);                   // Enforce max length
+}
+
+/** Build assistantOverrides for VAPI call based on whether we have a name */
+function buildAssistantOverrides(
+  safeName: string | null,
+  leadId: string,
+  attemptId: string,
+  transferNumber: string
+): Record<string, unknown> {
+  if (safeName) {
+    // WITH name: personalized greeting, use assistant's default config
+    return {
+      firstMessage: `Hola, ¿hablo con ${safeName}?`,
+      firstMessageMode: 'assistant-speaks-first',
+      variableValues: { name: safeName },
+      metadata: { lead_id: leadId, attempt_id: attemptId },
+    };
+  } else {
+    // WITHOUT name: dynamic greeting based on time, override model for immediate transfer
+    return {
+      firstMessage: getGreeting(),
+      metadata: { lead_id: leadId, attempt_id: attemptId },
+      model: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: "Eres Marina de Casalba. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool."
+        }],
+        tools: [{
+          type: "transferCall",
+          messages: [{
+            type: "request-start",
+            content: "Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.",
+            blocking: true
+          }],
+          destinations: [{
+            type: "number",
+            number: transferNumber
+          }]
+        }]
+      }
+    };
+  }
+}
 
 app.post("/call/test/direct", async (req, res) => {
   const parsed = callDirectSchema.safeParse(req.body);
@@ -416,6 +471,7 @@ app.post("/call/test/direct", async (req, res) => {
   const resolvedVapiApiKey = vapi_api_key ?? VAPI_API_KEY;
   const resolvedVapiPhoneNumberId = vapi_phone_number_id ?? VAPI_PHONE_NUMBER_ID;
   const resolvedVapiAssistantId = vapi_assistant_id ?? VAPI_ASSISTANT_ID;
+  const safeName = lead_name ? sanitizeName(lead_name) : null;
 
   if (!resolvedVapiApiKey || !resolvedVapiPhoneNumberId || !resolvedVapiAssistantId) {
     return res.status(400).json({
@@ -429,7 +485,7 @@ app.post("/call/test/direct", async (req, res) => {
       ? await prisma.lead.findUnique({ where: { id: lead_id } })
       : await prisma.lead.create({
           data: {
-            name: lead_name ?? "Test",
+            name: safeName ?? "Test",
             phone: to_number,
             source: lead_source ?? "manual",
             events: { create: { type: "lead_received", detail: { source: lead_source ?? null } } },
@@ -445,11 +501,13 @@ app.post("/call/test/direct", async (req, res) => {
     },
   });
 
+  // Build payload with assistantOverrides for personalized greeting
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, TRANSFER_NUMBER);
   const payload = {
     phoneNumberId: resolvedVapiPhoneNumberId,
     assistantId: resolvedVapiAssistantId,
     customer: { number: to_number },
-    metadata: { lead_id: lead.id, attempt_id: attempt.id },
+    assistantOverrides,
   };
 
   let resp: Response;
@@ -479,7 +537,13 @@ app.post("/call/test/direct", async (req, res) => {
     data: {
       leadId: lead.id,
       type: "vapi_call_request",
-      detail: { request: payload, response: data, status: resp.status } as Prisma.InputJsonValue,
+      detail: { 
+        request: payload, 
+        response: data, 
+        status: resp.status,
+        flow: safeName ? "with_name" : "without_name",
+        greeting: safeName ? `Hola, ¿hablo con ${safeName}?` : getGreeting(),
+      } as Prisma.InputJsonValue,
     },
   });
 
@@ -492,7 +556,14 @@ app.post("/call/test/direct", async (req, res) => {
     data: { status: "sent", providerId: typeof data.id === "string" ? data.id : null },
   });
 
-  return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
+  return res.json({ 
+    ok: true, 
+    attempt_id: attempt.id,
+    lead_id: lead.id,
+    flow: safeName ? "with_name" : "without_name",
+    greeting: safeName ? `Hola, ¿hablo con ${safeName}?` : getGreeting(),
+    vapi: data 
+  });
 });
 
 // ============ PRODUCTION CALL ENDPOINT ============
@@ -503,15 +574,6 @@ const callVapiSchema = z.object({
   lead_id: z.string().uuid().optional(),
   lead_source: z.string().min(1).optional(),
 });
-
-/** Sanitize name for TTS: collapse whitespace, remove control chars, trim */
-function sanitizeName(name: string): string {
-  return name
-    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
-    .replace(/\s+/g, ' ')            // Collapse whitespace
-    .trim()
-    .slice(0, 80);                   // Enforce max length
-}
 
 app.post("/call/vapi", async (req, res) => {
   // 🚫 VALIDATE BUSINESS HOURS FIRST
@@ -562,49 +624,14 @@ app.post("/call/vapi", async (req, res) => {
     },
   });
 
-  // Build VAPI payload with conditional overrides
-  const payload: Record<string, unknown> = {
+  // Build VAPI payload using shared helper
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, TRANSFER_NUMBER);
+  const payload = {
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     assistantId: VAPI_ASSISTANT_ID,
     customer: { number: to_number },
-    metadata: { lead_id: lead.id, attempt_id: attempt.id },
+    assistantOverrides,
   };
-
-  if (safeName) {
-    // CON nombre: override firstMessage with personalized greeting
-    payload.assistantOverrides = {
-      firstMessage: `Hola, ¿hablo con ${safeName}?`,
-      firstMessageMode: 'assistant-speaks-first',
-      variableValues: { name: safeName },
-      metadata: { lead_id: lead.id, attempt_id: attempt.id },
-    };
-  } else {
-    // SIN nombre: override completo con saludo dinámico
-    payload.assistantOverrides = {
-      firstMessage: getGreeting(),
-      metadata: { lead_id: lead.id, attempt_id: attempt.id },
-      model: {
-        provider: "openai",
-        model: "gpt-4o-mini",
-        messages: [{
-          role: "system",
-          content: "Eres Marina de Casalba. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool."
-        }],
-        tools: [{
-          type: "transferCall",
-          messages: [{
-            type: "request-start",
-            content: "Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.",
-            blocking: true
-          }],
-          destinations: [{
-            type: "number",
-            number: TRANSFER_NUMBER
-          }]
-        }]
-      }
-    };
-  }
 
   let resp: Response;
   let data: any = {};
