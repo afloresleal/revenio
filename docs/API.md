@@ -1,4 +1,57 @@
-# API Reference — Revenio
+# API Reference
+
+## POST /call/vapi (Production Endpoint)
+
+Inicia una llamada VAPI con validación de horario y flujo dinámico.
+
+### Restricción de Horario
+- **Solo 7:00 AM - 10:00 PM CST**
+- Fuera de horario retorna `400 outside_business_hours`
+
+### Request Body
+```json
+{
+  "to_number": "+521234567890",    // required
+  "lead_name": "Marina",           // optional - determina flujo
+  "lead_id": "uuid",               // optional - usa lead existente
+  "lead_source": "facebook"        // optional - default "vapi-call"
+}
+```
+
+### Flujos
+
+| Campo | Comportamiento |
+|-------|----------------|
+| `lead_name` presente | `firstMessage: "Hola, ¿hablo con {{name}}?"` (VAPI default) |
+| `lead_name` vacío/null | Saludo dinámico por hora + override completo |
+
+### Saludos Dinámicos (sin nombre)
+- **7am-12pm:** "Hola, buenos días."
+- **12pm-6pm:** "Hola, buenas tardes."
+- **6pm-10pm:** "Hola, linda noche."
+
+### Response (200)
+```json
+{
+  "ok": true,
+  "attempt_id": "uuid",
+  "lead_id": "uuid",
+  "flow": "with_name" | "without_name",
+  "greeting": "Hola, ¿hablo con Marina?" | "Hola, buenos días.",
+  "vapi": { /* VAPI response */ }
+}
+```
+
+### Error (400) - Fuera de horario
+```json
+{
+  "error": "outside_business_hours",
+  "message": "Llamadas solo permitidas de 7:00 AM a 10:00 PM CST",
+  "current_hour_cst": 23
+}
+```
+
+--- — Revenio
 
 Base URL: `https://revenio-api.up.railway.app` (producción)
 
