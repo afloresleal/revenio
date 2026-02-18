@@ -22,11 +22,23 @@ const API_KEY = process.env.API_KEY || 'revenio-test-key-2026';
 const TRANSFER_NUMBER = process.env.TRANSFER_NUMBER || '+525527326714';
 
 // === MENSAJES ===
-// SIN nombre - mensaje genérico corto
-const FIRST_MESSAGE_NO_NAME = "Hola, buenas tardes.";
+// SIN nombre - saludo dinámico por hora (CST = America/Mexico_City)
+function getGreeting() {
+  const now = new Date();
+  const cstTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const hour = cstTime.getHours();
+  
+  if (hour >= 7 && hour < 12) {
+    return "Hola, buenos días.";
+  } else if (hour >= 12 && hour < 18) {
+    return "Hola, buenas tardes.";
+  } else {
+    return "Hola, linda noche.";
+  }
+}
 
-// SIN nombre - tool message diferente
-const TOOL_MESSAGE_NO_NAME = "Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.";
+// SIN nombre - tool message con presentación completa
+const TOOL_MESSAGE_NO_NAME = "Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.";
 
 // === MIDDLEWARE AUTH ===
 const authMiddleware = (req, res, next) => {
@@ -123,7 +135,7 @@ app.post('/call/vapi', authMiddleware, rateLimitMiddleware, async (req, res) => 
   } else {
     // SIN nombre: override completo - firstMessage Y tool message diferentes
     payload.assistantOverrides = {
-      firstMessage: FIRST_MESSAGE_NO_NAME,
+      firstMessage: getGreeting(),
       model: {
         provider: "openai",
         model: "gpt-4o-mini",

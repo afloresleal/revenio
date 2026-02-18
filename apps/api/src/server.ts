@@ -281,6 +281,30 @@ const port = Number(process.env.PORT ?? 3000);
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? "";
 const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? "";
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID ?? "";
+const TRANSFER_NUMBER = process.env.TRANSFER_NUMBER ?? "+525527326714";
+
+// ============ BUSINESS HOURS HELPERS ============
+
+/** Get current hour in CST (America/Mexico_City) */
+function getCSTHour(): number {
+  const now = new Date();
+  const cstTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  return cstTime.getHours();
+}
+
+/** Check if current time is within business hours (7am - 10pm CST) */
+function isWithinBusinessHours(): boolean {
+  const hour = getCSTHour();
+  return hour >= 7 && hour < 22; // 7:00 AM - 9:59 PM
+}
+
+/** Get dynamic greeting based on time of day */
+function getGreeting(): string {
+  const hour = getCSTHour();
+  if (hour >= 7 && hour < 12) return "Hola, buenos días.";
+  if (hour >= 12 && hour < 18) return "Hola, buenas tardes.";
+  return "Hola, linda noche.";
+}
 
 const callSchema = z.object({
   lead_id: z.string().uuid(),
@@ -465,6 +489,166 @@ app.post("/call/test/direct", async (req, res) => {
   });
 
   return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
+});
+
+// ============ PRODUCTION CALL ENDPOINT ============
+
+const callVapiSchema = z.object({
+  to_number: z.string().min(6),
+  lead_name: z.string().min(1).optional(),
+  lead_id: z.string().uuid().optional(),
+  lead_source: z.string().min(1).optional(),
+});
+
+app.post("/call/vapi", async (req, res) => {
+  // 🚫 VALIDATE BUSINESS HOURS FIRST
+  if (!isWithinBusinessHours()) {
+    const hour = getCSTHour();
+    return res.status(400).json({
+      error: 'outside_business_hours',
+      message: 'Llamadas solo permitidas de 7:00 AM a 10:00 PM CST',
+      current_hour_cst: hour
+    });
+  }
+
+  if (!VAPI_API_KEY || !VAPI_PHONE_NUMBER_ID || !VAPI_ASSISTANT_ID) {
+    return res.status(400).json({
+      error: "missing_vapi_config",
+      required: ["VAPI_API_KEY", "VAPI_PHONE_NUMBER_ID", "VAPI_ASSISTANT_ID"],
+    });
+  }
+
+  const parsed = callVapiSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const { to_number, lead_name, lead_id, lead_source } = parsed.data;
+  const safeName = lead_name?.trim() || null;
+
+  // Get or create lead
+  const lead =
+    lead_id
+      ? await prisma.lead.findUnique({ where: { id: lead_id } })
+      : await prisma.lead.create({
+          data: {
+            name: safeName ?? undefined,
+            phone: to_number,
+            source: lead_source ?? "vapi-call",
+            events: { create: { type: "lead_received", detail: { source: lead_source ?? "vapi-call" } } },
+          },
+        });
+
+  if (!lead) return res.status(404).json({ error: "lead_not_found" });
+
+  // Create attempt record
+  const attempt = await prisma.callAttempt.create({
+    data: {
+      leadId: lead.id,
+      status: "initiated",
+    },
+  });
+
+  // Build VAPI payload with conditional overrides
+  const payload: Record<string, unknown> = {
+    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    assistantId: VAPI_ASSISTANT_ID,
+    customer: { number: to_number },
+    metadata: { lead_id: lead.id, attempt_id: attempt.id },
+  };
+
+  if (safeName) {
+    // CON nombre: usar variable, config default del assistant
+    payload.assistantOverrides = {
+      variableValues: { name: safeName },
+      metadata: { lead_id: lead.id, attempt_id: attempt.id },
+    };
+  } else {
+    // SIN nombre: override completo con saludo dinámico
+    payload.assistantOverrides = {
+      firstMessage: getGreeting(),
+      metadata: { lead_id: lead.id, attempt_id: attempt.id },
+      model: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: "Eres Marina de Casalba. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool."
+        }],
+        tools: [{
+          type: "transferCall",
+          messages: [{
+            type: "request-start",
+            content: "Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.",
+            blocking: true
+          }],
+          destinations: [{
+            type: "number",
+            number: TRANSFER_NUMBER
+          }]
+        }]
+      }
+    };
+  }
+
+  let resp: Response;
+  let data: any = {};
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    resp = await fetch("https://api.vapi.ai/call/phone", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${VAPI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    data = await resp.json().catch(() => ({}));
+  } catch (error) {
+    return res.status(502).json({
+      error: "vapi_network_error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  await prisma.event.create({
+    data: {
+      leadId: lead.id,
+      type: "vapi_call_request",
+      detail: { 
+        request: payload, 
+        response: data, 
+        status: resp.status,
+        flow: safeName ? "with_name" : "without_name",
+        greeting: safeName ? null : getGreeting(),
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  if (!resp.ok) {
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: { status: "failed" },
+    });
+    return res.status(502).json({ error: "vapi_call_failed", status: resp.status, data });
+  }
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: { status: "sent", providerId: typeof data.id === "string" ? data.id : null },
+  });
+
+  return res.json({ 
+    ok: true, 
+    attempt_id: attempt.id, 
+    lead_id: lead.id,
+    flow: safeName ? "with_name" : "without_name",
+    greeting: safeName ? `Hola, ¿hablo con ${safeName}?` : getGreeting(),
+    vapi: data 
+  });
 });
 
 const validateSchema = z.object({
