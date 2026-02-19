@@ -10,6 +10,12 @@ import { deriveSentiment, determineOutcome, isAbandonedReason, isNormalEndReason
 
 const router = Router();
 
+function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  const normalized = reason.toLowerCase();
+  return normalized.includes('forward') || normalized.includes('transfer');
+}
+
 // Schemas per event type with required fields
 const BaseCallSchema = z.object({
   id: z.string(),
@@ -135,10 +141,13 @@ router.post('/vapi/metrics', async (req, res) => {
     if (type === 'call-ended') {
       const wasTransferred = existing?.transferredAt != null;
       const endedReason = call.endedReason || null;
+      const inferredTransfer = wasTransferred || looksLikeTransferEndedReason(endedReason);
       // Some providers send only "call-ended" without a prior "call-started".
       // Ensure startedAt is populated so summary/daily metrics include the call.
       const startedAtFallback = existing?.startedAt ?? eventAt;
-      const outcome = determineOutcome(wasTransferred, endedReason);
+      // If no explicit transfer-started event arrived, infer transfer timestamp from call-ended.
+      const transferredAtFallback = existing?.transferredAt ?? (inferredTransfer ? eventAt : null);
+      const outcome = determineOutcome(inferredTransfer, endedReason);
       const sentiment = deriveSentiment({
         outcome,
         durationSec: call.duration ?? null,
@@ -151,6 +160,7 @@ router.post('/vapi/metrics', async (req, res) => {
           callId: call.id,
           phoneNumber,
           startedAt: startedAtFallback,
+          transferredAt: transferredAtFallback,
           endedAt: eventAt,
           durationSec: call.duration,
           endedReason,
@@ -162,6 +172,7 @@ router.post('/vapi/metrics', async (req, res) => {
         },
         update: {
           startedAt: startedAtFallback,
+          transferredAt: transferredAtFallback,
           endedAt: eventAt,
           durationSec: call.duration,
           endedReason,
