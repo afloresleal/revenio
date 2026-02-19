@@ -135,6 +135,9 @@ router.post('/vapi/metrics', async (req, res) => {
     if (type === 'call-ended') {
       const wasTransferred = existing?.transferredAt != null;
       const endedReason = call.endedReason || null;
+      // Some providers send only "call-ended" without a prior "call-started".
+      // Ensure startedAt is populated so summary/daily metrics include the call.
+      const startedAtFallback = existing?.startedAt ?? eventAt;
       const outcome = determineOutcome(wasTransferred, endedReason);
       const sentiment = deriveSentiment({
         outcome,
@@ -147,6 +150,7 @@ router.post('/vapi/metrics', async (req, res) => {
         create: {
           callId: call.id,
           phoneNumber,
+          startedAt: startedAtFallback,
           endedAt: eventAt,
           durationSec: call.duration,
           endedReason,
@@ -157,6 +161,7 @@ router.post('/vapi/metrics', async (req, res) => {
           lastEventAt: eventAt,
         },
         update: {
+          startedAt: startedAtFallback,
           endedAt: eventAt,
           durationSec: call.duration,
           endedReason,
