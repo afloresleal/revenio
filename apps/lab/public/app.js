@@ -532,7 +532,9 @@ async function loadHistory() {
       if (!attemptId) return;
       out.textContent = "Sincronizando transcript desde Vapi...";
       try {
-        const result = await post(`/lab/sync-attempt/${attemptId}`, {});
+        const result = await post(`/lab/sync-attempt/${attemptId}`, {
+          vapi_api_key: $("vapi_api_key").value.trim(),
+        });
         out.textContent = JSON.stringify(result, null, 2);
         await loadHistory();
       } catch (error) {

@@ -841,7 +841,17 @@ app.post("/lab/sync-attempt/:id", async (req, res) => {
   if (!attempt.providerId) {
     return res.status(400).json({ error: "missing_provider_id" });
   }
-  if (!VAPI_API_KEY) {
+  const syncSchema = z.object({
+    vapi_api_key: z.string().min(10).optional(),
+  });
+  const parsed = syncSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const resolvedVapiApiKey = parsed.data.vapi_api_key ?? VAPI_API_KEY;
+
+  if (!resolvedVapiApiKey) {
     return res.status(400).json({
       error: "missing_vapi_config",
       required: ["VAPI_API_KEY"],
@@ -850,7 +860,7 @@ app.post("/lab/sync-attempt/:id", async (req, res) => {
 
   const resp = await fetch(`https://api.vapi.ai/call/${attempt.providerId}`, {
     headers: {
-      Authorization: `Bearer ${VAPI_API_KEY}`,
+      Authorization: `Bearer ${resolvedVapiApiKey}`,
     },
   });
 
