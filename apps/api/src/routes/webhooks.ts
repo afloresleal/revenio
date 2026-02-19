@@ -4,9 +4,8 @@
  */
 
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { deriveSentiment, determineOutcome, isAbandonedReason, isNormalEndReason } from '../lib/sentiment.js';
+import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 
 const router = Router();
 
@@ -16,64 +15,128 @@ function looksLikeTransferEndedReason(reason: string | null | undefined): boolea
   return normalized.includes('forward') || normalized.includes('transfer');
 }
 
-// Schemas per event type with required fields
-const BaseCallSchema = z.object({
-  id: z.string(),
-  customer: z.object({
-    number: z.string().optional(),
-  }).optional(),
-});
+type MetricEventType = 'call-started' | 'transfer-started' | 'call-ended';
+type NormalizedMetricEvent = {
+  type: MetricEventType;
+  call: {
+    id: string;
+    customer?: { number?: string };
+    startedAt?: string;
+    transferredAt?: string;
+    endedAt?: string;
+    duration?: number;
+    endedReason?: string | null;
+    status?: string;
+  };
+};
 
-const CallStartedSchema = z.object({
-  type: z.literal('call-started'),
-  call: BaseCallSchema.extend({
-    startedAt: z.string(),
-  }),
-});
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
 
-const TransferStartedSchema = z.object({
-  type: z.literal('transfer-started'),
-  call: BaseCallSchema.extend({
-    transferredAt: z.string().optional(),
-    startedAt: z.string().optional(),
-  }),
-});
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
 
-const CallEndedSchema = z.object({
-  type: z.literal('call-ended'),
-  call: BaseCallSchema.extend({
-    endedAt: z.string(),
-    duration: z.number().optional(),
-    endedReason: z.string().optional(),
-  }),
-});
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
 
-const CallEventSchema = z.discriminatedUnion('type', [
-  CallStartedSchema,
-  TransferStartedSchema,
-  CallEndedSchema,
-]);
+function pickTimestamp(rec: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = asString(rec[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
+  const root = asRecord(body);
+  if (!root) return null;
+
+  const message = asRecord(root.message);
+  const data = asRecord(root.data);
+
+  const call =
+    asRecord(root.call) ||
+    asRecord(message?.call) ||
+    asRecord(data?.call) ||
+    asRecord(asRecord(message?.data)?.call);
+
+  if (!call) return null;
+
+  const callId =
+    asString(call.id) ||
+    asString(asRecord(call.message)?.id) ||
+    asString(root.callId) ||
+    asString(message?.callId);
+
+  if (!callId) return null;
+
+  const customer = asRecord(call.customer);
+  const status = (asString(call.status) || '').toLowerCase();
+  const endedReason = asString(call.endedReason) || asString(call.ended_reason) || null;
+
+  const startedAt = pickTimestamp(call, ['startedAt', 'started_at', 'createdAt', 'created_at']);
+  const transferredAt = pickTimestamp(call, ['transferredAt', 'transferred_at']);
+  const endedAt = pickTimestamp(call, ['endedAt', 'ended_at', 'updatedAt', 'updated_at']);
+  const duration = asNumber(call.duration) ?? asNumber(call.durationSec) ?? asNumber(call.duration_sec);
+
+  const incomingType =
+    asString(root.type) ||
+    asString(message?.type) ||
+    asString(root.event) ||
+    asString(message?.event);
+
+  let normalizedType: MetricEventType | null = null;
+  if (incomingType === 'call-started' || incomingType === 'transfer-started' || incomingType === 'call-ended') {
+    normalizedType = incomingType;
+  } else if (endedAt || endedReason || status === 'ended') {
+    normalizedType = 'call-ended';
+  } else if (transferredAt || looksLikeTransferEndedReason(endedReason) || status.includes('forward') || status.includes('transfer')) {
+    normalizedType = 'transfer-started';
+  } else if (startedAt || status === 'in-progress' || status === 'queued' || status === 'ringing') {
+    normalizedType = 'call-started';
+  }
+
+  if (!normalizedType) return null;
+
+  return {
+    type: normalizedType,
+    call: {
+      id: callId,
+      customer: { number: asString(customer?.number) },
+      startedAt,
+      transferredAt,
+      endedAt,
+      duration,
+      endedReason,
+      status,
+    },
+  };
+}
 
 router.post('/vapi/metrics', async (req, res) => {
-  const parsed = CallEventSchema.safeParse(req.body);
-  if (!parsed.success) {
-    console.log('Invalid webhook payload:', parsed.error.format());
-    return res.status(400).json({ error: 'Invalid payload', details: parsed.error.format() });
+  const normalized = normalizeMetricsEvent(req.body);
+  if (!normalized) {
+    const rootKeys = Object.keys(asRecord(req.body) ?? {});
+    console.log('Invalid webhook payload:', { rootKeys, body: req.body });
+    return res.status(400).json({ error: 'Invalid payload', rootKeys });
   }
   
-  const { type, call } = parsed.data;
+  const { type, call } = normalized;
   
   // Calculate event timestamp based on event type
   let eventAt: Date;
   switch (type) {
     case 'call-started':
-      eventAt = new Date(call.startedAt);
+      eventAt = new Date(call.startedAt || Date.now());
       break;
     case 'transfer-started':
       eventAt = new Date(call.transferredAt || call.startedAt || Date.now());
       break;
     case 'call-ended':
-      eventAt = new Date(call.endedAt);
+      eventAt = new Date(call.endedAt || Date.now());
       break;
   }
 
