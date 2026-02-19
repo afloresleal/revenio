@@ -222,6 +222,38 @@ function buildTranscriptFromMessages(messages: unknown): string | null {
   return lines.length ? lines.join("\n") : null;
 }
 
+function extractTranscriptFromVapiPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+
+  const explicitTranscriptCandidates: unknown[] = [
+    p.transcript,
+    (p.message as Record<string, unknown> | undefined)?.transcript,
+    (p.artifact as Record<string, unknown> | undefined)?.transcript,
+    ((p.message as Record<string, unknown> | undefined)?.artifact as Record<string, unknown> | undefined)?.transcript,
+    ((p.call as Record<string, unknown> | undefined)?.artifact as Record<string, unknown> | undefined)?.transcript,
+  ];
+
+  for (const candidate of explicitTranscriptCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
+
+  const messageCandidates: unknown[] = [
+    p.messages,
+    (p.message as Record<string, unknown> | undefined)?.messages,
+    (p.artifact as Record<string, unknown> | undefined)?.messages,
+    ((p.message as Record<string, unknown> | undefined)?.artifact as Record<string, unknown> | undefined)?.messages,
+    (p.call as Record<string, unknown> | undefined)?.messages,
+  ];
+
+  for (const candidate of messageCandidates) {
+    const built = buildTranscriptFromMessages(candidate);
+    if (built) return built;
+  }
+
+  return null;
+}
+
 app.post("/webhooks/twilio/status", async (req, res) => {
   const leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
   const status = (req.body?.CallStatus as string | undefined) ?? "unknown";
@@ -260,12 +292,18 @@ app.post("/webhooks/vapi/result", async (req, res) => {
 
   console.log("vapi_result", { leadId, attemptId, providerId });
 
+  const transcript = extractTranscriptFromVapiPayload(req.body);
+  const normalizedDetail =
+    transcript && req.body && typeof req.body === "object"
+      ? { ...(req.body as Record<string, unknown>), transcript }
+      : (req.body ?? {});
+
   if (leadId) {
     await prisma.event.create({
       data: {
         leadId,
         type: "vapi_result",
-        detail: req.body ?? {},
+        detail: normalizedDetail as Prisma.InputJsonValue,
       },
     });
   }
@@ -273,7 +311,7 @@ app.post("/webhooks/vapi/result", async (req, res) => {
   if (attemptId) {
     await prisma.callAttempt.update({
       where: { id: attemptId },
-      data: { resultJson: req.body ?? {} },
+      data: { resultJson: normalizedDetail as Prisma.InputJsonValue },
     });
   }
 
