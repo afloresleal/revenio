@@ -33,6 +33,7 @@ import {
 import { fetchAllData, fetchRecent } from './src/lib/api';
 
 // --- Types ---
+const CDMX_TIMEZONE = 'America/Mexico_City';
 
 type SentimentType = 'positive' | 'neutral' | 'negative';
 type OutcomeType = 'transfer_success' | 'abandoned' | 'in_progress' | 'completed' | 'failed';
@@ -186,6 +187,15 @@ export default function App() {
 
   // State for errors
   const [error, setError] = useState<Error | null>(null);
+
+  const formatTimeCDMX = (value: Date) =>
+    value.toLocaleTimeString('es-MX', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: CDMX_TIMEZONE,
+      hour12: true,
+    });
 
   // Data fetching - real API only
   const fetchData = async () => {
@@ -467,7 +477,7 @@ export default function App() {
         {/* --- Timestamp --- */}
         <div className="flex justify-end items-center -mt-4 mb-2">
             <span className="text-xs font-mono text-slate-500">
-                Última actualización: {lastUpdated.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}
+                Última actualización (CDMX): {formatTimeCDMX(lastUpdated)}
             </span>
         </div>
 

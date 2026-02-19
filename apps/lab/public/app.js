@@ -38,6 +38,30 @@ const phoneSelect = $("phone_select");
 const retryLastBtn = $("btn_retry_last");
 let lastHistory = null;
 let retryLastAction = null;
+const CDMX_TIMEZONE = "America/Mexico_City";
+
+function formatDateTimeCDMX(value) {
+  return new Date(value).toLocaleString("es-MX", {
+    timeZone: CDMX_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatTimeCDMX(value) {
+  return new Date(value).toLocaleTimeString("es-MX", {
+    timeZone: CDMX_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
 
 const apiBase = () => $("api_base").value.trim().replace(/\/$/, "");
 const RETRY_DELAYS_MS = [700, 1400, 2200];
@@ -424,7 +448,7 @@ async function loadHistory() {
     el.className = "item";
     el.innerHTML = `
       <div><strong>${a.lead?.name ?? "(sin nombre)"}</strong> — ${a.lead?.phone ?? ""}</div>
-      <small>${new Date(a.createdAt).toLocaleString()} • status: ${a.status ?? "-"}</small>
+      <small>${formatDateTimeCDMX(a.createdAt)} (CDMX) • status: ${a.status ?? "-"}</small>
       <div>attemptId: ${a.id}</div>
       <div>providerId: ${a.providerId ?? "-"}</div>
       <div class="call-outcome ${outcomeClass}">${outcomeText}</div>
@@ -439,12 +463,12 @@ async function loadHistory() {
         ${stereoUrl ? `<a href="${stereoUrl}" target="_blank" rel="noreferrer">Audio (stereo)</a>` : ""}
       </div>` : ""}
       <div style="margin-top:6px;">
-        ${latest.map((e) => `<small>${new Date(e.createdAt).toLocaleTimeString()} — ${e.type}</small>`).join("<br/>")}
+        ${latest.map((e) => `<small>${formatTimeCDMX(e.createdAt)} (CDMX) — ${e.type}</small>`).join("<br/>")}
       </div>
       <details>
         <summary>Ver eventos completos</summary>
         <div style="margin-top:6px;">
-          ${evs.map((e) => `<small>${new Date(e.createdAt).toLocaleString()} — ${e.type}</small>`).join("<br/>") || "<small>Sin eventos</small>"}
+          ${evs.map((e) => `<small>${formatDateTimeCDMX(e.createdAt)} (CDMX) — ${e.type}</small>`).join("<br/>") || "<small>Sin eventos</small>"}
         </div>
       </details>
       ${
