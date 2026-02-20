@@ -272,6 +272,11 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   const endedReason = asString(message?.endedReason) || asString(call.endedReason);
   const duration = asNumber(call.duration) ?? asNumber(call.durationSeconds);
   const cost = asNumber(call.cost);
+  const status = asString(call.status);
+  const forwardedPhoneNumber =
+    asString(call.forwardedPhoneNumber) ||
+    asString(message?.forwardedPhoneNumber) ||
+    asString(asRecord(message?.destination)?.number);
   
   // Extract transcript from artifact
   const transcript = asString(artifact?.transcript);
@@ -286,7 +291,9 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   
   console.log('end-of-call-report:', { 
     callId, 
+    status,
     endedReason, 
+    forwardedPhoneNumber,
     duration, 
     hasTranscript: !!transcript,
     hasRecording: !!recordingUrl 
@@ -353,7 +360,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   const message = asRecord(root?.message) || root;
   
   const eventType = asString(message?.type);
-  if (eventType !== 'transfer-update') {
+  if (eventType !== 'transfer-update' && eventType !== 'transfer-destination-request') {
     return null;
   }
 
@@ -364,10 +371,13 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     return { ok: false, error: 'Missing callId' };
   }
 
-  const destination = asRecord(message?.destination);
-  const transferNumber = asString(destination?.number);
+  const destination = asRecord(message?.destination) || asRecord(message?.transferDestination);
+  const transferNumber =
+    asString(destination?.number) ||
+    asString(message?.destinationNumber) ||
+    asString(message?.to);
   
-  console.log('transfer-update:', { callId, transferNumber });
+  console.log(eventType + ':', { callId, transferNumber });
 
   await prisma.callMetric.upsert({
     where: { callId },
@@ -377,19 +387,19 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       transferredAt: new Date(),
       outcome: 'transfer_success',
       sentiment: 'positive',
-      lastEventType: 'transfer-update',
+      lastEventType: eventType,
       lastEventAt: new Date(),
     },
     update: {
       transferredAt: new Date(),
       outcome: 'transfer_success',
       sentiment: 'positive',
-      lastEventType: 'transfer-update',
+      lastEventType: eventType,
       lastEventAt: new Date(),
     },
   });
 
-  return { ok: true, callId, transferred: true, destination: transferNumber };
+  return { ok: true, callId, transferred: true, destination: transferNumber, eventType };
 }
 
 router.post('/vapi/metrics', async (req, res) => {
@@ -437,13 +447,13 @@ router.post('/vapi/end-of-call', async (req, res) => {
 });
 
 /**
- * Handler for transfer-update events
+ * Handler for transfer-update / transfer-destination-request events
  * Captures when a transfer is initiated
  */
 router.post('/vapi/transfer', async (req, res) => {
   try {
     const result = await processTransferUpdate(req.body);
-    if (!result) return res.json({ ok: true, ignored: true, reason: 'not transfer-update' });
+    if (!result) return res.json({ ok: true, ignored: true, reason: 'not transfer event' });
     if (result.ok === false) return res.status(400).json(result);
     return res.json(result);
   } catch (error) {
@@ -454,7 +464,7 @@ router.post('/vapi/transfer', async (req, res) => {
 
 /**
  * Unified Vapi events endpoint.
- * Accepts end-of-call-report, transfer-update and metrics-compatible payloads.
+ * Accepts end-of-call-report, transfer-update, transfer-destination-request and metrics-compatible payloads.
  */
 router.post('/vapi/events', async (req, res) => {
   try {
