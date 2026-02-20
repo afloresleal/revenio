@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 
 const router = Router();
+
 const DEFAULT_ADVISOR_NUMBER = '+525527326714';
 
 function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
@@ -380,7 +381,12 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   
   console.log(eventType + ':', { callId, transferNumber });
 
+  // For transfer-destination-request: VAPI expects us to RESPOND with the destination
+  // NO POST to controlUrl needed - just return the destination in the response
   if (eventType === 'transfer-destination-request') {
+    console.log('Responding with transfer destination:', DEFAULT_ADVISOR_NUMBER);
+    
+    // Update DB to mark transfer initiated
     await prisma.callMetric.upsert({
       where: { callId },
       create: {
@@ -401,32 +407,16 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       },
     });
 
-    const controlUrl = asString(asRecord(asRecord(message?.call)?.monitor)?.controlUrl);
-    console.log('DEBUG controlUrl:', controlUrl);
-    console.log('DEBUG full message.call:', JSON.stringify(asRecord(message?.call), null, 2));
-    
-    if (controlUrl) {
-      try {
-        console.log('Attempting POST to controlUrl...');
-        const resp = await fetch(`${controlUrl}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'transfer',
-            destination: { type: 'number', number: 'DEFAULT_ADVISOR_NUMBER' }
-          }),
-        });
-        console.log('Control response status:', resp.status);
-      } catch (err) {
-        console.error('Control POST error:', err);
-      }
-    } else {
-      console.log('NO controlUrl found in payload!');
-    }
-
-    return { success: true };
+    // Return the destination - this tells VAPI where to transfer
+    return {
+      destination: {
+        type: 'number',
+        number: DEFAULT_ADVISOR_NUMBER,
+      },
+    };
   }
 
+  // For transfer-update: just log and update DB
   await prisma.callMetric.upsert({
     where: { callId },
     create: {
@@ -461,6 +451,7 @@ router.post('/vapi/metrics', async (req, res) => {
     const transfer = await processTransferUpdate(req.body);
     if (transfer) {
       if (asRecord(transfer)?.ok === false) return res.status(400).json(transfer);
+      // If it has destination, return it directly (for transfer-destination-request)
       if (asRecord(transfer)?.destination) return res.json(transfer);
       return res.json({ ...transfer, via: 'transfer-update' });
     }
@@ -526,6 +517,7 @@ router.post('/vapi/events', async (req, res) => {
     const transfer = await processTransferUpdate(req.body);
     if (transfer) {
       if (asRecord(transfer)?.ok === false) return res.status(400).json(transfer);
+      // If it has destination, return it directly (for transfer-destination-request)
       if (asRecord(transfer)?.destination) return res.json(transfer);
       return res.json({ ...transfer, via: 'transfer-update' });
     }
