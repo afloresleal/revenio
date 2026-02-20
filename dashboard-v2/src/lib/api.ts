@@ -8,6 +8,10 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 export interface SummaryData {
   totalCalls: number;
   transferRate: number;
+  transferConnectedRate: number;
+  transfersInitiated: number;
+  transfersConnected: number;
+  transferConnectionSuccessRate: number;
   abandonRate: number;
   avgTimeToTransfer: number;
   inProgressCount: number;
@@ -19,6 +23,7 @@ export interface SummaryData {
   deltas: {
     totalCalls: number;
     transferRate: number;
+    transferConnectedRate: number;
     abandonRate: number;
     avgTimeToTransfer: number;
   };

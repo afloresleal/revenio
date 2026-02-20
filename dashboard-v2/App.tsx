@@ -41,6 +41,7 @@ type OutcomeType = 'transfer_success' | 'abandoned' | 'in_progress' | 'completed
 interface CallDelta {
   totalCalls: number;
   transferRate: number;
+  transferConnectedRate: number;
   abandonRate: number;
   avgTimeToTransfer: number;
 }
@@ -54,6 +55,10 @@ interface SentimentCounts {
 interface SummaryData {
   totalCalls: number;
   transferRate: number;
+  transferConnectedRate: number;
+  transfersInitiated: number;
+  transfersConnected: number;
+  transferConnectionSuccessRate: number;
   abandonRate: number;
   avgTimeToTransfer: number;
   inProgressCount: number;
@@ -492,10 +497,10 @@ export default function App() {
             "blue"
           )}
           {renderMetricCard(
-            "Tasa de Transfer",
-            `${((data?.summary.transferRate || 0) * 100).toFixed(0)}%`,
-            `(${data?.summary.deltas.totalCalls ? Math.round(47 * 0.81) : 0} de ${data?.summary.totalCalls})`,
-            data?.summary.deltas.transferRate || 0,
+            "Tasa de Transfer (Conectada)",
+            `${((data?.summary.transferConnectedRate || 0) * 100).toFixed(0)}%`,
+            `${data?.summary.transfersConnected || 0} de ${data?.summary.transfersInitiated || 0} transferidas`,
+            data?.summary.deltas.transferConnectedRate || 0,
             <PhoneForwarded size={20} />,
             "emerald"
           )}

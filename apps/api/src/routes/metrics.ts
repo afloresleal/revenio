@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
+const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 35);
 
 // Helper: Get date range for period
 function getPeriodDates(period: string) {
@@ -67,7 +68,7 @@ router.get('/summary', async (req, res) => {
     ]);
     
     // Group by outcome and sentiment
-    const [outcomes, sentiments, inProgress] = await Promise.all([
+    const [outcomes, sentiments, inProgress, connectedTransfers, prevConnectedTransfers, prevOutcomes] = await Promise.all([
       prisma.callMetric.groupBy({
         by: ['outcome'],
         where: { startedAt: { gte: startDate, lt: endDate } },
@@ -81,6 +82,25 @@ router.get('/summary', async (req, res) => {
       prisma.callMetric.count({
         where: { inProgress: true },
       }),
+      prisma.callMetric.count({
+        where: {
+          startedAt: { gte: startDate, lt: endDate },
+          outcome: 'transfer_success',
+          durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC },
+        },
+      }),
+      prisma.callMetric.count({
+        where: {
+          startedAt: { gte: prevStartDate, lt: prevEndDate },
+          outcome: 'transfer_success',
+          durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC },
+        },
+      }),
+      prisma.callMetric.groupBy({
+        by: ['outcome'],
+        where: { startedAt: { gte: prevStartDate, lt: prevEndDate } },
+        _count: { _all: true },
+      }),
     ]);
     
     // Calculate avg time to transfer
@@ -93,7 +113,7 @@ router.get('/summary', async (req, res) => {
     });
     
     const avgTimeToTransfer = transferCalls.length > 0
-      ? transferCalls.reduce((sum, c) => {
+      ? transferCalls.reduce((sum: number, c: { startedAt: Date | null; transferredAt: Date | null }) => {
           if (c.startedAt && c.transferredAt) {
             return sum + (c.transferredAt.getTime() - c.startedAt.getTime()) / 1000;
           }
@@ -102,24 +122,34 @@ router.get('/summary', async (req, res) => {
       : 0;
     
     // Aggregate outcomes
-    const outcomeMap = Object.fromEntries(outcomes.map(o => [o.outcome, o._count._all]));
-    const sentimentMap = Object.fromEntries(sentiments.map(s => [s.sentiment, s._count._all]));
+    const outcomeMap = Object.fromEntries(outcomes.map((o) => [o.outcome, o._count._all])) as Record<string, number>;
+    const prevOutcomeMap = Object.fromEntries(prevOutcomes.map((o) => [o.outcome, o._count._all])) as Record<string, number>;
+    const sentimentMap = Object.fromEntries(sentiments.map((s) => [s.sentiment, s._count._all])) as Record<string, number>;
     
     const totalCalls = current._count._all;
-    const transfers = outcomeMap['transfer_success'] || 0;
+    const transfersInitiated = outcomeMap['transfer_success'] || 0;
     const abandoned = outcomeMap['abandoned'] || 0;
     
-    const transferRate = totalCalls > 0 ? transfers / totalCalls : 0;
+    const transferRate = totalCalls > 0 ? transfersInitiated / totalCalls : 0;
+    const transferConnectedRate = totalCalls > 0 ? connectedTransfers / totalCalls : 0;
+    const transferConnectionSuccessRate = transfersInitiated > 0 ? connectedTransfers / transfersInitiated : 0;
     const abandonRate = totalCalls > 0 ? abandoned / totalCalls : 0;
     
     // Calculate deltas
-    const prevTotal = previous._count._all || 1;
-    const prevTransferRate = prevTotal > 0 ? (outcomeMap['transfer_success'] || 0) / prevTotal : 0;
-    const prevAbandonRate = prevTotal > 0 ? (outcomeMap['abandoned'] || 0) / prevTotal : 0;
+    const prevTotal = previous._count._all;
+    const prevTransfersInitiated = prevOutcomeMap['transfer_success'] || 0;
+    const prevAbandoned = prevOutcomeMap['abandoned'] || 0;
+    const prevTransferRate = prevTotal > 0 ? prevTransfersInitiated / prevTotal : 0;
+    const prevTransferConnectedRate = prevTotal > 0 ? prevConnectedTransfers / prevTotal : 0;
+    const prevAbandonRate = prevTotal > 0 ? prevAbandoned / prevTotal : 0;
     
     res.json({
       totalCalls,
       transferRate,
+      transferConnectedRate,
+      transfersInitiated,
+      transfersConnected: connectedTransfers,
+      transferConnectionSuccessRate,
       abandonRate,
       avgTimeToTransfer: Math.round(avgTimeToTransfer),
       inProgressCount: inProgress,
@@ -131,6 +161,7 @@ router.get('/summary', async (req, res) => {
       deltas: {
         totalCalls: prevTotal > 0 ? (totalCalls - prevTotal) / prevTotal : 0,
         transferRate: transferRate - prevTransferRate,
+        transferConnectedRate: transferConnectedRate - prevTransferConnectedRate,
         abandonRate: abandonRate - prevAbandonRate,
         avgTimeToTransfer: avgTimeToTransfer > 0 ? -0.15 : 0, // Placeholder
       },
@@ -200,7 +231,7 @@ router.get('/recent', async (req, res) => {
     const outcome = req.query.outcome as string | undefined;
     const search = req.query.search as string | undefined;
     
-    const where: any = {};
+    const where: { sentiment?: string; outcome?: string; phoneNumber?: { contains: string } } = {};
     if (sentiment && sentiment !== 'all') where.sentiment = sentiment;
     if (outcome && outcome !== 'all') where.outcome = outcome;
     if (search) where.phoneNumber = { contains: search };
