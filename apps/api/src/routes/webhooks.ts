@@ -401,22 +401,27 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       },
     });
 
-    const controlUrl = asString(asRecord(call?.monitor)?.controlUrl);
+    const controlUrl = asString(asRecord(asRecord(message?.call)?.monitor)?.controlUrl);
+    console.log('DEBUG controlUrl:', controlUrl);
+    console.log('DEBUG full message.call:', JSON.stringify(asRecord(message?.call), null, 2));
     
     if (controlUrl) {
-      // Execute transfer via Live Call Control
-      const controlEndpoint = controlUrl.endsWith('/control') ? controlUrl : `${controlUrl}/control`;
-      await fetch(controlEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'transfer',
-          destination: {
-            type: 'number',
-            number: DEFAULT_ADVISOR_NUMBER,
-          },
-        }),
-      });
+      try {
+        console.log('Attempting POST to controlUrl...');
+        const resp = await fetch(`${controlUrl}/control`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'transfer',
+            destination: { type: 'number', number: '+525527326714' }
+          }),
+        });
+        console.log('Control response status:', resp.status);
+      } catch (err) {
+        console.error('Control POST error:', err);
+      }
+    } else {
+      console.log('NO controlUrl found in payload!');
     }
 
     return { success: true };
