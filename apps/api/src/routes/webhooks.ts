@@ -403,7 +403,42 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       },
     });
 
-    // Vapi expects this exact response shape for transfer destination requests.
+    const monitor = asRecord(call?.monitor) || asRecord(message?.monitor);
+    const controlUrl = asString(monitor?.controlUrl) || asString(message?.controlUrl);
+
+    if (controlUrl) {
+      const controlEndpoint = controlUrl.endsWith('/control') ? controlUrl : `${controlUrl}/control`;
+      try {
+        const response = await fetch(controlEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'transfer',
+            destination: {
+              type: 'number',
+              number: DEFAULT_ADVISOR_NUMBER,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          console.error('Live Call Control transfer failed:', {
+            callId,
+            status: response.status,
+            body: text,
+          });
+          return { ok: false, error: 'live_call_control_transfer_failed', status: response.status };
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error('Live Call Control transfer error:', { callId, error: String(error) });
+        return { ok: false, error: 'live_call_control_transfer_failed', message: String(error) };
+      }
+    }
+
+    // Fallback when no controlUrl is present in payload.
     return {
       destination: {
         type: 'number',
