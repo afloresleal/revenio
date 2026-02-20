@@ -405,7 +405,8 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     
     if (controlUrl) {
       // Execute transfer via Live Call Control
-      await fetch(`${controlUrl}/control`, {
+      const controlEndpoint = controlUrl.endsWith('/control') ? controlUrl : `${controlUrl}/control`;
+      await fetch(controlEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
