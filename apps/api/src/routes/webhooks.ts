@@ -413,7 +413,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'transfer',
-            destination: { type: 'number', number: '+525527326714' }
+            destination: { type: 'number', number: 'DEFAULT_ADVISOR_NUMBER' }
           }),
         });
         console.log('Control response status:', resp.status);
