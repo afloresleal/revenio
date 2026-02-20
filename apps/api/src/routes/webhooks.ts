@@ -401,21 +401,21 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       },
     });
 
-    const controlUrl = asString(asRecord(asRecord(message?.call)?.monitor)?.controlUrl);
-
-    console.log('controlUrl:', controlUrl);
-
+    const controlUrl = asString(asRecord(call?.monitor)?.controlUrl);
+    
     if (controlUrl) {
-      console.log('Executing transfer via controlUrl...');
-      const response = await fetch(`${controlUrl}/control`, {
+      // Execute transfer via Live Call Control
+      await fetch(`${controlUrl}/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'transfer',
-          destination: { type: 'number', number: '+525527326714' }
+          destination: {
+            type: 'number',
+            number: DEFAULT_ADVISOR_NUMBER,
+          },
         }),
       });
-      console.log('Control response:', response.status);
     }
 
     return { success: true };
