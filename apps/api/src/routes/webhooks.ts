@@ -381,8 +381,6 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   console.log(eventType + ':', { callId, transferNumber });
 
   if (eventType === 'transfer-destination-request') {
-    console.log('Responding to transfer-destination-request with:', DEFAULT_ADVISOR_NUMBER);
-
     await prisma.callMetric.upsert({
       where: { callId },
       create: {
@@ -403,49 +401,24 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       },
     });
 
-    const monitor = asRecord(call?.monitor) || asRecord(message?.monitor);
-    const controlUrl = asString(monitor?.controlUrl) || asString(message?.controlUrl);
+    const controlUrl = asString(asRecord(asRecord(message?.call)?.monitor)?.controlUrl);
+
+    console.log('controlUrl:', controlUrl);
 
     if (controlUrl) {
-      const controlEndpoint = controlUrl.endsWith('/control') ? controlUrl : `${controlUrl}/control`;
-      try {
-        const response = await fetch(controlEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'transfer',
-            destination: {
-              type: 'number',
-              number: DEFAULT_ADVISOR_NUMBER,
-            },
-          }),
-        });
-
-        if (!response.ok) {
-          const text = await response.text();
-          console.error('Live Call Control transfer failed:', {
-            callId,
-            status: response.status,
-            body: text,
-          });
-          return { ok: false, error: 'live_call_control_transfer_failed', status: response.status };
-        }
-
-        return { success: true };
-      } catch (error) {
-        console.error('Live Call Control transfer error:', { callId, error: String(error) });
-        return { ok: false, error: 'live_call_control_transfer_failed', message: String(error) };
-      }
+      console.log('Executing transfer via controlUrl...');
+      const response = await fetch(`${controlUrl}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'transfer',
+          destination: { type: 'number', number: '+525527326714' }
+        }),
+      });
+      console.log('Control response:', response.status);
     }
 
-    // Fallback when no controlUrl is present in payload.
-    return {
-      destination: {
-        type: 'number',
-        number: DEFAULT_ADVISOR_NUMBER,
-        message: 'Hola, te transfiero una llamada de un cliente interesado en Casalba Los Cabos.',
-      },
-    };
+    return { success: true };
   }
 
   await prisma.callMetric.upsert({
