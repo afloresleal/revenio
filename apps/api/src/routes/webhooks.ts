@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 
 const router = Router();
+const DEFAULT_ADVISOR_NUMBER = '+525527326714';
 
 function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
   if (!reason) return false;
@@ -379,6 +380,39 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   
   console.log(eventType + ':', { callId, transferNumber });
 
+  if (eventType === 'transfer-destination-request') {
+    console.log('Responding to transfer-destination-request with:', DEFAULT_ADVISOR_NUMBER);
+
+    await prisma.callMetric.upsert({
+      where: { callId },
+      create: {
+        callId,
+        phoneNumber: asString(asRecord(call?.customer)?.number) || 'unknown',
+        transferredAt: new Date(),
+        outcome: 'transfer_success',
+        sentiment: 'positive',
+        lastEventType: eventType,
+        lastEventAt: new Date(),
+      },
+      update: {
+        transferredAt: new Date(),
+        outcome: 'transfer_success',
+        sentiment: 'positive',
+        lastEventType: eventType,
+        lastEventAt: new Date(),
+      },
+    });
+
+    // Vapi expects this exact response shape for transfer destination requests.
+    return {
+      destination: {
+        type: 'number',
+        number: DEFAULT_ADVISOR_NUMBER,
+        message: 'Hola, te transfiero una llamada de un cliente interesado en Casalba Los Cabos.',
+      },
+    };
+  }
+
   await prisma.callMetric.upsert({
     where: { callId },
     create: {
@@ -412,7 +446,8 @@ router.post('/vapi/metrics', async (req, res) => {
 
     const transfer = await processTransferUpdate(req.body);
     if (transfer) {
-      if (transfer.ok === false) return res.status(400).json(transfer);
+      if (asRecord(transfer)?.ok === false) return res.status(400).json(transfer);
+      if (asRecord(transfer)?.destination) return res.json(transfer);
       return res.json({ ...transfer, via: 'transfer-update' });
     }
 
@@ -454,7 +489,7 @@ router.post('/vapi/transfer', async (req, res) => {
   try {
     const result = await processTransferUpdate(req.body);
     if (!result) return res.json({ ok: true, ignored: true, reason: 'not transfer event' });
-    if (result.ok === false) return res.status(400).json(result);
+    if (asRecord(result)?.ok === false) return res.status(400).json(result);
     return res.json(result);
   } catch (error) {
     console.error('Transfer webhook error:', error);
@@ -476,7 +511,8 @@ router.post('/vapi/events', async (req, res) => {
 
     const transfer = await processTransferUpdate(req.body);
     if (transfer) {
-      if (transfer.ok === false) return res.status(400).json(transfer);
+      if (asRecord(transfer)?.ok === false) return res.status(400).json(transfer);
+      if (asRecord(transfer)?.destination) return res.json(transfer);
       return res.json({ ...transfer, via: 'transfer-update' });
     }
 
