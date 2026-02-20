@@ -63,6 +63,11 @@ model CallMetric {
   outcome         String?   // transfer_success, abandoned, completed, failed, in_progress
   sentiment       String?   // positive, neutral, negative
   
+  // End-of-call-report data
+  transcript      String?   @map("transcript")
+  recordingUrl    String?   @map("recording_url")
+  cost            Decimal?  @map("cost") @db.Decimal(10, 4)
+  
   inProgress      Boolean   @default(true) @map("in_progress")
   lastEventType   String?   @map("last_event_type")
   lastEventAt     DateTime? @map("last_event_at")
