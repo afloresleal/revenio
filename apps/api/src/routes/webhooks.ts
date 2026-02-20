@@ -408,7 +408,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     if (controlUrl) {
       try {
         console.log('Attempting POST to controlUrl...');
-        const resp = await fetch(`${controlUrl}/control`, {
+        const resp = await fetch(`${controlUrl}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
