@@ -291,12 +291,22 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   const startedAt = pickTimestamp(call, ['startedAt', 'started_at', 'createdAt']);
   const endedAt = pickTimestamp(call, ['endedAt', 'ended_at']);
   
+  // Calculate duration from timestamps if not provided
+  let calculatedDuration = duration;
+  if (calculatedDuration === undefined && startedAt && endedAt) {
+    const startMs = new Date(startedAt).getTime();
+    const endMs = new Date(endedAt).getTime();
+    if (!isNaN(startMs) && !isNaN(endMs)) {
+      calculatedDuration = Math.round((endMs - startMs) / 1000);
+    }
+  }
+  
   console.log('end-of-call-report:', { 
     callId, 
     status,
     endedReason, 
     forwardedPhoneNumber,
-    duration, 
+    duration: calculatedDuration, 
     hasTranscript: !!transcript,
     hasRecording: !!recordingUrl 
   });
@@ -341,7 +351,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       phoneNumber: asString(asRecord(call.customer)?.number) || 'unknown',
       startedAt: startedAt ? new Date(startedAt) : undefined,
       endedAt: endedAt ? new Date(endedAt) : new Date(),
-      durationSec: duration,
+      durationSec: calculatedDuration,
       endedReason,
       outcome,
       sentiment,
@@ -354,7 +364,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     },
     update: {
       endedAt: endedAt ? new Date(endedAt) : new Date(),
-      durationSec: duration,
+      durationSec: calculatedDuration,
       endedReason,
       outcome,
       sentiment,
