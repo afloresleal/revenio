@@ -7,7 +7,9 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
-const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 35);
+// Minimum duration (seconds) for a transfer to count as "connected"
+// Previously 35s, lowered to 10s since VAPI transfers are quick
+const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
 
 // Helper: Get date range for period
 function getPeriodDates(period: string) {
