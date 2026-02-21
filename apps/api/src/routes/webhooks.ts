@@ -257,6 +257,9 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   if (eventType !== 'end-of-call-report') {
     return null;
   }
+  
+  // Debug: Log raw call object structure
+  console.log('end-of-call-report raw call keys:', Object.keys(asRecord(message?.call) || {}));
 
   const call = asRecord(message?.call);
   const artifact = asRecord(message?.artifact);
@@ -307,6 +310,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     endedReason, 
     forwardedPhoneNumber,
     duration: calculatedDuration, 
+    startedAt,
+    endedAt,
     hasTranscript: !!transcript,
     hasRecording: !!recordingUrl 
   });
