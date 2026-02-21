@@ -291,8 +291,9 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   const recordingUrl = asString(recording?.url) || asString(artifact?.recordingUrl);
   
   // Extract timestamps
+  // VAPI sends createdAt/updatedAt, not startedAt/endedAt
   const startedAt = pickTimestamp(call, ['startedAt', 'started_at', 'createdAt']);
-  const endedAt = pickTimestamp(call, ['endedAt', 'ended_at']);
+  const endedAt = pickTimestamp(call, ['endedAt', 'ended_at', 'updatedAt', 'updated_at']);
   
   // Calculate duration from timestamps if not provided
   let calculatedDuration = duration;
