@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { z } from "zod";
-import { Prisma, PrismaClient, LeadStatus } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 // Import route modules
 import metricsRouter from "./routes/metrics.js";
@@ -86,7 +86,7 @@ app.get("/lead/:id", async (req, res) => {
 const leadListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  status: z.nativeEnum(LeadStatus).optional(),
+  status: z.enum(["NEW", "CALL_SCHEDULED", "CALL_IN_PROGRESS", "CALL_COMPLETED", "NO_ANSWER", "FAILED"]).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   hasAttempts: z.coerce.boolean().optional(),
@@ -99,7 +99,7 @@ app.get("/leads", async (req, res) => {
     return res.status(400).json({ error: "invalid_query", issues: parsed.error.issues });
   }
 
-  const { page, pageSize, status, from, to, hasAttempts } = parsed.data as LeadListQuery;
+  const { page, pageSize, status, from, to, hasAttempts }: LeadListQuery = parsed.data;
   const fromDate = from ? new Date(from) : undefined;
   if (from && Number.isNaN(fromDate?.getTime())) {
     return res.status(400).json({ error: "invalid_query", field: "from" });
@@ -303,7 +303,7 @@ app.post("/webhooks/vapi/result", async (req, res) => {
       data: {
         leadId,
         type: "vapi_result",
-        detail: normalizedDetail as Prisma.InputJsonValue,
+        detail: normalizedDetail as any,
       },
     });
   }
@@ -311,7 +311,7 @@ app.post("/webhooks/vapi/result", async (req, res) => {
   if (attemptId) {
     await prisma.callAttempt.update({
       where: { id: attemptId },
-      data: { resultJson: normalizedDetail as Prisma.InputJsonValue },
+      data: { resultJson: normalizedDetail as any },
     });
   }
 
@@ -417,7 +417,7 @@ app.post("/call/test", async (req, res) => {
     data: {
       leadId: lead.id,
       type: "vapi_call_request",
-      detail: { request: payload, response: data, status: resp.status } as Prisma.InputJsonValue,
+      detail: { request: payload, response: data, status: resp.status } as any,
     },
   });
 
@@ -581,7 +581,7 @@ app.post("/call/test/direct", async (req, res) => {
         status: resp.status,
         flow: safeName ? "with_name" : "without_name",
         greeting: safeName ? `Hola, ¿hablo con ${safeName}?` : getGreeting(),
-      } as Prisma.InputJsonValue,
+      } as any,
     },
   });
 
@@ -704,7 +704,7 @@ app.post("/call/vapi", async (req, res) => {
         status: resp.status,
         flow: safeName ? "with_name" : "without_name",
         greeting: safeName ? null : getGreeting(),
-      } as Prisma.InputJsonValue,
+      } as any,
     },
   });
 
@@ -879,13 +879,13 @@ app.post("/lab/sync-attempt/:id", async (req, res) => {
     data: {
       leadId: attempt.leadId,
       type: "vapi_result",
-      detail: detail as Prisma.InputJsonValue,
+      detail: detail as any,
     },
   });
 
   await prisma.callAttempt.update({
     where: { id: attempt.id },
-    data: { resultJson: detail as Prisma.InputJsonValue },
+    data: { resultJson: detail as any },
   });
 
   return res.json({
