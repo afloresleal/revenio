@@ -122,9 +122,9 @@ router.get('/summary', async (req, res) => {
       : 0;
     
     // Aggregate outcomes
-    const outcomeMap = Object.fromEntries(outcomes.map((o) => [o.outcome, o._count._all])) as Record<string, number>;
-    const prevOutcomeMap = Object.fromEntries(prevOutcomes.map((o) => [o.outcome, o._count._all])) as Record<string, number>;
-    const sentimentMap = Object.fromEntries(sentiments.map((s) => [s.sentiment, s._count._all])) as Record<string, number>;
+    const outcomeMap = Object.fromEntries(outcomes.map((o: any) => [o.outcome, o._count._all])) as Record<string, number>;
+    const prevOutcomeMap = Object.fromEntries(prevOutcomes.map((o: any) => [o.outcome, o._count._all])) as Record<string, number>;
+    const sentimentMap = Object.fromEntries(sentiments.map((s: any) => [s.sentiment, s._count._all])) as Record<string, number>;
     
     const totalCalls = current._count._all;
     const transfersInitiated = outcomeMap['transfer_success'] || 0;
@@ -250,7 +250,7 @@ router.get('/recent', async (req, res) => {
       },
     });
     
-    res.json(calls.map(c => ({
+    res.json(calls.map((c: any) => ({
       phone: maskPhone(c.phoneNumber),
       outcome: c.outcome,
       sentiment: c.sentiment,
