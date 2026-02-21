@@ -301,13 +301,33 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     hasRecording: !!recordingUrl 
   });
 
+  // Debug: Check if endedReason indicates transfer
+  const endedReasonIndicatesTransfer = looksLikeTransferEndedReason(endedReason ?? null);
+  console.log('end-of-call-report debug:', {
+    callId,
+    endedReason,
+    endedReasonIndicatesTransfer,
+  });
+
   // Check if this call was transferred
   const existing = await prisma.callMetric.findUnique({
     where: { callId },
   });
   
-  const wasTransferred = existing?.transferredAt != null || looksLikeTransferEndedReason(endedReason ?? null);
+  const hadTransferredAt = existing?.transferredAt != null;
+  const endedReasonHasTransfer = looksLikeTransferEndedReason(endedReason ?? null);
+  const wasTransferred = hadTransferredAt || endedReasonHasTransfer;
   const outcome = determineOutcome(wasTransferred, endedReason ?? null);
+  
+  console.log('end-of-call-report outcome decision:', {
+    callId,
+    hadTransferredAt,
+    existingTransferredAt: existing?.transferredAt,
+    endedReason,
+    endedReasonHasTransfer,
+    wasTransferred,
+    outcome,
+  });
   const sentiment = deriveSentiment({
     outcome,
     durationSec: duration ?? null,
