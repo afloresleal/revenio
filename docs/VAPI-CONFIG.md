@@ -1,6 +1,6 @@
 # VAPI Config Producción — Revenio Voice Agent
 
-> **Última actualización:** 2026-02-18
+> **Última actualización:** 2026-02-24
 > **Optimizado por:** Julia + Marina (canal #agent-voice-opt)
 > **North Star:** Transfer inmediato sin confirmaciones (<2s latencia)
 
@@ -8,9 +8,18 @@
 
 ## 1. Identificadores Críticos
 
+### Agentes Disponibles
+
+| Agente | ID | Idioma | Voz | Personalidad |
+|--------|-----|--------|-----|--------------|
+| **1-ES-F** (Marina) | `675d2cb2-7047-4949-8735-bedb29351991` | Español | ElevenLabs `m7yTemJqdIqrcNleANfX` | Profesional mexicana |
+| **2-EN-F** (Rachel) | `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7` | English | ElevenLabs `21m00Tcm4TlvDq8ikWAM` | Professional, warm |
+| **3-EN-F** (Bella) | `6b9e8a41-43f5-4439-b14c-6c842fee7d66` | English | ElevenLabs `EXAVITQu4vr4xnSDxMaL` | Friendly, upbeat |
+
+### Infraestructura Compartida
+
 | Recurso | ID |
 |---------|-----|
-| VAPI Assistant ID | `675d2cb2-7047-4949-8735-bedb29351991` |
 | Phone Number ID | `56a80999-3361-4501-ae74-f23beaea1c41` |
 | Twilio Number | `+13502169412` |
 | Número destino transfer | `+525527326714` |
