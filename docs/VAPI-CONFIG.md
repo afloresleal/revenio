@@ -1,7 +1,7 @@
 # VAPI Config Producción — Revenio Voice Agent
 
-> **Última actualización:** 2026-02-24
-> **Optimizado por:** Julia + Marina (canal #agent-voice-opt)
+> **Última actualización:** 2026-02-25
+> **Optimizado por:** Julia + Marina (canal #revenio-mvp-voice-agent)
 > **North Star:** Transfer inmediato sin confirmaciones (<2s latencia)
 
 ---
@@ -10,11 +10,11 @@
 
 ### Agentes Disponibles
 
-| Agente | ID | Idioma | Voz | Personalidad |
-|--------|-----|--------|-----|--------------|
-| **1-ES-F** (Marina) | `675d2cb2-7047-4949-8735-bedb29351991` | Español | ElevenLabs `m7yTemJqdIqrcNleANfX` | Profesional mexicana |
-| **2-EN-F** (Rachel) | `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7` | English | ElevenLabs `21m00Tcm4TlvDq8ikWAM` | Professional, warm |
-| **3-EN-F** (Bella) | `6b9e8a41-43f5-4439-b14c-6c842fee7d66` | English | ElevenLabs `EXAVITQu4vr4xnSDxMaL` | Friendly, upbeat |
+| Agente | ID | Idioma | Voz | First Message |
+|--------|-----|--------|-----|---------------|
+| **1-ES-F** (Marina) | `675d2cb2-7047-4949-8735-bedb29351991` | Español | ElevenLabs `m7yTemJqdIqrcNleANfX` | "Hola, ¿hablo con {name}?" |
+| **2-EN-F** (Rachel) | `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7` | English | ElevenLabs `21m00Tcm4TlvDq8ikWAM` | "Hi, am I speaking with {name}?" |
+| **3-EN-F** (Bella) | `6b9e8a41-43f5-4439-b14c-6c842fee7d66` | English | ElevenLabs `EXAVITQu4vr4xnSDxMaL` | "Hi! Am I talking to {name}?" |
 
 ### Infraestructura Compartida
 
@@ -26,16 +26,18 @@
 
 ---
 
-## 2. Assistant Config Actual (2026-02-18)
+## 2. Assistant Config por Idioma (2026-02-25)
 
-### System Prompt
+### System Prompts
+
+**Español (Marina):**
 ```
 Eres Marina de Casalba. Cuando la persona responda (hola, sí, bueno, cualquier respuesta), ejecuta transferCall inmediatamente. No pidas confirmación múltiples veces. IMPORTANTE: Cuando ejecutes transferCall, NO generes ningún mensaje de despedida ni de presentación adicional - VAPI ya tiene un mensaje de transfer configurado.
 ```
 
-### First Message
+**English (Rachel/Bella):**
 ```
-Hola, ¿hablo con Valeria?
+You are [Rachel/Bella] from Casalba Real Estate. When the person responds (hello, yes, speaking, any response), execute transferCall immediately. Do not ask for confirmation multiple times. IMPORTANT: When you execute transferCall, DO NOT generate any goodbye or additional introduction message - VAPI already has a configured transfer message.
 ```
 
 ### Model Config
@@ -46,15 +48,23 @@ Hola, ¿hablo con Valeria?
 }
 ```
 
-### Transfer Tool
+### Transfer Messages
+
+**Español:**
+```
+Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.
+```
+
+**English:**
+```
+This is Marina from Casalba, virtual assistant. You left your information about properties in Los Cabos. An advisor will assist you personally, please hold while I transfer your call.
+```
+
+### Transfer Destination
 ```json
 {
-  "type": "transferCall",
-  "destinations": [{
-    "type": "number",
-    "number": "+525527326714",
-    "message": "Qué tal, habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Permíteme, no cuelgues, te comunico con un asesor."
-  }]
+  "type": "number",
+  "number": "+525527326714"
 }
 ```
 

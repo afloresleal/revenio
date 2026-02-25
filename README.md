@@ -25,6 +25,23 @@ Incluye:
   - `index.html` (Lab)
   - `campaign.html` (landing de campaña)
 
+### Voice Agents (Multi-idioma)
+
+El sistema soporta 3 asistentes de voz con detección automática de idioma:
+
+| Agente | Idioma | Greeting | Uso |
+|--------|--------|----------|-----|
+| **Marina** (1-ES-F) | Español | "Hola, ¿hablo con {name}?" | Leads hispanohablantes |
+| **Rachel** (2-EN-F) | English | "Hi, am I speaking with {name}?" | English leads (professional) |
+| **Bella** (3-EN-F) | English | "Hi! Am I talking to {name}?" | English leads (friendly) |
+
+La API detecta automáticamente el idioma según el `assistantId` y genera:
+- First message en el idioma correcto
+- Transfer message localizado
+- System prompt apropiado
+
+Ver [docs/VAPI-CONFIG.md](docs/VAPI-CONFIG.md) para configuración detallada.
+
 ---
 
 ## 2) Estructura del repo
