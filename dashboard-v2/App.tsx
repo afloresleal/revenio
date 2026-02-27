@@ -532,8 +532,8 @@ export default function App() {
         {/* --- Main Content Grid: Chart + Table --- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* --- Chart Section (2/3 width) --- */}
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
+          {/* --- Chart Section (1/3 width) --- */}
+          <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-base font-semibold text-slate-100 font-sans">Volumen últimos 7 días</h3>
@@ -593,8 +593,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* --- Recent Calls Table (1/3 width) --- */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden h-[500px]">
+          {/* --- Recent Calls Table (2/3 width) --- */}
+          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden h-[500px]">
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col gap-3 shrink-0">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
