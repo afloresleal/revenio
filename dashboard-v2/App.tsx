@@ -431,7 +431,7 @@ export default function App() {
 
             {/* Controls */}
             <div className="flex items-center gap-3 w-full sm:w-auto">
-              {/* Live Badge */}
+              {/* Live Badge - Hidden until in_progress cleanup is done
               {(data?.summary.inProgressCount || 0) > 0 && (
                 <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-mono animate-pulse-fast">
                   <span className="relative flex h-2 w-2">
@@ -441,6 +441,7 @@ export default function App() {
                   {data?.summary.inProgressCount} EN CURSO
                 </div>
               )}
+              */}
 
               <div className="h-8 w-[1px] bg-slate-800 mx-1 hidden sm:block"></div>
 
@@ -524,8 +525,9 @@ export default function App() {
           )}
         </section>
 
-        {/* --- Sentiment Distribution Bar --- */}
+        {/* --- Sentiment Distribution Bar --- Hidden for now
         {renderSentimentDistribution()}
+        */}
 
         {/* --- Main Content Grid: Chart + Table --- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
