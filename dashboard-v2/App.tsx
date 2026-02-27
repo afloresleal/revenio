@@ -181,6 +181,7 @@ export default function App() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeType | 'all'>('all');
   const [sentimentFilter, setSentimentFilter] = useState<SentimentType | 'all'>('all');
+  const [showFullHistory, setShowFullHistory] = useState(false);
 
   // Debounce effect for search
   useEffect(() => {
@@ -228,7 +229,7 @@ export default function App() {
     const fetchFiltered = async () => {
       try {
         const recent = await fetchRecent({
-          limit: 20,
+          limit: showFullHistory ? 100 : 20,
           sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
           outcome: outcomeFilter !== 'all' ? outcomeFilter : undefined,
           search: debouncedSearch || undefined,
@@ -240,7 +241,7 @@ export default function App() {
     };
     
     fetchFiltered();
-  }, [debouncedSearch, outcomeFilter, sentimentFilter]);
+  }, [debouncedSearch, outcomeFilter, sentimentFilter, showFullHistory]);
 
   useEffect(() => {
     fetchData();
@@ -594,7 +595,7 @@ export default function App() {
           </div>
 
           {/* --- Recent Calls Table (2/3 width) --- */}
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden h-[500px]">
+          <div className={`lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden ${showFullHistory ? 'h-auto max-h-[80vh]' : 'h-[500px]'}`}>
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col gap-3 shrink-0">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
@@ -721,8 +722,11 @@ export default function App() {
             </div>
             {/* Table Footer */}
             <div className="p-3 border-t border-slate-800 bg-slate-900 text-center shrink-0">
-                <button className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">
-                    Ver historial completo
+                <button 
+                  onClick={() => setShowFullHistory(!showFullHistory)}
+                  className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                >
+                    {showFullHistory ? 'Ver menos' : 'Ver historial completo'}
                 </button>
             </div>
           </div>
