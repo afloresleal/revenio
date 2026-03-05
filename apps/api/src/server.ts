@@ -342,13 +342,13 @@ function getLanguageForAssistant(assistantId: string): 'es' | 'en' {
 /** Transfer messages by language */
 const TRANSFER_MESSAGES: Record<'es' | 'en', string> = {
   es: "Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.",
-  en: "This is Marina from Casalba, virtual assistant. You left your information about properties in Los Cabos. An advisor will assist you personally, please hold while I transfer your call."
+  en: "This is a virtual assistant with Caribbean Luxury Homes. We received your request about Riviera Maya properties. Please hold while I connect you with a property specialist."
 };
 
-/** System prompts by language */
+/** System prompts by language - Default prompts (specific agent prompts configured in VAPI dashboard) */
 const SYSTEM_PROMPTS: Record<'es' | 'en', string> = {
   es: "Eres Marina de Casalba. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool.",
-  en: "You are Marina from Casalba. When the user responds, execute transferCall immediately. Don't say anything, just execute the tool."
+  en: "You are a virtual assistant from Caribbean Luxury Homes. When the user responds affirmatively, execute transferCall immediately. Do not generate any additional message after initiating the transfer."
 };
 
 // ============ BUSINESS HOURS HELPERS ============
@@ -390,13 +390,16 @@ function getGreetingByLanguage(language: 'es' | 'en'): string {
   return "Hola, linda noche.";
 }
 
-/** Get first message based on name and language */
+/** Get first message based on name and language
+ * Note: Specific agent first messages (Brenda/Bella) are configured directly in VAPI dashboard.
+ * This function provides fallback/default messages when assistantOverrides are used.
+ */
 function getFirstMessage(name: string | null | undefined, language: 'es' | 'en'): string {
   const safeName = name?.trim();
   
   if (safeName && safeName.length > 0) {
     return language === 'en' 
-      ? `Hi, am I speaking with ${safeName}?`
+      ? `Hi ${safeName} — we just received your request for information about Riviera Maya properties. This is a virtual assistant with Caribbean Luxury Homes.`
       : `Hola, ¿hablo con ${safeName}?`;
   }
   
@@ -509,7 +512,13 @@ function sanitizeName(name: string): string {
     .slice(0, 80);                   // Enforce max length
 }
 
-/** Build assistantOverrides for VAPI call based on whether we have a name and language */
+/** Build assistantOverrides for VAPI call based on whether we have a name and language
+ * 
+ * IMPORTANT (2026-03-04): Do NOT send firstMessage in overrides when we have a name.
+ * The assistant's firstMessage in VAPI dashboard uses {{name}} interpolation.
+ * Sending firstMessage here would override the assistant's configured script.
+ * See: MB-FIX-01 in #julia-codigo
+ */
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
@@ -518,10 +527,9 @@ function buildAssistantOverrides(
   language: 'es' | 'en' = 'es'
 ): Record<string, unknown> {
   if (safeName) {
-    // WITH name: personalized greeting, use assistant's default config
+    // WITH name: pass variableValues for {{name}} interpolation
+    // firstMessage comes from the assistant config in VAPI dashboard
     return {
-      firstMessage: getFirstMessage(safeName, language),
-      firstMessageMode: 'assistant-speaks-first',
       variableValues: { name: safeName },
       metadata: { lead_id: leadId, attempt_id: attemptId },
     };

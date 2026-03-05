@@ -1,8 +1,9 @@
 # VAPI Config Producción — Revenio Voice Agent
 
-> **Última actualización:** 2026-02-25
+> **Última actualización:** 2026-03-04
 > **Optimizado por:** Julia + Marina (canal #revenio-mvp-voice-agent)
-> **North Star:** Transfer inmediato sin confirmaciones (<2s latencia)
+> **Brand:** Caribbean Luxury Homes (Riviera Maya)
+> **North Star:** Transfer exitoso con confirmación inteligente
 
 ---
 
@@ -10,11 +11,11 @@
 
 ### Agentes Disponibles
 
-| Agente | ID | Idioma | Voz | First Message |
-|--------|-----|--------|-----|---------------|
-| **1-ES-F** (Marina) | `675d2cb2-7047-4949-8735-bedb29351991` | Español | ElevenLabs `m7yTemJqdIqrcNleANfX` | "Hola, ¿hablo con {name}?" |
-| **2-EN-F** (Rachel) | `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7` | English | ElevenLabs `21m00Tcm4TlvDq8ikWAM` | "Hi, am I speaking with {name}?" |
-| **3-EN-F** (Bella) | `6b9e8a41-43f5-4439-b14c-6c842fee7d66` | English | ElevenLabs `EXAVITQu4vr4xnSDxMaL` | "Hi! Am I talking to {name}?" |
+| Agente | ID | Idioma | Nombre | Comportamiento |
+|--------|-----|--------|--------|----------------|
+| **1-ES-F** | `675d2cb2-7047-4949-8735-bedb29351991` | Español | Marina | Transfer inmediato |
+| **2-EN-F** | `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7` | English | **Brenda** | Transfer inmediato (sin confirmación) |
+| **3-EN-F** | `6b9e8a41-43f5-4439-b14c-6c842fee7d66` | English | **Bella** | Con confirmación antes de transfer |
 
 ### Infraestructura Compartida
 
@@ -26,21 +27,78 @@
 
 ---
 
-## 2. Assistant Config por Idioma (2026-02-25)
+## 2. First Messages
 
-### System Prompts
-
-**Español (Marina):**
+### Brenda (2-EN-F) — Transfer Inmediato
 ```
-Eres Marina de Casalba. Cuando la persona responda (hola, sí, bueno, cualquier respuesta), ejecuta transferCall inmediatamente. No pidas confirmación múltiples veces. IMPORTANTE: Cuando ejecutes transferCall, NO generes ningún mensaje de despedida ni de presentación adicional - VAPI ya tiene un mensaje de transfer configurado.
+Hi {name} — we just received the request you submitted a moment ago about Riviera Maya properties. This is Brenda, a virtual assistant with Caribbean Luxury Homes. Let me connect you with one of our property specialists right now. One moment while I connect you.
 ```
 
-**English (Rachel/Bella):**
+### Bella (3-EN-F) — Con Confirmación
 ```
-You are [Rachel/Bella] from Casalba Real Estate. When the person responds (hello, yes, speaking, any response), execute transferCall immediately. Do not ask for confirmation multiple times. IMPORTANT: When you execute transferCall, DO NOT generate any goodbye or additional introduction message - VAPI already has a configured transfer message.
+Hi {name} — we just received your request for information about Riviera Maya properties. This is Bella, a virtual assistant with Caribbean Luxury Homes. Did you just submit that request a moment ago?
 ```
 
-### Model Config
+### Marina (1-ES-F) — Español
+```
+Hola, ¿hablo con {name}?
+```
+
+---
+
+## 3. System Prompts
+
+### Brenda (Transfer Inmediato)
+```
+You are Brenda from Caribbean Luxury Homes. After delivering the first message, execute transferCall immediately. Do not wait for a response. Do not generate any additional message after initiating the transfer.
+```
+
+### Bella (Con Confirmación + Edge Cases)
+```
+You are Bella from Caribbean Luxury Homes. After delivering the first message, wait for the customer's response.
+
+AFFIRMATIVE RESPONSES (execute transfer):
+- yes, yeah, sure, correct, that's right, yep, uh-huh, speaking, I did, that's me, absolutely, right, yup, indeed, of course, certainly
+- Say: "Perfect. I'll connect you with a property specialist right now."
+- Then execute transferCall immediately. Do not generate any message after initiating transfer.
+
+NEGATIVE RESPONSES (end call politely):
+- no, nope, not me, wrong number, I didn't, negative, not at all
+- Say: "I apologize for the confusion. Have a great day!"
+- End the call.
+
+NO RESPONSE (timeout ~5 seconds):
+- Say: "I'm sorry, I didn't catch that. Did you just submit a request about properties in Riviera Maya?"
+- Wait for response. If still no response after second attempt, say: "No problem, feel free to reach out when you're ready. Goodbye!" and end call.
+
+UNCLEAR/AMBIGUOUS RESPONSES:
+- what, huh, sorry, pardon, can you repeat
+- Say: "Of course! I'm Bella from Caribbean Luxury Homes. We received your request about Riviera Maya properties. Would you like me to connect you with a specialist?"
+- Then follow affirmative/negative flow above.
+```
+
+### Marina (Español)
+```
+Eres Marina de Casalba. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool.
+```
+
+---
+
+## 4. Transfer Messages
+
+### English (Brenda/Bella)
+```
+This is a virtual assistant with Caribbean Luxury Homes. We received your request about Riviera Maya properties. Please hold while I connect you with a property specialist.
+```
+
+### Español (Marina)
+```
+Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.
+```
+
+---
+
+## 5. Model Config
 ```json
 {
   "provider": "openai",
@@ -48,29 +106,9 @@ You are [Rachel/Bella] from Casalba Real Estate. When the person responds (hello
 }
 ```
 
-### Transfer Messages
-
-**Español:**
-```
-Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.
-```
-
-**English:**
-```
-This is Marina from Casalba, virtual assistant. You left your information about properties in Los Cabos. An advisor will assist you personally, please hold while I transfer your call.
-```
-
-### Transfer Destination
-```json
-{
-  "type": "number",
-  "number": "+525527326714"
-}
-```
-
 ---
 
-## 3. Voice Config (ElevenLabs Turbo)
+## 6. Voice Config (ElevenLabs Turbo)
 
 ```json
 {
@@ -83,13 +121,16 @@ This is Marina from Casalba, virtual assistant. You left your information about 
 }
 ```
 
-**Por qué eleven_turbo_v2_5:**
-- Menor latencia que `eleven_multilingual_v2`
-- Trade-off: acento ligeramente diferente en español
+### Voice IDs por Agente
+| Agente | Voice ID | Descripción |
+|--------|----------|-------------|
+| Marina | `m7yTemJqdIqrcNleANfX` | ElevenLabs mujer ES |
+| Brenda (Rachel) | `21m00Tcm4TlvDq8ikWAM` | ElevenLabs Rachel EN |
+| Bella | `EXAVITQu4vr4xnSDxMaL` | ElevenLabs Bella EN |
 
 ---
 
-## 4. Transcriber Config (Deepgram Nova-3)
+## 7. Transcriber Config (Deepgram Nova-3)
 
 ```json
 {
@@ -103,7 +144,7 @@ This is Marina from Casalba, virtual assistant. You left your information about 
 
 ---
 
-## 5. Speaking Plans (Optimizados para baja latencia)
+## 8. Speaking Plans (Optimizados para baja latencia)
 
 ### Start Speaking Plan
 ```json
@@ -129,43 +170,23 @@ This is Marina from Casalba, virtual assistant. You left your information about 
 
 ---
 
-## 6. Métricas de Latencia (Benchmark 2026-02-17)
+## 9. Edge Cases (Bella)
 
-| Llamada | Turn Total | Transcriber | Endpoint |
-|---------|------------|-------------|----------|
-| Antes de optimización | 2798ms | 395ms | 50ms |
-| Después | 1398-1568ms | 191-553ms | 21-301ms |
-
-**Mejora: ~50% reducción en latencia total**
-
----
-
-## 7. Lecciones Aprendidas (Feb 2026)
-
-| Problema | Causa | Solución |
-|----------|-------|----------|
-| Mensaje duplicado al transferir | LLM genera despedida + VAPI agrega message | Agregar instrucción "NO generes mensaje" al prompt |
-| Latencia 2.8s | TTS lento + tiempos altos | eleven_turbo + waitSeconds bajos |
-| Desync Twilio↔VAPI | Assistant se desasocia del phone | Re-attach via PATCH /phone-number/{id} |
-| Llamadas se cortan sin audio | Desync silencioso | Health check cada 5 min (propuesto) |
+| Escenario | Trigger | Respuesta |
+|-----------|---------|-----------|
+| **Afirmativo** | yes/yeah/sure/correct/yep/uh-huh | "Perfect. I'll connect you..." → transfer |
+| **Negativo** | no/nope/wrong number | "I apologize..." → end call |
+| **Sin respuesta** | ~5s silencio | Repetir pregunta 1 vez → end call |
+| **Ambiguo** | what/huh/pardon | Clarificar → seguir flujo |
 
 ---
 
-## 8. Troubleshooting
-
-| Síntoma | Causa | Acción |
-|---------|-------|--------|
-| Llamada se corta al conectar | Desync Twilio↔VAPI | Re-attach assistant (ver docs/bug-twilio-vapi-desync.md) |
-| AI no responde | Desync o credenciales | Verificar VAPI dashboard |
-| Mensaje duplicado | Prompt no indica silencio | Ya corregido en prompt actual |
-| Transfer no funciona | Tool no configurado | Verificar destinations en tool |
-
----
-
-## 9. Historial de Cambios
+## 10. Historial de Cambios
 
 | Fecha | Cambio | Autor |
 |-------|--------|-------|
+| 2026-03-04 | Rebrand a Caribbean Luxury Homes, nuevos scripts Brenda/Bella | Julia |
+| 2026-03-04 | Edge cases para Bella (negativo, timeout, ambiguo) | Julia |
 | 2026-02-18 | Agregado "NO generes mensaje" al prompt | Julia |
 | 2026-02-17 | Optimización latencia (turbo + tiempos bajos) | Julia |
 | 2026-02-17 | Documentado bug desync | Julia |
