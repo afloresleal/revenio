@@ -1,12 +1,12 @@
 :root {
-  --bg: #030b1b;
-  --panel: #0d172a;
-  --panel-2: #0b1323;
-  --text: #dbe8ff;
-  --muted: #7f94b8;
+  --bg: #040b18;
+  --panel: #0e182d;
+  --panel-2: #0a1324;
+  --text: #d7e3fb;
+  --muted: #7f93b9;
   --accent: #2f7df6;
-  --accent-2: #13c8c8;
-  --border: #1c3156;
+  --accent-2: #21b8cf;
+  --border: #1a2f54;
   --shadow: rgba(0, 0, 0, 0.45);
   --ok: #20d6a5;
   --error: #ff5d7a;
@@ -18,9 +18,7 @@
 body {
   margin: 0;
   font-family: "Manrope", "Inter", "IBM Plex Sans", system-ui, -apple-system, Segoe UI, sans-serif;
-  background: radial-gradient(1200px 700px at 12% -8%, #153974 0%, transparent 52%),
-              radial-gradient(900px 600px at 92% 0%, #0f1f47 0%, transparent 48%),
-              var(--bg);
+  background: var(--bg);
   color: var(--text);
   padding: clamp(16px, 2vw, 28px);
 }
@@ -32,20 +30,46 @@ body {
   justify-content: space-between;
   padding: clamp(16px, 2.2vw, 24px);
   border: 1px solid var(--border);
-  border-radius: 18px;
-  background: linear-gradient(135deg, #0f1a30 0%, #132544 58%, #0d172a 100%);
-  box-shadow: 0 20px 40px var(--shadow);
+  border-radius: 20px;
+  background: #101d36;
+  box-shadow: 0 10px 26px var(--shadow);
+}
+
+.hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: #dff1ff;
+  background: linear-gradient(145deg, #2d79ef, #1e64ce);
+  border: 1px solid #3f79dc;
 }
 
 .eyebrow {
-  text-transform: uppercase;
-  font-size: 12px;
-  letter-spacing: 0.18em;
+  text-transform: none;
+  font-size: 30px;
+  letter-spacing: 0;
+  font-weight: 700;
   color: var(--muted);
-  margin: 0 0 8px;
+  margin: 0;
 }
 
-h1 { margin: 0 0 6px; font-size: 28px; }
+h1 {
+  margin: 2px 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #88a4cf;
+}
 
 .sub { margin: 0; color: var(--muted); }
 
@@ -82,7 +106,7 @@ main {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 6px;
-  background: #0a1220;
+  background: #0a1428;
   width: fit-content;
   max-width: 100%;
   overflow-x: auto;
@@ -100,8 +124,8 @@ main {
 
 .tab-button.is-active {
   color: #e8f3ff;
-  background: linear-gradient(135deg, #1b365f, #162a49);
-  border-color: #274672;
+  background: #18345d;
+  border-color: #28518b;
 }
 
 .tab-panel {
@@ -116,12 +140,12 @@ main {
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   padding: clamp(14px, 1.6vw, 20px);
-  box-shadow: 0 16px 34px var(--shadow);
+  box-shadow: 0 10px 24px var(--shadow);
 }
 
-h2 { margin: 0 0 12px; font-size: 18px; }
+h2 { margin: 0 0 12px; font-size: 18px; line-height: 1.2; letter-spacing: 0.01em; }
 
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 
@@ -178,9 +202,9 @@ button {
 }
 
 button.primary {
-  background: linear-gradient(135deg, #2973e8, #20a2ff);
+  background: linear-gradient(135deg, #2e79ee, #2490fb);
   color: #e8f3ff;
-  border-color: #3777df;
+  border-color: #3d7ee4;
   font-weight: 600;
 }
 
@@ -209,9 +233,15 @@ button.ghost {
 .header-link {
   padding: 9px 12px;
   border-radius: 999px;
-  border: 1px solid #2b63bc;
+  border: 1px solid #25548f;
   font-size: 12px;
   letter-spacing: 0.03em;
+}
+
+.header-link-secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: #9ec3f7;
 }
 
 pre {
@@ -344,7 +374,8 @@ details summary {
 }
 
 @media (max-width: 900px) {
-  h1 { font-size: 24px; }
+  .eyebrow { font-size: 22px; }
+  h2 { font-size: 17px; }
   .grid-2 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 }
 
