@@ -208,6 +208,11 @@ pre {
   font-family: 'JetBrains Mono', monospace;
 }
 
+#out {
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .history {
   display: grid;
   gap: 0.75rem;
