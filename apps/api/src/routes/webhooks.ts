@@ -504,12 +504,12 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
   // Auto-transfer conditions (ONLY for Brenda):
   // 1. Assistant finished speaking (status === 'stopped')
   // 2. It's the assistant speaking (role === 'assistant')
-  // 3. First turn (turn === 1)
+  // 3. First turn (Vapi may count from 0 or 1)
   // 4. It's Brenda specifically (assistantId check)
   if (
     status === 'stopped' && 
     role === 'assistant' && 
-    turn === 1 && 
+    (turn === 0 || turn === 1) && 
     assistantId === BRENDA_ASSISTANT_ID
   ) {
     console.log('Auto-transfer triggered for Brenda:', callId);
