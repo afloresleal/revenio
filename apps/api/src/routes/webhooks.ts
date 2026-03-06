@@ -9,7 +9,7 @@ import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 
 const router = Router();
 
-const DEFAULT_ADVISOR_NUMBER = '+525527326714';
+const DEFAULT_ADVISOR_NUMBER = process.env.TRANSFER_NUMBER ?? '+525527326714';
 const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 
@@ -543,8 +543,13 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
           destination: { type: 'number', number: DEFAULT_ADVISOR_NUMBER }
         })
       });
-      
+
+      console.log('Auto-transfer destination:', DEFAULT_ADVISOR_NUMBER);
       console.log('Auto-transfer response:', transferResp.status);
+      if (!transferResp.ok) {
+        const transferBody = await transferResp.text().catch(() => '');
+        console.error('Auto-transfer response body:', transferBody);
+      }
       
       // Update attempt status
       if (attempt) {
