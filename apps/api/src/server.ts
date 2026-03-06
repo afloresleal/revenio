@@ -499,6 +499,7 @@ const callDirectSchema = z.object({
   vapi_api_key: z.string().min(10).optional(),
   vapi_phone_number_id: z.string().min(6).optional(),
   vapi_assistant_id: z.string().min(6).optional(),
+  transfer_number: z.string().min(6).optional(),
   to_number: z.string().min(6),
   lead_id: z.string().uuid().optional(),
   lead_name: z.string().min(1).max(80).optional(),
@@ -572,11 +573,12 @@ app.post("/call/test/direct", async (req, res) => {
     return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
   }
 
-  const { vapi_api_key, vapi_phone_number_id, vapi_assistant_id, to_number, lead_id, lead_name, lead_source } =
+  const { vapi_api_key, vapi_phone_number_id, vapi_assistant_id, transfer_number, to_number, lead_id, lead_name, lead_source } =
     parsed.data;
   const resolvedVapiApiKey = vapi_api_key ?? VAPI_API_KEY;
   const resolvedVapiPhoneNumberId = vapi_phone_number_id ?? VAPI_PHONE_NUMBER_ID;
   const resolvedVapiAssistantId = vapi_assistant_id ?? VAPI_ASSISTANT_ID;
+  const resolvedTransferNumber = transfer_number ?? TRANSFER_NUMBER;
   const safeName = lead_name ? sanitizeName(lead_name) : null;
 
   if (!resolvedVapiApiKey || !resolvedVapiPhoneNumberId || !resolvedVapiAssistantId) {
@@ -609,7 +611,7 @@ app.post("/call/test/direct", async (req, res) => {
 
   // Build payload with assistantOverrides for personalized greeting (language-aware)
   const language = getLanguageForAssistant(resolvedVapiAssistantId);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, TRANSFER_NUMBER, language);
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, resolvedTransferNumber, language);
   const payload = {
     phoneNumberId: resolvedVapiPhoneNumberId,
     assistantId: resolvedVapiAssistantId,
@@ -665,6 +667,9 @@ app.post("/call/test/direct", async (req, res) => {
       status: "sent", 
       providerId: typeof data.id === "string" ? data.id : null,
       controlUrl: data?.monitor?.controlUrl ?? null,
+      resultJson: {
+        transferNumber: resolvedTransferNumber,
+      } as any,
     },
   });
 
@@ -683,6 +688,7 @@ app.post("/call/test/direct", async (req, res) => {
 
 const callVapiSchema = z.object({
   to_number: z.string().min(6),
+  transfer_number: z.string().min(6).optional(),
   lead_name: z.string().min(1).max(80).optional(),
   lead_id: z.string().uuid().optional(),
   lead_source: z.string().min(1).optional(),
@@ -711,7 +717,8 @@ app.post("/call/vapi", async (req, res) => {
     return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
   }
 
-  const { to_number, lead_name, lead_id, lead_source } = parsed.data;
+  const { to_number, transfer_number, lead_name, lead_id, lead_source } = parsed.data;
+  const resolvedTransferNumber = transfer_number ?? TRANSFER_NUMBER;
   const safeName = lead_name ? sanitizeName(lead_name) : null;
 
   // Get or create lead
@@ -739,7 +746,7 @@ app.post("/call/vapi", async (req, res) => {
 
   // Build VAPI payload using shared helper (language-aware)
   const language = getLanguageForAssistant(VAPI_ASSISTANT_ID);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, TRANSFER_NUMBER, language);
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, resolvedTransferNumber, language);
   const payload = {
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     assistantId: VAPI_ASSISTANT_ID,
@@ -799,6 +806,9 @@ app.post("/call/vapi", async (req, res) => {
       status: "sent", 
       providerId: typeof data.id === "string" ? data.id : null,
       controlUrl: data?.monitor?.controlUrl ?? null,
+      resultJson: {
+        transferNumber: resolvedTransferNumber,
+      } as any,
     },
   });
 

@@ -494,6 +494,10 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
   const call = asRecord(message?.call);
   const assistantId = asString(call?.assistantId);
   const callId = asString(call?.id);
+  const callMetadata = asRecord(call?.metadata);
+  const transferNumberFromCall =
+    asString(callMetadata?.transfer_number) ??
+    asString(callMetadata?.transferNumber);
   
   console.log('speech-update:', { status, role, turn, assistantId, callId });
   
@@ -512,6 +516,7 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
     
     // Find controlUrl in DB
     let controlUrl: string | null = null;
+    let transferNumber = transferNumberFromCall ?? DEFAULT_ADVISOR_NUMBER;
     
     try {
       const attempt = await prisma.callAttempt.findFirst({
@@ -520,6 +525,11 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
       });
       
       controlUrl = attempt?.controlUrl ?? null;
+      const attemptResult = asRecord(attempt?.resultJson);
+      transferNumber =
+        asString(attemptResult?.transferNumber) ??
+        asString(attemptResult?.transfer_number) ??
+        transferNumber;
       
       // Fallback: get from VAPI API if not in DB
       if (!controlUrl && callId && VAPI_API_KEY) {
@@ -540,11 +550,11 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'transfer',
-          destination: { type: 'number', number: DEFAULT_ADVISOR_NUMBER }
+          destination: { type: 'number', number: transferNumber }
         })
       });
 
-      console.log('Auto-transfer destination:', DEFAULT_ADVISOR_NUMBER);
+      console.log('Auto-transfer destination:', transferNumber);
       console.log('Auto-transfer response:', transferResp.status);
       if (!transferResp.ok) {
         const transferBody = await transferResp.text().catch(() => '');
