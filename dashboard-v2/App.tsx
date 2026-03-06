@@ -22,6 +22,7 @@ import {
   PhoneForwarded,
   Calendar,
   Search,
+  Mic,
   Smile,
   Meh,
   Frown,
@@ -416,7 +417,7 @@ export default function App() {
             {/* Logo & Title */}
             <div className="flex items-center gap-3">
               <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 shadow-lg shadow-blue-900/20">
-                <Activity className="text-white" size={20} />
+                <Mic className="text-white" size={20} />
               </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-white font-sans">
