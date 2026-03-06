@@ -65,9 +65,9 @@
               <label class="field-label">API base</label>
               <input id="api_base" class="field-input" placeholder="http://localhost:3000" />
             </div>
-            <div class="actions actions-row justify-end">
-              <button id="btn_validate" class="secondary">Validar IDs</button>
-              <button id="btn_load" class="ghost">Ir a histórico</button>
+            <div class="actions actions-row justify-end button-group">
+              <button id="btn_validate" class="secondary compact-btn">Validar IDs</button>
+              <button id="btn_load" class="ghost compact-btn">Ir a histórico</button>
             </div>
           </div>
         </section>
@@ -150,7 +150,7 @@
         <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
           <h3 class="section-title">Respuesta</h3>
           <div class="actions mt-3">
-            <button id="btn_retry_last" class="secondary" style="display:none;">Reintentar última acción</button>
+            <button id="btn_retry_last" class="secondary compact-btn" style="display:none;">Reintentar última acción</button>
           </div>
           <pre id="out" class="mt-3">Listo.</pre>
         </section>
@@ -177,8 +177,8 @@
               <input id="filter_to" class="field-input" placeholder="2026-02-28" />
             </div>
             <div class="actions actions-row">
-              <button id="btn_export" class="secondary">Exportar CSV</button>
-              <button id="btn_apply_filters" class="ghost">Aplicar filtros</button>
+              <button id="btn_export" class="secondary compact-btn">Exportar CSV</button>
+              <button id="btn_apply_filters" class="ghost compact-btn">Aplicar filtros</button>
             </div>
           </div>
           <div id="history" class="history mt-4">Sin datos.</div>

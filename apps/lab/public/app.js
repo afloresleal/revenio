@@ -481,8 +481,8 @@ async function loadHistory() {
       <div class="call-outcome ${outcomeClass}">${outcomeText}</div>
       <div class="history-actions">
         <span class="pill">${a.status ?? "unknown"}</span>
-        <button class="ghost" data-retry="${a.leadId}" data-phone="${a.lead?.phone ?? ""}">Reintentar llamada</button>
-        ${canSyncTranscript ? `<button class="ghost" data-sync-transcript="${a.id}">Sincronizar transcript</button>` : ""}
+        <button class="ghost compact-btn compact-btn--sm" data-retry="${a.leadId}" data-phone="${a.lead?.phone ?? ""}">Reintentar llamada</button>
+        ${canSyncTranscript ? `<button class="ghost compact-btn compact-btn--sm" data-sync-transcript="${a.id}">Sincronizar transcript</button>` : ""}
       </div>
       ${recordingUrl || stereoUrl ? `<div class="links" style="margin-top:6px;">
         ${recordingUrl ? `<a href="${recordingUrl}" target="_blank" rel="noreferrer">Audio (mono)</a>` : ""}
@@ -502,7 +502,7 @@ async function loadHistory() {
         transcript
           ? `<details open><summary>Transcript</summary>
               <div class="history-actions" style="margin-top:8px;">
-                <button class="ghost" data-copy-transcript="${a.id}">Copiar transcript</button>
+                <button class="ghost compact-btn compact-btn--sm" data-copy-transcript="${a.id}">Copiar transcript</button>
               </div>
               <div class="chat">${transcriptChat}</div>
             </details>`
