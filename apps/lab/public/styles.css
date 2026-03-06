@@ -44,7 +44,7 @@ body {
 .topbar-inner {
   width: min(1280px, calc(100% - 32px));
   margin: 0 auto;
-  min-height: 76px;
+  min-height: 80px;
   padding: 12px 0;
   display: flex;
   align-items: center;
@@ -73,7 +73,7 @@ body {
 
 .topbar-title {
   margin: 0;
-  font-size: clamp(24px, 3vw, 40px);
+  font-size: 40px;
   line-height: 1;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -123,11 +123,11 @@ body {
 /* Secondary top block */
 .hero {
   width: min(1280px, calc(100% - 32px));
-  margin: 18px auto 0;
-  padding: clamp(16px, 2.2vw, 24px);
+  margin: 14px auto 0;
+  padding: 16px 22px;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  background: linear-gradient(120deg, #0f172a 0%, #172a46 100%);
+  border-radius: 12px;
+  background: var(--surface);
 }
 
 .hero-brand {
@@ -146,25 +146,26 @@ body {
 }
 
 h1 {
-  margin: 6px 0 6px;
-  font-size: clamp(30px, 4vw, 56px);
-  line-height: 1.02;
-  letter-spacing: -0.02em;
+  margin: 4px 0 4px;
+  font-size: 20px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   font-weight: 700;
-  color: #dbeafe;
+  color: #f1f5f9;
 }
 
 .sub {
   margin: 0;
-  font-size: clamp(16px, 1.9vw, 35px);
+  font-size: 12px;
+  line-height: 1.35;
   color: #94a3b8;
 }
 
 main {
   width: min(1280px, calc(100% - 32px));
-  margin: 18px auto 0;
+  margin: 12px auto 0;
   display: grid;
-  gap: 16px;
+  gap: 12px;
   padding-bottom: 24px;
 }
 
@@ -172,17 +173,17 @@ main {
   display: inline-flex;
   gap: 8px;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 8px;
+  border-radius: 12px;
+  padding: 6px;
   background: var(--bg);
   max-width: 100%;
   overflow-x: auto;
 }
 
 .tab-button {
-  border-radius: 12px;
-  padding: 10px 16px;
-  font-size: 16px;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 14px;
   white-space: nowrap;
   color: #aab8cf;
   background: transparent;
@@ -202,20 +203,20 @@ main {
 
 .tab-panel.is-active {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: clamp(16px, 1.8vw, 22px);
+  border-radius: 12px;
+  padding: 16px 18px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 h2 {
   margin: 0 0 12px;
-  font-size: clamp(18px, 2vw, 48px);
+  font-size: 16px;
   line-height: 1.1;
   letter-spacing: -0.01em;
   color: #dbeafe;
@@ -223,21 +224,21 @@ h2 {
 
 label {
   display: block;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 input,
 select {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
   border: 1px solid #294c79;
   background: #06122a;
   color: var(--text);
   font-family: 'Outfit', sans-serif;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 input::placeholder,
@@ -254,7 +255,7 @@ select:focus {
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
+  gap: 12px;
   align-items: end;
 }
 
@@ -266,19 +267,19 @@ select:focus {
 }
 
 .card-actions {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 button {
-  padding: 10px 15px;
-  border-radius: 12px;
+  padding: 9px 14px;
+  border-radius: 10px;
   border: 1px solid #334155;
   cursor: pointer;
   background: transparent;
   color: var(--text);
   font-weight: 600;
   font-family: 'Outfit', sans-serif;
-  font-size: 15px;
+  font-size: 14px;
   transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
 }
 
@@ -433,7 +434,7 @@ details summary {
 
 .foot {
   width: min(1280px, calc(100% - 32px));
-  margin: 8px auto 20px;
+  margin: 4px auto 20px;
   color: #64748b;
   font-size: 12px;
 }
@@ -459,15 +460,15 @@ details summary {
 
 @media (max-width: 1100px) {
   .topbar-title {
-    font-size: 30px;
+    font-size: 34px;
   }
 
   h1 {
-    font-size: clamp(28px, 3.8vw, 44px);
+    font-size: 18px;
   }
 
   .sub {
-    font-size: clamp(16px, 2.2vw, 30px);
+    font-size: 12px;
   }
 }
 
@@ -506,11 +507,11 @@ details summary {
 
   .hero {
     margin-top: 12px;
-    border-radius: 14px;
+    border-radius: 12px;
   }
 
   .card {
-    border-radius: 14px;
+    border-radius: 12px;
   }
 
   .grid-2 {
