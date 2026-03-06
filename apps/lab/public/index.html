@@ -3,52 +3,76 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Revenio Call Lab</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>Revenio Voice Metrics · Lab</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                850: '#151e2e',
+                950: '#020617',
+              },
+            },
+            fontFamily: {
+              sans: ['Outfit', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+          },
+        },
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div class="topbar-brand">
-          <div class="brand-icon">V</div>
-          <div>
-            <p class="topbar-title">Revenio <span>Voice Metrics</span></p>
-            <p class="topbar-sub">LAB OPERATIONS</p>
+  <body class="min-h-screen bg-slate-950 text-slate-200 pb-10 selection:bg-blue-500/30">
+    <header class="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between h-auto sm:h-20 py-4 sm:py-0 gap-4">
+          <div class="flex items-center gap-3">
+            <div class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 shadow-lg shadow-blue-900/20">
+              <span class="text-white font-bold">V</span>
+              <div class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-emerald-500 border-2 border-slate-950"></div>
+            </div>
+            <div>
+              <h1 class="text-xl font-bold tracking-tight text-white font-sans">Revenio <span class="text-slate-500 font-normal">Voice Metrics</span></h1>
+              <p class="text-xs text-slate-500 font-mono flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                LAB OPERATIONS
+              </p>
+            </div>
           </div>
-        </div>
-        <div class="topbar-actions">
-          <a href="/campaign.html" class="header-link" target="_blank" rel="noreferrer">Landing</a>
-          <a href="https://exquisite-sparkle-production.up.railway.app" class="header-link" target="_blank" rel="noreferrer">Dashboard</a>
+
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <a href="/campaign.html" target="_blank" rel="noreferrer" class="inline-flex items-center justify-center rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">Landing</a>
+            <a href="https://exquisite-sparkle-production.up.railway.app" target="_blank" rel="noreferrer" class="inline-flex items-center justify-center rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">Dashboard</a>
+          </div>
         </div>
       </div>
     </header>
 
-    <section class="hero">
-      <div class="hero-brand">
-        <div>
-          <p class="eyebrow">REVENIO LAB</p>
-          <h1>Pruebas de llamadas Vapi/Twilio</h1>
-          <p class="sub">Configura credenciales, valida IDs y lanza llamadas.</p>
-        </div>
-      </div>
-    </section>
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+      <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.14em] text-slate-500 mb-2">Revenio Lab</p>
+        <h2 class="text-2xl md:text-3xl font-semibold text-slate-100 tracking-tight">Pruebas de llamadas Vapi/Twilio</h2>
+        <p class="text-sm text-slate-400 mt-2">Configura credenciales, valida IDs y lanza llamadas.</p>
+      </section>
 
-    <main>
-      <nav class="tabs" aria-label="Vistas del Lab">
+      <nav class="inline-flex gap-2 p-1 rounded-xl border border-slate-800 bg-slate-900/60" aria-label="Vistas del Lab">
         <button id="tab_ops" class="tab-button is-active" data-tab-target="ops">Operación</button>
         <button id="tab_history" class="tab-button" data-tab-target="history">Histórico</button>
       </nav>
 
-      <section id="panel_ops" class="tab-panel is-active">
-        <section class="card">
-          <h2>Conexión</h2>
-          <div class="grid-2">
+      <section id="panel_ops" class="tab-panel is-active space-y-4">
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+          <h3 class="section-title">Conexión</h3>
+          <div class="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
             <div>
-              <label>API base</label>
-              <input id="api_base" placeholder="http://localhost:3000" />
+              <label class="field-label">API base</label>
+              <input id="api_base" class="field-input" placeholder="http://localhost:3000" />
             </div>
             <div class="actions">
               <button id="btn_validate" class="secondary">Validar IDs</button>
@@ -57,60 +81,61 @@
           </div>
         </section>
 
-        <section class="card">
-          <h2>Credenciales Vapi</h2>
-          <div class="grid-2">
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+          <h3 class="section-title">Credenciales Vapi</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
             <div>
-              <label>VAPI API Key (privada)</label>
-              <input id="vapi_api_key" placeholder="pegala aquí" />
+              <label class="field-label">VAPI API Key (privada)</label>
+              <input id="vapi_api_key" class="field-input" placeholder="pegala aquí" />
             </div>
             <div>
-              <label>Assistant ID</label>
-              <input id="vapi_assistant_id" placeholder="0729e12a-..." />
+              <label class="field-label">Assistant ID</label>
+              <input id="vapi_assistant_id" class="field-input" placeholder="0729e12a-..." />
             </div>
             <div>
-              <label>Phone Number ID</label>
-              <input id="vapi_phone_number_id" placeholder="a2e74332-..." />
+              <label class="field-label">Phone Number ID</label>
+              <input id="vapi_phone_number_id" class="field-input" placeholder="a2e74332-..." />
             </div>
             <div>
-              <label>Número de transferencia (E.164)</label>
-              <input id="transfer_number" placeholder="+5255..." />
+              <label class="field-label">Número de transferencia (E.164)</label>
+              <input id="transfer_number" class="field-input" placeholder="+5255..." />
             </div>
             <div>
-              <label>Número del lead (E.164)</label>
-              <input id="to_number" placeholder="+5255..." />
+              <label class="field-label">Número del lead (E.164)</label>
+              <input id="to_number" class="field-input" placeholder="+5255..." />
             </div>
           </div>
-          <div class="grid-2 card-actions">
+
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1fr_1fr_auto] gap-3 mt-3">
             <div>
-              <label>Assistants (desde Vapi)</label>
-              <select id="assistant_select"></select>
+              <label class="field-label">Assistants (desde Vapi)</label>
+              <select id="assistant_select" class="field-input"></select>
             </div>
             <div>
-              <label>Phone Numbers (desde Vapi)</label>
-              <select id="phone_select"></select>
+              <label class="field-label">Phone Numbers (desde Vapi)</label>
+              <select id="phone_select" class="field-input"></select>
             </div>
-            <div class="actions">
+            <div class="actions self-end">
               <button id="btn_load_assistants" class="ghost">Cargar assistants</button>
               <button id="btn_load_numbers" class="ghost">Cargar números</button>
             </div>
           </div>
         </section>
 
-        <section class="card">
-          <h2>Lead</h2>
-          <div class="grid-2">
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+          <h3 class="section-title">Lead</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
             <div>
-              <label>Nombre</label>
-              <input id="lead_name" placeholder="Test" />
+              <label class="field-label">Nombre</label>
+              <input id="lead_name" class="field-input" placeholder="Test" />
             </div>
             <div>
-              <label>Fuente</label>
-              <input id="lead_source" placeholder="manual" />
+              <label class="field-label">Fuente</label>
+              <input id="lead_source" class="field-input" placeholder="manual" />
             </div>
             <div>
-              <label>Lead ID (opcional)</label>
-              <input id="lead_id" placeholder="si ya existe" />
+              <label class="field-label">Lead ID (opcional)</label>
+              <input id="lead_id" class="field-input" placeholder="si ya existe" />
             </div>
             <div class="actions">
               <button id="btn_call" class="primary">Crear lead + Llamar</button>
@@ -118,47 +143,47 @@
           </div>
         </section>
 
-        <section class="card">
-          <h2>Respuesta</h2>
-          <div class="actions card-actions">
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+          <h3 class="section-title">Respuesta</h3>
+          <div class="actions mt-3">
             <button id="btn_retry_last" class="secondary" style="display:none;">Reintentar última acción</button>
           </div>
-          <pre id="out">Listo.</pre>
+          <pre id="out" class="mt-3">Listo.</pre>
         </section>
       </section>
 
-      <section id="panel_history" class="tab-panel">
-        <section class="card">
-          <h2>Historial</h2>
-          <div class="grid-2 card-actions">
+      <section id="panel_history" class="tab-panel space-y-4">
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+          <h3 class="section-title">Historial</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 mt-3 items-end">
             <div>
-              <label>Filtrar por status</label>
-              <input id="filter_status" placeholder="sent, failed, etc." />
+              <label class="field-label">Filtrar por status</label>
+              <input id="filter_status" class="field-input" placeholder="sent, failed, etc." />
             </div>
             <div>
-              <label>Filtrar por lead (nombre o tel)</label>
-              <input id="filter_lead" placeholder="Test o +52..." />
+              <label class="field-label">Filtrar por lead (nombre o tel)</label>
+              <input id="filter_lead" class="field-input" placeholder="Test o +52..." />
             </div>
             <div>
-              <label>Desde (YYYY-MM-DD)</label>
-              <input id="filter_from" placeholder="2026-02-01" />
+              <label class="field-label">Desde (YYYY-MM-DD)</label>
+              <input id="filter_from" class="field-input" placeholder="2026-02-01" />
             </div>
             <div>
-              <label>Hasta (YYYY-MM-DD)</label>
-              <input id="filter_to" placeholder="2026-02-28" />
+              <label class="field-label">Hasta (YYYY-MM-DD)</label>
+              <input id="filter_to" class="field-input" placeholder="2026-02-28" />
             </div>
             <div class="actions">
               <button id="btn_export" class="secondary">Exportar CSV</button>
               <button id="btn_apply_filters" class="ghost">Aplicar filtros</button>
             </div>
           </div>
-          <div id="history" class="history">Sin datos.</div>
+          <div id="history" class="history mt-4">Sin datos.</div>
         </section>
       </section>
     </main>
 
-    <footer class="foot">
-      <span>Revenio Voice Metrics · Lab</span>
+    <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 text-xs text-slate-500">
+      Revenio Voice Metrics · Lab
     </footer>
 
     <script src="/app.js"></script>
