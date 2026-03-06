@@ -43,6 +43,24 @@ let retryLastAction = null;
 let historyLoaded = false;
 const CDMX_TIMEZONE = "America/Mexico_City";
 
+function setupDatePickerBehavior() {
+  ["filter_from", "filter_to"].forEach((id) => {
+    const input = $(id);
+    if (!input) return;
+    const openPicker = () => {
+      if (typeof input.showPicker === "function") {
+        try {
+          input.showPicker();
+        } catch {
+          // Ignore browsers that block programmatic picker open.
+        }
+      }
+    };
+    input.addEventListener("focus", openPicker);
+    input.addEventListener("click", openPicker);
+  });
+}
+
 function setActiveTab(tabName) {
   tabButtons.forEach((button) => {
     const isActive = button.dataset.tabTarget === tabName;
@@ -578,3 +596,4 @@ async function loadHistory() {
 }
 
 setActiveTab("ops");
+setupDatePickerBehavior();
