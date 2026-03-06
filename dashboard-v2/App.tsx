@@ -423,10 +423,7 @@ export default function App() {
                 <h1 className="text-xl font-bold tracking-tight text-white font-sans">
                   Revenio <span className="text-slate-500 font-normal">Voice Metrics</span>
                 </h1>
-                <p className="text-xs text-slate-500 font-mono flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  SYSTEM OPERATIONAL
-                </p>
+                <p className="text-xs text-slate-500 font-mono">SYSTEM OPERATIONAL</p>
               </div>
             </div>
 
