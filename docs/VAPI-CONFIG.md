@@ -181,10 +181,59 @@ Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propieda
 
 ---
 
-## 10. Historial de Cambios
+## 10. Transfer Fallback Behavior (2026-03-05)
+
+Cuando la transferencia al vendedor falla (no contesta, ocupado, timeout), el sistema NO corta la llamada abruptamente. En su lugar:
+
+### Flujo de Fallback
+
+```
+Cliente contesta → Bot saluda → Transfer iniciado
+                                      ↓
+                    ┌─────────────────┴─────────────────┐
+                    ↓                                   ↓
+              Vendedor contesta                  Vendedor NO contesta
+                    ↓                                   ↓
+              Llamada continúa               Mensaje fallback automático
+                                                        ↓
+                                            "I apologize, our property
+                                             specialists are currently
+                                             assisting other clients.
+                                             We have your contact info
+                                             and someone will call you
+                                             back within 30 minutes..."
+                                                        ↓
+                                                Llamada termina
+                                                  gracefully
+```
+
+### Mensajes Configurados
+
+| Tipo | Mensaje (English) |
+|------|-------------------|
+| `request-start` | "Please hold while I connect you with a property specialist." |
+| `request-failed` | "I apologize, our property specialists are currently assisting other clients. We have your contact information and someone will call you back within the next 30 minutes. Thank you for your interest in Caribbean Luxury Homes!" |
+
+### Tool Structure (VAPI)
+
+```json
+{
+  "type": "transferCall",
+  "destinations": [{"type": "number", "number": "+525527326714"}],
+  "messages": [
+    {"type": "request-start", "content": "Please hold..."},
+    {"type": "request-failed", "content": "I apologize..."}
+  ]
+}
+```
+
+---
+
+## 11. Historial de Cambios
 
 | Fecha | Cambio | Autor |
 |-------|--------|-------|
+| 2026-03-05 | Fix {{name}} interpolación + Transfer fallback behavior | Julia |
 | 2026-03-04 | Rebrand a Caribbean Luxury Homes, nuevos scripts Brenda/Bella | Julia |
 | 2026-03-04 | Edge cases para Bella (negativo, timeout, ambiguo) | Julia |
 | 2026-02-18 | Agregado "NO generes mensaje" al prompt | Julia |

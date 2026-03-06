@@ -10,6 +10,8 @@ import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 const router = Router();
 
 const DEFAULT_ADVISOR_NUMBER = '+525527326714';
+const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
+const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 
 function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
   if (!reason) return false;
@@ -476,6 +478,92 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   return { ok: true, callId, transferred: true, destination: transferNumber, eventType };
 }
 
+/**
+ * Auto-transfer handler for Brenda
+ * Triggers transfer after first assistant message (turn 1)
+ */
+async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null> {
+  const root = asRecord(body);
+  const message = asRecord(root?.message) || root;
+  
+  if (asString(message?.type) !== 'speech-update') return null;
+  
+  const status = asString(message?.status);
+  const role = asString(message?.role);
+  const turn = asNumber(message?.turn);
+  const call = asRecord(message?.call);
+  const assistantId = asString(call?.assistantId);
+  const callId = asString(call?.id);
+  
+  console.log('speech-update:', { status, role, turn, assistantId, callId });
+  
+  // Auto-transfer conditions (ONLY for Brenda):
+  // 1. Assistant finished speaking (status === 'stopped')
+  // 2. It's the assistant speaking (role === 'assistant')
+  // 3. First turn (turn === 1)
+  // 4. It's Brenda specifically (assistantId check)
+  if (
+    status === 'stopped' && 
+    role === 'assistant' && 
+    turn === 1 && 
+    assistantId === BRENDA_ASSISTANT_ID
+  ) {
+    console.log('Auto-transfer triggered for Brenda:', callId);
+    
+    // Find controlUrl in DB
+    let controlUrl: string | null = null;
+    
+    try {
+      const attempt = await prisma.callAttempt.findFirst({
+        where: { providerId: callId },
+        orderBy: { createdAt: 'desc' }
+      });
+      
+      controlUrl = attempt?.controlUrl ?? null;
+      
+      // Fallback: get from VAPI API if not in DB
+      if (!controlUrl && callId && VAPI_API_KEY) {
+        const callData = await fetch(`https://api.vapi.ai/call/${callId}`, {
+          headers: { 'Authorization': `Bearer ${VAPI_API_KEY}` }
+        }).then(r => r.json()).catch(() => null);
+        controlUrl = callData?.monitor?.controlUrl ?? null;
+      }
+      
+      if (!controlUrl) {
+        console.error('No controlUrl available for auto-transfer:', callId);
+        return { ok: false, error: 'no_control_url', callId };
+      }
+      
+      // Execute transfer
+      const transferResp = await fetch(controlUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'transfer',
+          destination: { type: 'number', number: DEFAULT_ADVISOR_NUMBER }
+        })
+      });
+      
+      console.log('Auto-transfer response:', transferResp.status);
+      
+      // Update attempt status
+      if (attempt) {
+        await prisma.callAttempt.update({
+          where: { id: attempt.id },
+          data: { status: 'auto-transferred' }
+        });
+      }
+      
+      return { ok: true, action: 'auto-transfer', callId, transferStatus: transferResp.status };
+    } catch (e) {
+      console.error('Auto-transfer failed:', e);
+      return { ok: false, error: 'transfer_failed', callId, message: String(e) };
+    }
+  }
+  
+  return { ok: true, ignored: true, reason: 'conditions-not-met' };
+}
+
 router.post('/vapi/metrics', async (req, res) => {
   try {
     const endOfCall = await processEndOfCallReport(req.body);
@@ -544,6 +632,16 @@ router.post('/vapi/transfer', async (req, res) => {
  */
 router.post('/vapi/events', async (req, res) => {
   try {
+    // Auto-transfer for Brenda (speech-update handler)
+    const speechUpdate = await processSpeechUpdate(req.body);
+    if (speechUpdate) {
+      if (speechUpdate.ok === false) return res.status(400).json(speechUpdate);
+      if (asRecord(speechUpdate)?.action === 'auto-transfer') {
+        return res.json({ ...speechUpdate, via: 'speech-update-auto-transfer' });
+      }
+      // If ignored, continue processing other event types
+    }
+
     const endOfCall = await processEndOfCallReport(req.body);
     if (endOfCall) {
       if (endOfCall.ok === false) return res.status(400).json(endOfCall);

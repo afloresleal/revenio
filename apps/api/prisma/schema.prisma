@@ -35,6 +35,7 @@ model CallAttempt {
   createdAt  DateTime  @default(now())
   status     String
   providerId String?
+  controlUrl String?   @map("control_url")
   resultJson Json?
 }
 

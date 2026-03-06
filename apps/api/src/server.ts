@@ -485,7 +485,11 @@ app.post("/call/test", async (req, res) => {
 
   await prisma.callAttempt.update({
     where: { id: attempt.id },
-    data: { status: "sent", providerId: typeof data.id === "string" ? data.id : null },
+    data: { 
+      status: "sent", 
+      providerId: typeof data.id === "string" ? data.id : null,
+      controlUrl: data?.monitor?.controlUrl ?? null,
+    },
   });
 
   return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
@@ -657,7 +661,11 @@ app.post("/call/test/direct", async (req, res) => {
 
   await prisma.callAttempt.update({
     where: { id: attempt.id },
-    data: { status: "sent", providerId: typeof data.id === "string" ? data.id : null },
+    data: { 
+      status: "sent", 
+      providerId: typeof data.id === "string" ? data.id : null,
+      controlUrl: data?.monitor?.controlUrl ?? null,
+    },
   });
 
   return res.json({ 
@@ -787,7 +795,11 @@ app.post("/call/vapi", async (req, res) => {
 
   await prisma.callAttempt.update({
     where: { id: attempt.id },
-    data: { status: "sent", providerId: typeof data.id === "string" ? data.id : null },
+    data: { 
+      status: "sent", 
+      providerId: typeof data.id === "string" ? data.id : null,
+      controlUrl: data?.monitor?.controlUrl ?? null,
+    },
   });
 
   return res.json({ 
