@@ -230,8 +230,8 @@ $("btn_call").addEventListener("click", async () => {
     vapi_phone_number_id: $("vapi_phone_number_id").value.trim(),
     transfer_number: $("transfer_number").value.trim() || undefined,
     to_number: $("to_number").value.trim(),
-    lead_name: $("lead_name").value.trim(),
-    lead_source: $("lead_source").value.trim(),
+    lead_name: $("lead_name").value.trim() || undefined,
+    lead_source: $("lead_source").value.trim() || undefined,
     lead_id: $("lead_id").value.trim() || undefined,
   };
   const result = await post("/call/test/direct", payload);
