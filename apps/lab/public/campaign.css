@@ -1,13 +1,13 @@
 :root {
-  --bg: #0a1116;
-  --panel: #101b23;
-  --text: #f3f7fb;
-  --muted: #9fb0be;
-  --line: #2a3a47;
-  --brand: #ffd166;
-  --brand-2: #ff9f4a;
-  --ok: #79d09f;
-  --error: #ff6b6b;
+  --bg: #030b1b;
+  --panel: #0d172a;
+  --text: #dbe8ff;
+  --muted: #7f94b8;
+  --line: #1c3156;
+  --brand: #2f7df6;
+  --brand-2: #20a2ff;
+  --ok: #20d6a5;
+  --error: #ff5d7a;
 }
 
 * {
@@ -18,8 +18,8 @@ body {
   margin: 0;
   font-family: "Sora", "Manrope", system-ui, -apple-system, sans-serif;
   background:
-    radial-gradient(1000px 600px at -10% 0%, #2f4f66 0%, transparent 50%),
-    radial-gradient(900px 550px at 110% -10%, #5a321f 0%, transparent 45%),
+    radial-gradient(1000px 600px at -10% 0%, #153974 0%, transparent 52%),
+    radial-gradient(900px 550px at 110% -10%, #0f1f47 0%, transparent 48%),
     var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -36,7 +36,7 @@ body {
 
 .kicker {
   margin: 0 0 8px;
-  color: var(--brand);
+  color: #7ad7ff;
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-size: 12px;
@@ -55,7 +55,7 @@ h1 {
 }
 
 .card {
-  background: linear-gradient(170deg, #101b23 0%, #0e171f 100%);
+  background: linear-gradient(170deg, #0f1a30 0%, #0d172a 100%);
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 22px;
@@ -77,13 +77,13 @@ input {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px 13px;
-  background: #0b141b;
+  background: #0b1323;
   color: var(--text);
   margin-bottom: 8px;
 }
 
 input:focus {
-  outline: 2px solid rgba(255, 209, 102, 0.45);
+  outline: 2px solid rgba(47, 125, 246, 0.45);
   outline-offset: 1px;
 }
 
@@ -94,7 +94,7 @@ button {
   padding: 13px 16px;
   cursor: pointer;
   font-weight: 700;
-  color: #231300;
+  color: #e8f3ff;
   background: linear-gradient(135deg, var(--brand), var(--brand-2));
 }
 

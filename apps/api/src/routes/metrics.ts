@@ -7,8 +7,8 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
-// Minimum duration (seconds) for a transfer to count as "connected"
-// Previously 35s, lowered to 10s since VAPI transfers are quick
+// Minimum duration fallback for transfer connection heuristic.
+// Some providers report duration=0 even when transfer is successful.
 const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
 
 // Helper: Get date range for period
@@ -69,6 +69,27 @@ router.get('/summary', async (req, res) => {
       }),
     ]);
     
+    const connectedTransferWhereCurrent = {
+      startedAt: { gte: startDate, lt: endDate },
+      outcome: 'transfer_success',
+      OR: [
+        { transferredAt: { not: null } },
+        { durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC } },
+        { endedReason: { contains: 'forward', mode: 'insensitive' as const } },
+        { endedReason: { contains: 'transfer', mode: 'insensitive' as const } },
+      ],
+    };
+    const connectedTransferWherePrevious = {
+      startedAt: { gte: prevStartDate, lt: prevEndDate },
+      outcome: 'transfer_success',
+      OR: [
+        { transferredAt: { not: null } },
+        { durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC } },
+        { endedReason: { contains: 'forward', mode: 'insensitive' as const } },
+        { endedReason: { contains: 'transfer', mode: 'insensitive' as const } },
+      ],
+    };
+
     // Group by outcome and sentiment
     const [outcomes, sentiments, inProgress, connectedTransfers, prevConnectedTransfers, prevOutcomes] = await Promise.all([
       prisma.callMetric.groupBy({
@@ -85,18 +106,10 @@ router.get('/summary', async (req, res) => {
         where: { inProgress: true },
       }),
       prisma.callMetric.count({
-        where: {
-          startedAt: { gte: startDate, lt: endDate },
-          outcome: 'transfer_success',
-          durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC },
-        },
+        where: connectedTransferWhereCurrent,
       }),
       prisma.callMetric.count({
-        where: {
-          startedAt: { gte: prevStartDate, lt: prevEndDate },
-          outcome: 'transfer_success',
-          durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC },
-        },
+        where: connectedTransferWherePrevious,
       }),
       prisma.callMetric.groupBy({
         by: ['outcome'],
