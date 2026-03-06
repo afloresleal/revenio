@@ -159,7 +159,7 @@
       <section id="panel_history" class="tab-panel space-y-4">
         <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
           <h3 class="section-title">Historial</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mt-4 items-end">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_minmax(220px,1fr)_minmax(170px,0.9fr)_minmax(170px,0.9fr)_auto] gap-4 mt-4 items-end">
             <div>
               <label class="field-label">Filtrar por status</label>
               <input id="filter_status" class="field-input" placeholder="sent, failed, etc." />
@@ -170,13 +170,13 @@
             </div>
             <div>
               <label class="field-label">Desde (YYYY-MM-DD)</label>
-              <input id="filter_from" class="field-input" placeholder="2026-02-01" />
+              <input id="filter_from" type="date" class="field-input" />
             </div>
             <div>
               <label class="field-label">Hasta (YYYY-MM-DD)</label>
-              <input id="filter_to" class="field-input" placeholder="2026-02-28" />
+              <input id="filter_to" type="date" class="field-input" />
             </div>
-            <div class="actions actions-row">
+            <div class="actions actions-row actions-inline">
               <button id="btn_export" class="secondary compact-btn">Exportar CSV</button>
               <button id="btn_apply_filters" class="ghost compact-btn">Aplicar filtros</button>
             </div>

@@ -89,6 +89,15 @@ body {
   color: rgb(100 116 139);
 }
 
+.field-input[type="date"] {
+  color-scheme: dark;
+}
+
+.field-input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(85%) sepia(8%) saturate(335%) hue-rotate(177deg) brightness(90%) contrast(86%);
+}
+
 .field-input:focus {
   border-color: rgb(59 130 246);
   box-shadow: 0 0 0 1px rgb(59 130 246 / 0.5);
@@ -110,6 +119,10 @@ body {
 
 .actions-row {
   justify-content: flex-start;
+}
+
+.actions-inline {
+  flex-wrap: nowrap;
 }
 
 .actions-row button {
@@ -365,6 +378,10 @@ details summary:hover {
 @media (max-width: 1280px) {
   .actions-row {
     width: 100%;
+  }
+
+  .actions-inline {
+    flex-wrap: wrap;
   }
 
   .actions-row button {
