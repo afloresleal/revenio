@@ -417,7 +417,6 @@ export default function App() {
             <div className="flex items-center gap-3">
               <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 shadow-lg shadow-blue-900/20">
                 <Activity className="text-white" size={20} />
-                <div className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-emerald-500 border-2 border-slate-950 animate-pulse"></div>
               </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-white font-sans">

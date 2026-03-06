@@ -35,7 +35,6 @@
           <div class="flex items-center gap-3">
             <div class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 shadow-lg shadow-blue-900/20">
               <span class="text-white font-bold">V</span>
-              <div class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-emerald-500 border-2 border-slate-950"></div>
             </div>
             <div>
               <h1 class="text-xl font-bold tracking-tight text-white font-sans">Revenio <span class="text-slate-500 font-normal">Voice Metrics</span></h1>
@@ -75,32 +74,35 @@
 
         <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
           <h3 class="section-title">Credenciales Vapi</h3>
-          <p class="section-help">Paso 2. Carga assistants y números desde Vapi. Usa campos manuales solo si es necesario.</p>
+          <p class="section-help">Paso 2. Carga assistants y números desde Vapi; también puedes capturar IDs manualmente.</p>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="md:col-span-2">
               <label class="field-label">VAPI API Key (privada)</label>
               <input id="vapi_api_key" class="field-input" placeholder="pegala aquí" />
             </div>
-            <div>
-              <label class="field-label">Assistants (desde Vapi)</label>
-              <select id="assistant_select" class="field-input"></select>
-            </div>
-            <div>
-              <label class="field-label">Phone Numbers (desde Vapi)</label>
-              <select id="phone_select" class="field-input"></select>
+          </div>
+
+          <div class="subsection">
+            <p class="subsection-title">Selección desde Vapi</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div>
+                <label class="field-label">Assistants (desde Vapi)</label>
+                <select id="assistant_select" class="field-input"></select>
+              </div>
+              <div>
+                <label class="field-label">Phone Numbers (desde Vapi)</label>
+                <select id="phone_select" class="field-input"></select>
+              </div>
+              <div>
+                <label class="field-label">Número de transferencia (E.164)</label>
+                <input id="transfer_number" class="field-input" placeholder="+5255..." />
+              </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div class="actions actions-row md:col-span-2 justify-end">
-              <button id="btn_load_assistants" class="ghost">Cargar assistants</button>
-              <button id="btn_load_numbers" class="ghost">Cargar números</button>
-            </div>
-          </div>
-
-          <details class="mt-4 advanced">
-            <summary>Configuración avanzada (manual)</summary>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+          <div class="subsection">
+            <p class="subsection-title">IDs manuales</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="field-label">Assistant ID</label>
                 <input id="vapi_assistant_id" class="field-input" placeholder="0729e12a-..." />
@@ -109,18 +111,22 @@
                 <label class="field-label">Phone Number ID</label>
                 <input id="vapi_phone_number_id" class="field-input" placeholder="a2e74332-..." />
               </div>
-              <div>
-                <label class="field-label">Número de transferencia (E.164)</label>
-                <input id="transfer_number" class="field-input" placeholder="+5255..." />
-              </div>
             </div>
-          </details>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div>
+            <div class="actions actions-row md:col-span-2 justify-end button-group">
+              <button id="btn_load_assistants" class="ghost">Cargar assistants</button>
+              <button id="btn_load_numbers" class="ghost">Cargar números</button>
+            </div>
+          </div>
         </section>
 
         <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
           <h3 class="section-title">Lead</h3>
           <p class="section-help">Paso 3. Define a quién llamar y ejecuta la prueba.</p>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-end">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
             <div>
               <label class="field-label">Número del lead (E.164)</label>
               <input id="to_number" class="field-input" placeholder="+5255..." />
@@ -133,19 +139,14 @@
               <label class="field-label">Fuente</label>
               <input id="lead_source" class="field-input" placeholder="manual" />
             </div>
-            <div class="actions actions-row md:col-span-2 xl:col-span-3 justify-end">
+            <div>
+              <label class="field-label">Lead ID (opcional)</label>
+              <input id="lead_id" class="field-input" placeholder="si ya existe" />
+            </div>
+            <div class="actions actions-row md:col-span-2 xl:col-span-4 justify-end button-group">
               <button id="btn_call" class="primary">Crear lead + Llamar</button>
             </div>
           </div>
-          <details class="mt-4 advanced">
-            <summary>Opcional: usar Lead ID existente</summary>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-              <div>
-                <label class="field-label">Lead ID (opcional)</label>
-                <input id="lead_id" class="field-input" placeholder="si ya existe" />
-              </div>
-            </div>
-          </details>
         </section>
 
         <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
