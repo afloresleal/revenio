@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "prisma generate && prisma db push --accept-data-loss && tsc -p tsconfig.json",
+    "build": "prisma generate && tsc -p tsconfig.json",
     "prestart": "prisma generate",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:push:dev": "prisma db push"
   },
   "dependencies": {
     "@prisma/client": "^5.17.0",
