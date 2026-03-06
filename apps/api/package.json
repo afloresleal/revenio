@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "build": "prisma generate && prisma db push --accept-data-loss && tsc -p tsconfig.json",
     "prestart": "prisma generate",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
