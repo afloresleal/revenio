@@ -37,9 +37,32 @@ const historyEl = $("history");
 const assistantSelect = $("assistant_select");
 const phoneSelect = $("phone_select");
 const retryLastBtn = $("btn_retry_last");
+const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
 let lastHistory = null;
 let retryLastAction = null;
+let historyLoaded = false;
 const CDMX_TIMEZONE = "America/Mexico_City";
+
+function setActiveTab(tabName) {
+  tabButtons.forEach((button) => {
+    const isActive = button.dataset.tabTarget === tabName;
+    button.classList.toggle("is-active", isActive);
+  });
+  const opsPanel = $("panel_ops");
+  const historyPanel = $("panel_history");
+  if (opsPanel) opsPanel.classList.toggle("is-active", tabName === "ops");
+  if (historyPanel) historyPanel.classList.toggle("is-active", tabName === "history");
+
+  if (tabName === "history" && !historyLoaded) {
+    loadHistory().catch(() => {});
+  }
+}
+
+tabButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setActiveTab(button.dataset.tabTarget);
+  });
+});
 
 function formatDateTimeCDMX(value) {
   return new Date(value).toLocaleString("es-MX", {
@@ -246,6 +269,7 @@ $("btn_call").addEventListener("click", async () => {
 });
 
 $("btn_load").addEventListener("click", async () => {
+  setActiveTab("history");
   await loadHistory();
 });
 
@@ -319,6 +343,7 @@ async function loadHistory() {
     return;
   }
   clearRetryAction();
+  historyLoaded = true;
 
   lastHistory = result.data;
   let attempts = result.data.attempts;
@@ -552,4 +577,4 @@ async function loadHistory() {
   });
 }
 
-loadHistory().catch(() => {});
+setActiveTab("ops");
