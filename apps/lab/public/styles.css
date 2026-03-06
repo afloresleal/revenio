@@ -77,19 +77,26 @@ body {
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
   flex-wrap: wrap;
+}
+
+.actions-row {
+  justify-content: flex-start;
 }
 
 button {
   border-radius: 0.5rem;
   border: 1px solid rgb(51 65 85);
-  padding: 0.5rem 0.875rem;
+  padding: 0.5rem 0.95rem;
   font-size: 0.875rem;
   font-weight: 600;
   color: rgb(203 213 225);
   background: transparent;
   cursor: pointer;
+  min-height: 2.35rem;
+  line-height: 1;
+  white-space: nowrap;
   transition: all 160ms ease;
 }
 
@@ -264,12 +271,23 @@ details summary:hover {
   background: #475569;
 }
 
+@media (max-width: 1280px) {
+  .actions-row {
+    width: 100%;
+  }
+
+  .actions-row button {
+    flex: 1 1 180px;
+    justify-content: center;
+  }
+}
+
 @media (max-width: 640px) {
   .actions {
     width: 100%;
   }
 
   .actions button {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
   }
 }
