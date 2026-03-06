@@ -84,25 +84,27 @@
 
           <div class="subsection">
             <p class="subsection-title">Selección desde Vapi</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <div>
                 <label class="field-label">Assistants (desde Vapi)</label>
-                <select id="assistant_select" class="field-input"></select>
+                <div class="field-with-action">
+                  <select id="assistant_select" class="field-input"></select>
+                  <button id="btn_load_assistants" class="ghost">Cargar assistants</button>
+                </div>
               </div>
               <div>
                 <label class="field-label">Phone Numbers (desde Vapi)</label>
-                <select id="phone_select" class="field-input"></select>
-              </div>
-              <div>
-                <label class="field-label">Número de transferencia (E.164)</label>
-                <input id="transfer_number" class="field-input" placeholder="+5255..." />
+                <div class="field-with-action">
+                  <select id="phone_select" class="field-input"></select>
+                  <button id="btn_load_numbers" class="ghost">Cargar números</button>
+                </div>
               </div>
             </div>
           </div>
 
           <div class="subsection">
             <p class="subsection-title">IDs manuales</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label class="field-label">Assistant ID</label>
                 <input id="vapi_assistant_id" class="field-input" placeholder="0729e12a-..." />
@@ -111,14 +113,10 @@
                 <label class="field-label">Phone Number ID</label>
                 <input id="vapi_phone_number_id" class="field-input" placeholder="a2e74332-..." />
               </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div>
-            <div class="actions actions-row md:col-span-2 justify-end button-group">
-              <button id="btn_load_assistants" class="ghost">Cargar assistants</button>
-              <button id="btn_load_numbers" class="ghost">Cargar números</button>
+              <div>
+                <label class="field-label">Número de transferencia (E.164)</label>
+                <input id="transfer_number" class="field-input" placeholder="+5255..." />
+              </div>
             </div>
           </div>
         </section>

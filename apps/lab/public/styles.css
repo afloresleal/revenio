@@ -94,6 +94,13 @@ body {
   box-shadow: 0 0 0 1px rgb(59 130 246 / 0.5);
 }
 
+.field-with-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .actions {
   display: flex;
   align-items: center;
@@ -155,7 +162,13 @@ button.secondary:hover {
 }
 
 button.ghost {
-  background: transparent;
+  background: rgb(15 23 42);
+  border-color: rgb(51 65 85);
+}
+
+.button-group button,
+.field-with-action button {
+  min-width: 0;
 }
 
 pre {
@@ -313,6 +326,10 @@ details summary:hover {
 }
 
 @media (max-width: 640px) {
+  .field-with-action {
+    grid-template-columns: 1fr;
+  }
+
   .actions {
     width: 100%;
   }
