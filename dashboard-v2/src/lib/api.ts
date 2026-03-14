@@ -113,3 +113,13 @@ export async function fetchCallDetail(callId: string): Promise<CallDetail> {
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   return res.json();
 }
+
+export async function syncCallDetail(callId: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/api/metrics/calls/${encodeURIComponent(callId)}/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  return res.json();
+}

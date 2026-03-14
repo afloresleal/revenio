@@ -266,18 +266,7 @@ async function runBackfillBatch(params: {
       continue;
     }
 
-    const patch: Record<string, unknown> = {};
-    if (snapshot.phoneNumber && metric.phoneNumber === 'unknown') patch.phoneNumber = snapshot.phoneNumber;
-    if (snapshot.assistantId && snapshot.assistantId !== metric.assistantId) patch.assistantId = snapshot.assistantId;
-    if (snapshot.transferNumber && snapshot.transferNumber !== metric.transferNumber) patch.transferNumber = snapshot.transferNumber;
-    if (snapshot.startedAt && !metric.startedAt) patch.startedAt = snapshot.startedAt;
-    if (snapshot.transferredAt && !metric.transferredAt) patch.transferredAt = snapshot.transferredAt;
-    if (snapshot.endedAt && !metric.endedAt) patch.endedAt = snapshot.endedAt;
-    if (snapshot.durationSec !== null && metric.durationSec == null) patch.durationSec = snapshot.durationSec;
-    if (snapshot.endedReason && !metric.endedReason) patch.endedReason = snapshot.endedReason;
-    if (snapshot.transcript && !metric.transcript) patch.transcript = snapshot.transcript;
-    if (snapshot.recordingUrl && !metric.recordingUrl) patch.recordingUrl = snapshot.recordingUrl;
-    if (snapshot.cost !== null && metric.cost == null) patch.cost = snapshot.cost;
+    const patch = buildMetricPatch(metric, snapshot);
 
     if (!Object.keys(patch).length) {
       skipped++;
@@ -304,6 +293,46 @@ async function runBackfillBatch(params: {
     errors,
     processedCallIds: candidates.map((c) => c.callId),
   };
+}
+
+function buildMetricPatch(metric: {
+  phoneNumber: string;
+  assistantId: string | null;
+  transferNumber: string | null;
+  startedAt: Date | null;
+  transferredAt: Date | null;
+  endedAt: Date | null;
+  durationSec: number | null;
+  endedReason: string | null;
+  transcript: string | null;
+  recordingUrl: string | null;
+  cost: unknown;
+}, snapshot: {
+  phoneNumber?: string;
+  assistantId?: string;
+  transferNumber?: string;
+  startedAt: Date | null;
+  transferredAt: Date | null;
+  endedAt: Date | null;
+  durationSec: number | null;
+  endedReason: string | null;
+  transcript: string | null;
+  recordingUrl: string | null;
+  cost: number | null;
+}): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  if (snapshot.phoneNumber && metric.phoneNumber === 'unknown') patch.phoneNumber = snapshot.phoneNumber;
+  if (snapshot.assistantId && snapshot.assistantId !== metric.assistantId) patch.assistantId = snapshot.assistantId;
+  if (snapshot.transferNumber && snapshot.transferNumber !== metric.transferNumber) patch.transferNumber = snapshot.transferNumber;
+  if (snapshot.startedAt && !metric.startedAt) patch.startedAt = snapshot.startedAt;
+  if (snapshot.transferredAt && !metric.transferredAt) patch.transferredAt = snapshot.transferredAt;
+  if (snapshot.endedAt && !metric.endedAt) patch.endedAt = snapshot.endedAt;
+  if (snapshot.durationSec !== null && metric.durationSec == null) patch.durationSec = snapshot.durationSec;
+  if (snapshot.endedReason && !metric.endedReason) patch.endedReason = snapshot.endedReason;
+  if (snapshot.transcript && !metric.transcript) patch.transcript = snapshot.transcript;
+  if (snapshot.recordingUrl && !metric.recordingUrl) patch.recordingUrl = snapshot.recordingUrl;
+  if (snapshot.cost !== null && metric.cost == null) patch.cost = snapshot.cost;
+  return patch;
 }
 
 function parseBooleanFlag(value: unknown, defaultValue: boolean): boolean {
@@ -705,6 +734,111 @@ router.get('/calls/:callId', async (req, res) => {
     });
   } catch (error) {
     console.error('Call detail error:', error);
+    return res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
+
+// POST /api/metrics/calls/:callId/sync
+router.post('/calls/:callId/sync', async (req, res) => {
+  try {
+    const callId = String(req.params.callId || '').trim();
+    if (!callId) {
+      return res.status(400).json({ error: 'invalid_call_id' });
+    }
+
+    const apiKey = asString(req.body?.vapi_api_key) || VAPI_API_KEY;
+    const force = parseBooleanFlag(req.query.force ?? req.body?.force, false);
+    if (!apiKey) {
+      return res.status(400).json({
+        error: 'missing_vapi_config',
+        message: 'VAPI_API_KEY is required (env or request body vapi_api_key).',
+      });
+    }
+
+    const metric = await prisma.callMetric.findUnique({
+      where: { callId },
+      select: {
+        callId: true,
+        phoneNumber: true,
+        assistantId: true,
+        transferNumber: true,
+        startedAt: true,
+        transferredAt: true,
+        endedAt: true,
+        durationSec: true,
+        endedReason: true,
+        transcript: true,
+        recordingUrl: true,
+        cost: true,
+      },
+    });
+    if (!metric) {
+      return res.status(404).json({ error: 'call_not_found', callId });
+    }
+
+    const vapiResponse = await fetch(`https://api.vapi.ai/call/${callId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const payload = await vapiResponse.json().catch(() => ({}));
+    if (!vapiResponse.ok) {
+      return res.status(502).json({
+        error: 'vapi_call_lookup_failed',
+        status: vapiResponse.status,
+        message: asString(asRecord(payload)?.message) || 'lookup failed',
+      });
+    }
+
+    const snapshot = extractCallSnapshotFromVapiPayload(payload);
+    if (!snapshot) {
+      return res.status(422).json({ error: 'invalid_vapi_payload', message: 'No call snapshot found in Vapi response.' });
+    }
+
+    const patch = force
+      ? {
+          phoneNumber: snapshot.phoneNumber ?? metric.phoneNumber,
+          assistantId: snapshot.assistantId ?? metric.assistantId,
+          transferNumber: snapshot.transferNumber ?? metric.transferNumber,
+          startedAt: snapshot.startedAt ?? metric.startedAt,
+          transferredAt: snapshot.transferredAt ?? metric.transferredAt,
+          endedAt: snapshot.endedAt ?? metric.endedAt,
+          durationSec: snapshot.durationSec ?? metric.durationSec,
+          endedReason: snapshot.endedReason ?? metric.endedReason,
+          transcript: snapshot.transcript ?? metric.transcript,
+          recordingUrl: snapshot.recordingUrl ?? metric.recordingUrl,
+          cost: snapshot.cost ?? metric.cost,
+        }
+      : buildMetricPatch(metric, snapshot);
+
+    if (Object.keys(patch).length) {
+      await prisma.callMetric.update({
+        where: { callId },
+        data: patch,
+      });
+    }
+
+    const updatedMetric = await prisma.callMetric.findUnique({
+      where: { callId },
+      select: {
+        callId: true,
+        transcript: true,
+        recordingUrl: true,
+        durationSec: true,
+        startedAt: true,
+        endedAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      callId,
+      force,
+      updated: Object.keys(patch).length > 0,
+      updatedFields: Object.keys(patch),
+      metric: updatedMetric,
+    });
+  } catch (error) {
+    console.error('Call sync error:', error);
     return res.status(500).json({ error: 'Internal error', message: String(error) });
   }
 });

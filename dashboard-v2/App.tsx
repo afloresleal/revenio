@@ -33,7 +33,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { fetchAllData, fetchRecent, fetchCallDetail } from './src/lib/api';
+import { fetchAllData, fetchRecent, fetchCallDetail, syncCallDetail } from './src/lib/api';
 
 // --- Types ---
 const CDMX_TIMEZONE = 'America/Mexico_City';
@@ -208,6 +208,7 @@ export default function App() {
   const [callDetails, setCallDetails] = useState<Record<string, Record<string, unknown>>>({});
   const [callDetailLoading, setCallDetailLoading] = useState<Record<string, boolean>>({});
   const [callDetailErrors, setCallDetailErrors] = useState<Record<string, string>>({});
+  const [callDetailSyncing, setCallDetailSyncing] = useState<Record<string, boolean>>({});
 
   // Debounce effect for search
   useEffect(() => {
@@ -395,6 +396,19 @@ export default function App() {
       setJsonModalError(error instanceof Error ? error.message : 'Error fetching call detail');
     } finally {
       setJsonModalLoading(false);
+    }
+  };
+
+  const handleSyncCallDetail = async (callId: string) => {
+    setCallDetailSyncing(prev => ({ ...prev, [callId]: true }));
+    try {
+      await syncCallDetail(callId);
+      await loadCallDetail(callId, true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error syncing call detail';
+      setCallDetailErrors(prev => ({ ...prev, [callId]: message }));
+    } finally {
+      setCallDetailSyncing(prev => ({ ...prev, [callId]: false }));
     }
   };
 
@@ -820,6 +834,15 @@ export default function App() {
                               className="text-xs px-2 py-1 rounded border border-blue-700/60 text-blue-300 hover:bg-blue-900/20"
                             >
                               Ver JSON completo
+                            </button>
+                          </div>
+                          <div className="mt-2">
+                            <button
+                              onClick={() => handleSyncCallDetail(call.callId)}
+                              disabled={!!callDetailSyncing[call.callId]}
+                              className="text-xs px-2 py-1 rounded border border-amber-700/60 text-amber-300 hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {callDetailSyncing[call.callId] ? 'Sincronizando...' : 'Reintentar sync transcript/audio'}
                             </button>
                           </div>
                           <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
