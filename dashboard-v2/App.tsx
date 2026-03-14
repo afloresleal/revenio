@@ -33,7 +33,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { fetchAllData, fetchRecent } from './src/lib/api';
+import { fetchAllData, fetchRecent, fetchCallDetail } from './src/lib/api';
 
 // --- Types ---
 const CDMX_TIMEZONE = 'America/Mexico_City';
@@ -200,6 +200,11 @@ export default function App() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
+  const [jsonModalOpen, setJsonModalOpen] = useState(false);
+  const [jsonModalCallId, setJsonModalCallId] = useState<string | null>(null);
+  const [jsonModalData, setJsonModalData] = useState<Record<string, unknown> | null>(null);
+  const [jsonModalLoading, setJsonModalLoading] = useState(false);
+  const [jsonModalError, setJsonModalError] = useState<string | null>(null);
 
   // Debounce effect for search
   useEffect(() => {
@@ -353,6 +358,30 @@ export default function App() {
         return 'fallback timestamps';
       default:
         return 'sin fuente';
+    }
+  };
+
+  const copyText = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
+  };
+
+  const openJsonModal = async (callId: string) => {
+    setJsonModalOpen(true);
+    setJsonModalCallId(callId);
+    setJsonModalLoading(true);
+    setJsonModalError(null);
+    setJsonModalData(null);
+    try {
+      const detail = await fetchCallDetail(callId);
+      setJsonModalData(detail as Record<string, unknown>);
+    } catch (error) {
+      setJsonModalError(error instanceof Error ? error.message : 'Error fetching call detail');
+    } finally {
+      setJsonModalLoading(false);
     }
   };
 
@@ -761,6 +790,26 @@ export default function App() {
                               <div className="font-mono text-slate-300">{formatDateTime(call.endedAt)}</div>
                             </div>
                           </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() => copyText(call.callId)}
+                              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
+                            >
+                              Copiar Call ID
+                            </button>
+                            <button
+                              onClick={() => copyText(`/api/metrics/calls/${call.callId}`)}
+                              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
+                            >
+                              Copiar endpoint
+                            </button>
+                            <button
+                              onClick={() => openJsonModal(call.callId)}
+                              className="text-xs px-2 py-1 rounded border border-blue-700/60 text-blue-300 hover:bg-blue-900/20"
+                            >
+                              Ver JSON completo
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -838,6 +887,46 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {jsonModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-100">JSON de llamada</h4>
+                  <p className="text-xs text-slate-500 font-mono">{jsonModalCallId || '--'}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {jsonModalCallId && (
+                    <button
+                      onClick={() => copyText(`/api/metrics/calls/${jsonModalCallId}`)}
+                      className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
+                    >
+                      Copiar endpoint
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setJsonModalOpen(false)}
+                    className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+              <div className="p-4 overflow-auto max-h-[70vh]">
+                {jsonModalLoading ? (
+                  <div className="text-xs text-slate-400 font-mono">Cargando...</div>
+                ) : jsonModalError ? (
+                  <div className="text-xs text-rose-300 font-mono">{jsonModalError}</div>
+                ) : (
+                  <pre className="text-xs leading-5 text-slate-200 font-mono whitespace-pre-wrap break-words">
+                    {JSON.stringify(jsonModalData, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

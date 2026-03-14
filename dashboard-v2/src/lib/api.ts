@@ -63,6 +63,8 @@ export interface DashboardData {
   recent: RecentCall[];
 }
 
+export interface CallDetail extends Record<string, unknown> {}
+
 export async function fetchSummary(period: string): Promise<SummaryData> {
   const res = await fetch(`${API_BASE}/api/metrics/summary?period=${encodeURIComponent(period)}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -104,4 +106,10 @@ export async function fetchAllData(period: string): Promise<DashboardData> {
   ]);
   
   return { summary, daily, recent };
+}
+
+export async function fetchCallDetail(callId: string): Promise<CallDetail> {
+  const res = await fetch(`${API_BASE}/api/metrics/calls/${encodeURIComponent(callId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  return res.json();
 }
