@@ -236,15 +236,26 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
     const wasTransferred = existing?.transferredAt != null;
     const endedReason = call.endedReason || null;
     const inferredTransfer = wasTransferred || looksLikeTransferEndedReason(endedReason);
-    // Some providers send only "call-ended" without a prior "call-started".
-    // Ensure startedAt is populated so summary/daily metrics include the call.
-    const startedAtFallback = existing?.startedAt ?? eventAt;
-    // If no explicit transfer-started event arrived, infer transfer timestamp from call-ended.
-    const transferredAtFallback = existing?.transferredAt ?? (inferredTransfer ? eventAt : null);
+    const startedAtFromPayload = call.startedAt ? new Date(call.startedAt) : null;
+    const transferredAtFromPayload = call.transferredAt ? new Date(call.transferredAt) : null;
+    const startedAtFallback =
+      startedAtFromPayload && !isNaN(startedAtFromPayload.getTime())
+        ? startedAtFromPayload
+        : (existing?.startedAt ?? eventAt);
+    // If no explicit transfer-started event arrived, infer transfer timestamp from payload/call-ended.
+    const transferredAtFallback =
+      existing?.transferredAt ??
+      (transferredAtFromPayload && !isNaN(transferredAtFromPayload.getTime()) ? transferredAtFromPayload : null) ??
+      (inferredTransfer ? eventAt : null);
+    let durationSec = typeof call.duration === 'number' && call.duration > 0 ? call.duration : null;
+    if (durationSec === null) {
+      const inferred = Math.round((eventAt.getTime() - startedAtFallback.getTime()) / 1000);
+      if (inferred > 0) durationSec = inferred;
+    }
     const outcome = determineOutcome(inferredTransfer, endedReason);
     const sentiment = deriveSentiment({
       outcome,
-      durationSec: call.duration ?? null,
+      durationSec,
       endedReason,
     });
     
@@ -258,7 +269,7 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
         startedAt: startedAtFallback,
         transferredAt: transferredAtFallback,
         endedAt: eventAt,
-        durationSec: call.duration,
+        durationSec,
         endedReason,
         inProgress: false,
         outcome,
@@ -272,7 +283,7 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
         startedAt: startedAtFallback,
         transferredAt: transferredAtFallback,
         endedAt: eventAt,
-        durationSec: call.duration,
+        durationSec: durationSec ?? existing?.durationSec ?? null,
         endedReason,
         inProgress: false,
         outcome,
