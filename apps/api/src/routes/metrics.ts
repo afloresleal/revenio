@@ -185,6 +185,135 @@ function buildBackfillWhere(onlyMissing: boolean) {
   };
 }
 
+type BackfillError = { callId: string; status?: number; message: string };
+type BackfillBatchResult = {
+  dryRun: boolean;
+  onlyMissing: boolean;
+  limit: number;
+  selected: number;
+  attempted: number;
+  updated: number;
+  skipped: number;
+  errors: BackfillError[];
+  processedCallIds: string[];
+};
+
+async function runBackfillBatch(params: {
+  apiKey: string;
+  limit: number;
+  onlyMissing: boolean;
+  dryRun: boolean;
+  excludeCallIds?: string[];
+}): Promise<BackfillBatchResult> {
+  const { apiKey, limit, onlyMissing, dryRun, excludeCallIds = [] } = params;
+
+  const where: Record<string, unknown> = buildBackfillWhere(onlyMissing);
+  if (excludeCallIds.length > 0) {
+    where.callId = { notIn: excludeCallIds };
+  }
+
+  const candidates = await prisma.callMetric.findMany({
+    where: where as any,
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: {
+      callId: true,
+      phoneNumber: true,
+      assistantId: true,
+      transferNumber: true,
+      startedAt: true,
+      transferredAt: true,
+      endedAt: true,
+      durationSec: true,
+      endedReason: true,
+      transcript: true,
+      recordingUrl: true,
+      cost: true,
+    },
+  });
+
+  let attempted = 0;
+  let updated = 0;
+  let skipped = 0;
+  const errors: BackfillError[] = [];
+
+  for (const metric of candidates) {
+    attempted++;
+
+    let vapiResponse: Response;
+    try {
+      vapiResponse = await fetch(`https://api.vapi.ai/call/${metric.callId}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+    } catch (error) {
+      errors.push({ callId: metric.callId, message: `network_error: ${String(error)}` });
+      continue;
+    }
+
+    const payload = await vapiResponse.json().catch(() => ({}));
+    if (!vapiResponse.ok) {
+      errors.push({
+        callId: metric.callId,
+        status: vapiResponse.status,
+        message: asString(asRecord(payload)?.message) || 'vapi_call_lookup_failed',
+      });
+      continue;
+    }
+
+    const snapshot = extractCallSnapshotFromVapiPayload(payload);
+    if (!snapshot) {
+      skipped++;
+      continue;
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (snapshot.phoneNumber && metric.phoneNumber === 'unknown') patch.phoneNumber = snapshot.phoneNumber;
+    if (snapshot.assistantId && snapshot.assistantId !== metric.assistantId) patch.assistantId = snapshot.assistantId;
+    if (snapshot.transferNumber && snapshot.transferNumber !== metric.transferNumber) patch.transferNumber = snapshot.transferNumber;
+    if (snapshot.startedAt && !metric.startedAt) patch.startedAt = snapshot.startedAt;
+    if (snapshot.transferredAt && !metric.transferredAt) patch.transferredAt = snapshot.transferredAt;
+    if (snapshot.endedAt && !metric.endedAt) patch.endedAt = snapshot.endedAt;
+    if (snapshot.durationSec !== null && metric.durationSec == null) patch.durationSec = snapshot.durationSec;
+    if (snapshot.endedReason && !metric.endedReason) patch.endedReason = snapshot.endedReason;
+    if (snapshot.transcript && !metric.transcript) patch.transcript = snapshot.transcript;
+    if (snapshot.recordingUrl && !metric.recordingUrl) patch.recordingUrl = snapshot.recordingUrl;
+    if (snapshot.cost !== null && metric.cost == null) patch.cost = snapshot.cost;
+
+    if (!Object.keys(patch).length) {
+      skipped++;
+      continue;
+    }
+
+    if (!dryRun) {
+      await prisma.callMetric.update({
+        where: { callId: metric.callId },
+        data: patch,
+      });
+    }
+    updated++;
+  }
+
+  return {
+    dryRun,
+    onlyMissing,
+    limit,
+    selected: candidates.length,
+    attempted,
+    updated,
+    skipped,
+    errors,
+    processedCallIds: candidates.map((c) => c.callId),
+  };
+}
+
+function parseBooleanFlag(value: unknown, defaultValue: boolean): boolean {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  const raw = String(value).toLowerCase();
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  return defaultValue;
+}
+
 // Helper: Get date range for period
 function getPeriodDates(period: string) {
   const now = new Date();
@@ -584,10 +713,8 @@ router.get('/calls/:callId', async (req, res) => {
 router.post('/backfill', async (req, res) => {
   try {
     const limitRaw = Number(req.query.limit ?? req.body?.limit ?? DEFAULT_BACKFILL_LIMIT);
-    const onlyMissingRaw = String(req.query.onlyMissing ?? req.body?.onlyMissing ?? 'true').toLowerCase();
-    const dryRunRaw = String(req.query.dryRun ?? req.body?.dryRun ?? 'false').toLowerCase();
-    const onlyMissing = !(onlyMissingRaw === 'false' || onlyMissingRaw === '0');
-    const dryRun = dryRunRaw === 'true' || dryRunRaw === '1';
+    const onlyMissing = parseBooleanFlag(req.query.onlyMissing ?? req.body?.onlyMissing, true);
+    const dryRun = parseBooleanFlag(req.query.dryRun ?? req.body?.dryRun, false);
     const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : DEFAULT_BACKFILL_LIMIT, MAX_BACKFILL_LIMIT));
     const apiKey = asString(req.body?.vapi_api_key) || VAPI_API_KEY;
 
@@ -598,100 +725,101 @@ router.post('/backfill', async (req, res) => {
       });
     }
 
-    const candidates = await prisma.callMetric.findMany({
-      where: buildBackfillWhere(onlyMissing),
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      select: {
-        callId: true,
-        phoneNumber: true,
-        assistantId: true,
-        transferNumber: true,
-        startedAt: true,
-        transferredAt: true,
-        endedAt: true,
-        durationSec: true,
-        endedReason: true,
-        transcript: true,
-        recordingUrl: true,
-        cost: true,
-      },
+    const batch = await runBackfillBatch({
+      apiKey,
+      limit,
+      onlyMissing,
+      dryRun,
     });
 
-    let attempted = 0;
-    let updated = 0;
-    let skipped = 0;
-    const errors: Array<{ callId: string; status?: number; message: string }> = [];
+    return res.json({
+      ok: true,
+      ...batch,
+      errors: batch.errors.slice(0, 50),
+    });
+  } catch (error) {
+    console.error('Backfill error:', error);
+    return res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
 
-    for (const metric of candidates) {
-      attempted++;
+// POST /api/metrics/backfill/run
+router.post('/backfill/run', async (req, res) => {
+  try {
+    const limitRaw = Number(req.query.limit ?? req.body?.limit ?? DEFAULT_BACKFILL_LIMIT);
+    const maxBatchesRaw = Number(req.query.maxBatches ?? req.body?.maxBatches ?? 10);
+    const dryRun = parseBooleanFlag(req.query.dryRun ?? req.body?.dryRun, false);
+    const onlyMissing = parseBooleanFlag(req.query.onlyMissing ?? req.body?.onlyMissing, true);
+    const stopWhenNoUpdates = parseBooleanFlag(req.query.stopWhenNoUpdates ?? req.body?.stopWhenNoUpdates, true);
+    const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : DEFAULT_BACKFILL_LIMIT, MAX_BACKFILL_LIMIT));
+    const maxBatches = Math.max(1, Math.min(Number.isFinite(maxBatchesRaw) ? Math.floor(maxBatchesRaw) : 10, 100));
+    const apiKey = asString(req.body?.vapi_api_key) || VAPI_API_KEY;
 
-      let vapiResponse: Response;
-      try {
-        vapiResponse = await fetch(`https://api.vapi.ai/call/${metric.callId}`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
-        });
-      } catch (error) {
-        errors.push({ callId: metric.callId, message: `network_error: ${String(error)}` });
-        continue;
-      }
+    if (!apiKey) {
+      return res.status(400).json({
+        error: 'missing_vapi_config',
+        message: 'VAPI_API_KEY is required (env or request body vapi_api_key).',
+      });
+    }
 
-      const payload = await vapiResponse.json().catch(() => ({}));
-      if (!vapiResponse.ok) {
-        errors.push({
-          callId: metric.callId,
-          status: vapiResponse.status,
-          message: asString(asRecord(payload)?.message) || 'vapi_call_lookup_failed',
-        });
-        continue;
-      }
+    const seenCallIds = new Set<string>();
+    const batches: Array<Omit<BackfillBatchResult, 'processedCallIds'>> = [];
+    let totalSelected = 0;
+    let totalAttempted = 0;
+    let totalUpdated = 0;
+    let totalSkipped = 0;
+    const allErrors: BackfillError[] = [];
 
-      const snapshot = extractCallSnapshotFromVapiPayload(payload);
-      if (!snapshot) {
-        skipped++;
-        continue;
-      }
+    const plannedBatches = dryRun ? 1 : maxBatches;
+    for (let i = 0; i < plannedBatches; i++) {
+      const batch = await runBackfillBatch({
+        apiKey,
+        limit,
+        onlyMissing,
+        dryRun,
+        excludeCallIds: Array.from(seenCallIds),
+      });
 
-      const patch: Record<string, unknown> = {};
-      if (snapshot.phoneNumber && metric.phoneNumber === 'unknown') patch.phoneNumber = snapshot.phoneNumber;
-      if (snapshot.assistantId && snapshot.assistantId !== metric.assistantId) patch.assistantId = snapshot.assistantId;
-      if (snapshot.transferNumber && snapshot.transferNumber !== metric.transferNumber) patch.transferNumber = snapshot.transferNumber;
-      if (snapshot.startedAt && !metric.startedAt) patch.startedAt = snapshot.startedAt;
-      if (snapshot.transferredAt && !metric.transferredAt) patch.transferredAt = snapshot.transferredAt;
-      if (snapshot.endedAt && !metric.endedAt) patch.endedAt = snapshot.endedAt;
-      if (snapshot.durationSec !== null && metric.durationSec == null) patch.durationSec = snapshot.durationSec;
-      if (snapshot.endedReason && !metric.endedReason) patch.endedReason = snapshot.endedReason;
-      if (snapshot.transcript && !metric.transcript) patch.transcript = snapshot.transcript;
-      if (snapshot.recordingUrl && !metric.recordingUrl) patch.recordingUrl = snapshot.recordingUrl;
-      if (snapshot.cost !== null && metric.cost == null) patch.cost = snapshot.cost;
+      for (const callId of batch.processedCallIds) seenCallIds.add(callId);
+      totalSelected += batch.selected;
+      totalAttempted += batch.attempted;
+      totalUpdated += batch.updated;
+      totalSkipped += batch.skipped;
+      allErrors.push(...batch.errors);
+      batches.push({
+        dryRun: batch.dryRun,
+        onlyMissing: batch.onlyMissing,
+        limit: batch.limit,
+        selected: batch.selected,
+        attempted: batch.attempted,
+        updated: batch.updated,
+        skipped: batch.skipped,
+        errors: batch.errors.slice(0, 20),
+      });
 
-      if (!Object.keys(patch).length) {
-        skipped++;
-        continue;
-      }
-
-      if (!dryRun) {
-        await prisma.callMetric.update({
-          where: { callId: metric.callId },
-          data: patch,
-        });
-      }
-      updated++;
+      if (batch.selected === 0) break;
+      if (stopWhenNoUpdates && batch.updated === 0) break;
     }
 
     return res.json({
       ok: true,
+      mode: 'run',
       dryRun,
       onlyMissing,
       limit,
-      selected: candidates.length,
-      attempted,
-      updated,
-      skipped,
-      errors: errors.slice(0, 50),
+      maxBatches: plannedBatches,
+      executedBatches: batches.length,
+      totals: {
+        selected: totalSelected,
+        attempted: totalAttempted,
+        updated: totalUpdated,
+        skipped: totalSkipped,
+      },
+      batches,
+      errors: allErrors.slice(0, 100),
     });
   } catch (error) {
-    console.error('Backfill error:', error);
+    console.error('Backfill run error:', error);
     return res.status(500).json({ error: 'Internal error', message: String(error) });
   }
 });
