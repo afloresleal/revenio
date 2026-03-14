@@ -25,6 +25,8 @@ type NormalizedMetricEvent = {
   call: {
     id: string;
     customer?: { number?: string };
+    assistantId?: string;
+    transferNumber?: string;
     startedAt?: string;
     transferredAt?: string;
     endedAt?: string;
@@ -56,6 +58,25 @@ function pickTimestamp(rec: Record<string, unknown>, keys: string[]): string | u
   return undefined;
 }
 
+function extractAssistantId(call: Record<string, unknown>, message?: Record<string, unknown> | null): string | undefined {
+  return (
+    asString(call.assistantId) ||
+    asString(asRecord(call.assistant)?.id) ||
+    asString(asRecord(message?.assistant)?.id)
+  );
+}
+
+function extractTransferNumber(call: Record<string, unknown>, message?: Record<string, unknown> | null): string | undefined {
+  return (
+    asString(call.forwardedPhoneNumber) ||
+    asString(call.transferNumber) ||
+    asString(asRecord(call.destination)?.number) ||
+    asString(message?.forwardedPhoneNumber) ||
+    asString(asRecord(message?.destination)?.number) ||
+    asString(asRecord(message?.transferDestination)?.number)
+  );
+}
+
 function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
   const root = asRecord(body);
   if (!root) return null;
@@ -80,6 +101,8 @@ function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
   if (!callId) return null;
 
   const customer = asRecord(call.customer);
+  const assistantId = extractAssistantId(call, message);
+  const transferNumber = extractTransferNumber(call, message);
   const status = (asString(call.status) || '').toLowerCase();
   const endedReason = asString(call.endedReason) || asString(call.ended_reason) || null;
 
@@ -112,6 +135,8 @@ function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
     call: {
       id: callId,
       customer: { number: asString(customer?.number) },
+      assistantId,
+      transferNumber,
       startedAt,
       transferredAt,
       endedAt,
@@ -159,6 +184,8 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
       create: {
         callId: call.id,
         phoneNumber,
+        assistantId: call.assistantId,
+        transferNumber: call.transferNumber,
         startedAt: eventAt,
         inProgress: true,
         outcome: 'in_progress',
@@ -166,6 +193,8 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
         lastEventAt: eventAt,
       },
       update: {
+        assistantId: call.assistantId,
+        transferNumber: call.transferNumber,
         startedAt: eventAt,
         inProgress: true,
         outcome: 'in_progress',
@@ -182,6 +211,8 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
       create: {
         callId: call.id,
         phoneNumber,
+        assistantId: call.assistantId,
+        transferNumber: call.transferNumber,
         transferredAt: eventAt,
         outcome: 'transfer_success',
         sentiment: 'positive',
@@ -189,6 +220,8 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
         lastEventAt: eventAt,
       },
       update: {
+        assistantId: call.assistantId,
+        transferNumber: call.transferNumber,
         transferredAt: eventAt,
         outcome: 'transfer_success',
         sentiment: 'positive',
@@ -220,6 +253,8 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
       create: {
         callId: call.id,
         phoneNumber,
+        assistantId: call.assistantId ?? existing?.assistantId ?? null,
+        transferNumber: call.transferNumber ?? existing?.transferNumber ?? null,
         startedAt: startedAtFallback,
         transferredAt: transferredAtFallback,
         endedAt: eventAt,
@@ -232,6 +267,8 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
         lastEventAt: eventAt,
       },
       update: {
+        assistantId: call.assistantId ?? existing?.assistantId ?? null,
+        transferNumber: call.transferNumber ?? existing?.transferNumber ?? null,
         startedAt: startedAtFallback,
         transferredAt: transferredAtFallback,
         endedAt: eventAt,
@@ -284,6 +321,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     asString(call.forwardedPhoneNumber) ||
     asString(message?.forwardedPhoneNumber) ||
     asString(asRecord(message?.destination)?.number);
+  const assistantId = extractAssistantId(call, message);
   
   // Extract transcript from artifact
   const transcript = asString(artifact?.transcript);
@@ -357,6 +395,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     create: {
       callId,
       phoneNumber: asString(asRecord(call.customer)?.number) || 'unknown',
+      assistantId,
+      transferNumber: forwardedPhoneNumber ?? existing?.transferNumber ?? null,
       startedAt: startedAt ? new Date(startedAt) : undefined,
       endedAt: endedAt ? new Date(endedAt) : new Date(),
       durationSec: calculatedDuration,
@@ -372,6 +412,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     },
     update: {
       endedAt: endedAt ? new Date(endedAt) : new Date(),
+      assistantId,
+      transferNumber: forwardedPhoneNumber ?? existing?.transferNumber ?? null,
       durationSec: calculatedDuration,
       endedReason,
       outcome,
@@ -416,6 +458,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     asString(destination?.number) ||
     asString(message?.destinationNumber) ||
     asString(message?.to);
+  const assistantId = extractAssistantId(call ?? {}, message);
   
   console.log(eventType + ':', { callId, transferNumber });
 
@@ -430,6 +473,8 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       create: {
         callId,
         phoneNumber: asString(asRecord(call?.customer)?.number) || 'unknown',
+        assistantId,
+        transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
         transferredAt: new Date(),
         outcome: 'transfer_success',
         sentiment: 'positive',
@@ -437,6 +482,8 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
         lastEventAt: new Date(),
       },
       update: {
+        assistantId,
+        transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
         transferredAt: new Date(),
         outcome: 'transfer_success',
         sentiment: 'positive',
@@ -460,6 +507,8 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     create: {
       callId,
       phoneNumber: asString(asRecord(call?.customer)?.number) || 'unknown',
+      assistantId,
+      transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
       transferredAt: new Date(),
       outcome: 'transfer_success',
       sentiment: 'positive',
@@ -467,6 +516,8 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       lastEventAt: new Date(),
     },
     update: {
+      assistantId,
+      transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
       transferredAt: new Date(),
       outcome: 'transfer_success',
       sentiment: 'positive',

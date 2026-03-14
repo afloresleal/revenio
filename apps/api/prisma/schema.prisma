@@ -54,6 +54,7 @@ model CallMetric {
   callId          String    @unique @map("call_id")
   phoneNumber     String    @map("phone_number")
   assistantId     String?   @map("assistant_id")
+  transferNumber  String?   @map("transfer_number")
   
   startedAt       DateTime? @map("started_at")
   transferredAt   DateTime? @map("transferred_at")

@@ -326,27 +326,107 @@ router.get('/recent', async (req, res) => {
       orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit,
       select: {
+        callId: true,
         phoneNumber: true,
+        assistantId: true,
+        transferNumber: true,
         outcome: true,
         sentiment: true,
         durationSec: true,
         startedAt: true,
+        transferredAt: true,
+        endedAt: true,
         createdAt: true,
         inProgress: true,
       },
     });
     
     res.json(calls.map((c: any) => ({
+      callId: c.callId,
       phone: maskPhone(c.phoneNumber),
+      assistantId: c.assistantId,
+      transferNumber: c.transferNumber,
       outcome: c.outcome,
       sentiment: c.sentiment,
       duration: c.durationSec,
+      startedAt: c.startedAt,
+      transferredAt: c.transferredAt,
+      endedAt: c.endedAt,
+      timeToTransferSec: diffSeconds(c.startedAt, c.transferredAt),
+      sellerTalkSec: diffSeconds(c.transferredAt, c.endedAt),
       ago: formatRelativeTime(c.startedAt ?? c.createdAt),
       inProgress: c.inProgress,
     })));
   } catch (error) {
     console.error('Recent error:', error);
     res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
+
+// GET /api/metrics/calls/:callId
+router.get('/calls/:callId', async (req, res) => {
+  try {
+    const callId = String(req.params.callId || '').trim();
+    if (!callId) {
+      return res.status(400).json({ error: 'invalid_call_id' });
+    }
+
+    const call = await prisma.callMetric.findUnique({
+      where: { callId },
+      select: {
+        callId: true,
+        phoneNumber: true,
+        assistantId: true,
+        transferNumber: true,
+        startedAt: true,
+        transferredAt: true,
+        endedAt: true,
+        durationSec: true,
+        endedReason: true,
+        outcome: true,
+        sentiment: true,
+        transcript: true,
+        recordingUrl: true,
+        cost: true,
+        inProgress: true,
+        lastEventType: true,
+        lastEventAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!call) {
+      return res.status(404).json({ error: 'call_not_found', callId });
+    }
+
+    return res.json({
+      callId: call.callId,
+      phone: maskPhone(call.phoneNumber),
+      phoneRaw: call.phoneNumber,
+      assistantId: call.assistantId,
+      transferNumber: call.transferNumber,
+      startedAt: call.startedAt,
+      transferredAt: call.transferredAt,
+      endedAt: call.endedAt,
+      durationSec: call.durationSec,
+      timeToTransferSec: diffSeconds(call.startedAt, call.transferredAt),
+      sellerTalkSec: diffSeconds(call.transferredAt, call.endedAt),
+      endedReason: call.endedReason,
+      outcome: call.outcome,
+      sentiment: call.sentiment,
+      transcript: call.transcript,
+      recordingUrl: call.recordingUrl,
+      cost: call.cost,
+      inProgress: call.inProgress,
+      lastEventType: call.lastEventType,
+      lastEventAt: call.lastEventAt,
+      createdAt: call.createdAt,
+      updatedAt: call.updatedAt,
+    });
+  } catch (error) {
+    console.error('Call detail error:', error);
+    return res.status(500).json({ error: 'Internal error', message: String(error) });
   }
 });
 
@@ -370,6 +450,13 @@ function formatRelativeTime(date: Date | null): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `hace ${hours}h`;
   return `hace ${Math.floor(hours / 24)}d`;
+}
+
+function diffSeconds(start: Date | null, end: Date | null): number | null {
+  if (!start || !end) return null;
+  const diffMs = end.getTime() - start.getTime();
+  if (!Number.isFinite(diffMs) || diffMs < 0) return null;
+  return Math.round(diffMs / 1000);
 }
 
 export default router;
