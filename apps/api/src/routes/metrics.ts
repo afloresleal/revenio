@@ -470,25 +470,32 @@ router.get('/recent', async (req, res) => {
       },
     });
     
-    res.json(calls.map((c: any) => ({
-      callId: c.callId,
-      phone: maskPhone(c.phoneNumber),
-      assistantId: c.assistantId,
-      transferNumber: c.transferNumber,
-      outcome: c.outcome,
-      sentiment: c.sentiment,
-      duration: c.durationSec && c.durationSec > 0 ? c.durationSec : diffSeconds(c.startedAt, c.endedAt),
-      startedAt: c.startedAt,
-      transferredAt: c.transferredAt,
-      endedAt: c.endedAt,
-      timeToTransferSec: diffSeconds(c.startedAt, c.transferredAt),
-      sellerTalkSec:
+    res.json(calls.map((c: any) => {
+      const duration = c.durationSec && c.durationSec > 0 ? c.durationSec : diffSeconds(c.startedAt, c.endedAt);
+      const sellerTalk =
         c.postTransferDurationSec && c.postTransferDurationSec > 0
           ? c.postTransferDurationSec
-          : diffSeconds(c.transferredAt, c.endedAt),
-      ago: formatRelativeTime(c.startedAt ?? c.createdAt),
-      inProgress: c.inProgress,
-    })));
+          : diffSeconds(c.transferredAt, c.endedAt);
+      return {
+        callId: c.callId,
+        phone: maskPhone(c.phoneNumber),
+        assistantId: c.assistantId,
+        transferNumber: c.transferNumber,
+        outcome: c.outcome,
+        sentiment: c.sentiment,
+        duration,
+        durationSource: durationSource(c.durationSec, c.startedAt, c.endedAt),
+        startedAt: c.startedAt,
+        transferredAt: c.transferredAt,
+        endedAt: c.endedAt,
+        timeToTransferSec: diffSeconds(c.startedAt, c.transferredAt),
+        sellerTalkSec: sellerTalk,
+        sellerTalkSource: sellerTalkSource(c.postTransferDurationSec, c.transferredAt, c.endedAt),
+        postTransferDurationSec: c.postTransferDurationSec,
+        ago: formatRelativeTime(c.startedAt ?? c.createdAt),
+        inProgress: c.inProgress,
+      };
+    }));
   } catch (error) {
     console.error('Recent error:', error);
     res.status(500).json({ error: 'Internal error', message: String(error) });
@@ -533,6 +540,12 @@ router.get('/calls/:callId', async (req, res) => {
       return res.status(404).json({ error: 'call_not_found', callId });
     }
 
+    const duration = call.durationSec && call.durationSec > 0 ? call.durationSec : diffSeconds(call.startedAt, call.endedAt);
+    const sellerTalk =
+      call.postTransferDurationSec && call.postTransferDurationSec > 0
+        ? call.postTransferDurationSec
+        : diffSeconds(call.transferredAt, call.endedAt);
+
     return res.json({
       callId: call.callId,
       phone: maskPhone(call.phoneNumber),
@@ -543,11 +556,11 @@ router.get('/calls/:callId', async (req, res) => {
       transferredAt: call.transferredAt,
       endedAt: call.endedAt,
       durationSec: call.durationSec,
+      duration,
+      durationSource: durationSource(call.durationSec, call.startedAt, call.endedAt),
       timeToTransferSec: diffSeconds(call.startedAt, call.transferredAt),
-      sellerTalkSec:
-        call.postTransferDurationSec && call.postTransferDurationSec > 0
-          ? call.postTransferDurationSec
-          : diffSeconds(call.transferredAt, call.endedAt),
+      sellerTalkSec: sellerTalk,
+      sellerTalkSource: sellerTalkSource(call.postTransferDurationSec, call.transferredAt, call.endedAt),
       postTransferDurationSec: call.postTransferDurationSec,
       endedReason: call.endedReason,
       outcome: call.outcome,
@@ -710,6 +723,20 @@ function diffSeconds(start: Date | null, end: Date | null): number | null {
   const diffMs = end.getTime() - start.getTime();
   if (!Number.isFinite(diffMs) || diffMs < 0) return null;
   return Math.round(diffMs / 1000);
+}
+
+function durationSource(durationSec: number | null, startedAt: Date | null, endedAt: Date | null): 'duration_sec' | 'timestamp_fallback' | 'missing' {
+  if (durationSec !== null && durationSec > 0) return 'duration_sec';
+  const fallback = diffSeconds(startedAt, endedAt);
+  if (fallback !== null && fallback > 0) return 'timestamp_fallback';
+  return 'missing';
+}
+
+function sellerTalkSource(postTransferDurationSec: number | null, transferredAt: Date | null, endedAt: Date | null): 'post_transfer_duration_sec' | 'timestamp_fallback' | 'missing' {
+  if (postTransferDurationSec !== null && postTransferDurationSec > 0) return 'post_transfer_duration_sec';
+  const fallback = diffSeconds(transferredAt, endedAt);
+  if (fallback !== null && fallback > 0) return 'timestamp_fallback';
+  return 'missing';
 }
 
 export default router;

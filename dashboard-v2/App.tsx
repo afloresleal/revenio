@@ -85,11 +85,13 @@ interface RecentCall {
   outcome: OutcomeType;
   sentiment: SentimentType | null;
   duration: number | null;
+  durationSource?: 'duration_sec' | 'timestamp_fallback' | 'missing';
   startedAt?: string | null;
   transferredAt?: string | null;
   endedAt?: string | null;
   timeToTransferSec?: number | null;
   sellerTalkSec?: number | null;
+  sellerTalkSource?: 'post_transfer_duration_sec' | 'timestamp_fallback' | 'missing';
   postTransferDurationSec?: number | null;
   ago: string;
   inProgress?: boolean;
@@ -339,6 +341,19 @@ export default function App() {
       second: '2-digit',
       hour12: true,
     });
+  };
+
+  const formatSource = (value?: string) => {
+    switch (value) {
+      case 'duration_sec':
+        return 'durationSec (Vapi)';
+      case 'post_transfer_duration_sec':
+        return 'postTransferDurationSec (Twilio)';
+      case 'timestamp_fallback':
+        return 'fallback timestamps';
+      default:
+        return 'sin fuente';
+    }
   };
 
   if (!data && loading) {
@@ -726,6 +741,7 @@ export default function App() {
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
                               <div className="text-slate-500">Duración total</div>
                               <div className="font-mono text-slate-300">{formatSeconds(call.duration)}</div>
+                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSource(call.durationSource)}</div>
                             </div>
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
                               <div className="text-slate-500">Tiempo a transfer</div>
@@ -734,6 +750,7 @@ export default function App() {
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
                               <div className="text-slate-500">Tiempo con vendedor</div>
                               <div className="font-mono text-slate-300">{formatSeconds(call.sellerTalkSec)}</div>
+                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSource(call.sellerTalkSource)}</div>
                             </div>
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
                               <div className="text-slate-500">Inicio</div>

@@ -45,11 +45,13 @@ export interface RecentCall {
   outcome: string;
   sentiment: 'positive' | 'neutral' | 'negative' | null;
   duration: number | null;
+  durationSource?: 'duration_sec' | 'timestamp_fallback' | 'missing';
   startedAt?: string | null;
   transferredAt?: string | null;
   endedAt?: string | null;
   timeToTransferSec?: number | null;
   sellerTalkSec?: number | null;
+  sellerTalkSource?: 'post_transfer_duration_sec' | 'timestamp_fallback' | 'missing';
   postTransferDurationSec?: number | null;
   ago: string;
   inProgress: boolean;
