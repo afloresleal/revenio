@@ -476,7 +476,7 @@ router.get('/recent', async (req, res) => {
       transferNumber: c.transferNumber,
       outcome: c.outcome,
       sentiment: c.sentiment,
-      duration: c.durationSec ?? diffSeconds(c.startedAt, c.endedAt),
+      duration: c.durationSec && c.durationSec > 0 ? c.durationSec : diffSeconds(c.startedAt, c.endedAt),
       startedAt: c.startedAt,
       transferredAt: c.transferredAt,
       endedAt: c.endedAt,

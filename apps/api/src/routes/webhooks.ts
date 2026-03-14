@@ -337,11 +337,14 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   
   // Calculate duration from timestamps if not provided
   let calculatedDuration = duration;
-  if (calculatedDuration === undefined && startedAt && endedAt) {
+  if ((calculatedDuration === undefined || calculatedDuration <= 0) && startedAt && endedAt) {
     const startMs = new Date(startedAt).getTime();
     const endMs = new Date(endedAt).getTime();
     if (!isNaN(startMs) && !isNaN(endMs)) {
-      calculatedDuration = Math.round((endMs - startMs) / 1000);
+      const diffSec = Math.round((endMs - startMs) / 1000);
+      if (diffSec > 0) {
+        calculatedDuration = diffSec;
+      }
     }
   }
   
@@ -411,6 +414,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       lastEventAt: new Date(),
     },
     update: {
+      startedAt: startedAt ? new Date(startedAt) : undefined,
       endedAt: endedAt ? new Date(endedAt) : new Date(),
       assistantId,
       transferNumber: forwardedPhoneNumber ?? existing?.transferNumber ?? null,
