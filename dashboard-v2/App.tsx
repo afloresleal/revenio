@@ -760,6 +760,7 @@ export default function App() {
                   const detailError = callDetailErrors[call.callId];
                   const transcript = typeof detail?.transcript === 'string' ? detail.transcript : '';
                   const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
+                  const shouldShowSyncButton = !call.transferNumber || !recordingUrl;
                   return (
                     <div key={call.callId} className="border border-slate-800 rounded-lg bg-slate-900/70 overflow-hidden">
                       <button
@@ -836,15 +837,17 @@ export default function App() {
                               Ver JSON completo
                             </button>
                           </div>
-                          <div className="mt-2">
-                            <button
-                              onClick={() => handleSyncCallDetail(call.callId)}
-                              disabled={!!callDetailSyncing[call.callId]}
-                              className="text-xs px-2 py-1 rounded border border-amber-700/60 text-amber-300 hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
-                            >
-                              {callDetailSyncing[call.callId] ? 'Sincronizando...' : 'Reintentar sync transcript/audio'}
-                            </button>
-                          </div>
+                          {shouldShowSyncButton && (
+                            <div className="mt-2">
+                              <button
+                                onClick={() => handleSyncCallDetail(call.callId)}
+                                disabled={!!callDetailSyncing[call.callId]}
+                                className="text-xs px-2 py-1 rounded border border-amber-700/60 text-amber-300 hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                {callDetailSyncing[call.callId] ? 'Sincronizando...' : 'Reintentar sync transcript/audio'}
+                              </button>
+                            </div>
+                          )}
                           <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
                               <div className="text-slate-500 text-xs mb-2">Transcript</div>
