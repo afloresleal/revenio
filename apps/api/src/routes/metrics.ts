@@ -10,40 +10,109 @@ const router = Router();
 // Minimum duration fallback for transfer connection heuristic.
 // Some providers report duration=0 even when transfer is successful.
 const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
+const DASHBOARD_TIMEZONE = 'America/Mexico_City';
+
+type TzDateParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+const TZ_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: DASHBOARD_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+function getTzDateParts(date: Date): TzDateParts {
+  const parts = TZ_DATE_TIME_FORMATTER.formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+    second: Number(map.second),
+  };
+}
+
+function zonedDateTimeToUtc(parts: TzDateParts): Date {
+  const approxUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second, 0));
+  const approxTzParts = getTzDateParts(approxUtc);
+  const targetAsUtcMillis = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second, 0);
+  const approxAsTzMillis = Date.UTC(
+    approxTzParts.year,
+    approxTzParts.month - 1,
+    approxTzParts.day,
+    approxTzParts.hour,
+    approxTzParts.minute,
+    approxTzParts.second,
+    0,
+  );
+  return new Date(approxUtc.getTime() + (targetAsUtcMillis - approxAsTzMillis));
+}
+
+function shiftDateKey(parts: Pick<TzDateParts, 'year' | 'month' | 'day'>, deltaDays: number) {
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + deltaDays));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
+}
+
+function startOfTzDay(parts: Pick<TzDateParts, 'year' | 'month' | 'day'>): Date {
+  return zonedDateTimeToUtc({ ...parts, hour: 0, minute: 0, second: 0 });
+}
+
+function getDateKeyInTimezone(date: Date): string {
+  const parts = getTzDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
 
 // Helper: Get date range for period
 function getPeriodDates(period: string) {
   const now = new Date();
-  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-  const subDays = (d: Date, n: number) => new Date(d.getTime() - n * 24 * 60 * 60 * 1000);
+  const nowTz = getTzDateParts(now);
+  const day0 = { year: nowTz.year, month: nowTz.month, day: nowTz.day };
+  const dayMinus = (n: number) => shiftDateKey(day0, -n);
+  const dayStart = (n: number) => startOfTzDay(dayMinus(n));
   
   let startDate: Date, endDate: Date, prevStartDate: Date, prevEndDate: Date;
   
   switch (period) {
     case 'Ayer':
-      startDate = startOfDay(subDays(now, 1));
-      endDate = endOfDay(subDays(now, 1));
-      prevStartDate = startOfDay(subDays(now, 2));
-      prevEndDate = endOfDay(subDays(now, 2));
+      startDate = dayStart(1);
+      endDate = dayStart(0);
+      prevStartDate = dayStart(2);
+      prevEndDate = dayStart(1);
       break;
     case '7 días':
-      startDate = startOfDay(subDays(now, 7));
+      startDate = dayStart(7);
       endDate = now;
-      prevStartDate = startOfDay(subDays(now, 14));
-      prevEndDate = startOfDay(subDays(now, 7));
+      prevStartDate = dayStart(14);
+      prevEndDate = dayStart(7);
       break;
     case '30 días':
-      startDate = startOfDay(subDays(now, 30));
+      startDate = dayStart(30);
       endDate = now;
-      prevStartDate = startOfDay(subDays(now, 60));
-      prevEndDate = startOfDay(subDays(now, 30));
+      prevStartDate = dayStart(60);
+      prevEndDate = dayStart(30);
       break;
     default: // Hoy
-      startDate = startOfDay(now);
+      startDate = dayStart(0);
       endDate = now;
-      prevStartDate = startOfDay(subDays(now, 1));
-      prevEndDate = endOfDay(subDays(now, 1));
+      prevStartDate = dayStart(1);
+      prevEndDate = dayStart(0);
   }
   
   return { startDate, endDate, prevStartDate, prevEndDate };
@@ -191,9 +260,10 @@ router.get('/summary', async (req, res) => {
 router.get('/daily', async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days as string) || 7, 30);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    startDate.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const nowTz = getTzDateParts(now);
+    const startDay = shiftDateKey({ year: nowTz.year, month: nowTz.month, day: nowTz.day }, -days);
+    const startDate = startOfTzDay(startDay);
     
     const calls = await prisma.callMetric.findMany({
       where: { startedAt: { gte: startDate } },
@@ -206,7 +276,7 @@ router.get('/daily', async (req, res) => {
     for (const call of calls) {
       if (!call.startedAt) continue;
       
-      const dateKey = call.startedAt.toISOString().split('T')[0];
+      const dateKey = getDateKeyInTimezone(call.startedAt);
       const entry = dayMap.get(dateKey) || { calls: 0, transfers: 0, abandoned: 0 };
       
       entry.calls++;
@@ -221,13 +291,13 @@ router.get('/daily', async (req, res) => {
       0: 'Dom', 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb'
     };
     
-    const today = new Date().toISOString().split('T')[0];
+    const today = getDateKeyInTimezone(now);
     
     const result = Array.from(dayMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, data]) => ({
         date,
-        day: date === today ? 'Hoy' : dayNames[new Date(date + 'T12:00:00').getDay()],
+        day: date === today ? 'Hoy' : dayNames[new Date(`${date}T12:00:00Z`).getUTCDay()],
         ...data,
       }));
     
@@ -253,13 +323,14 @@ router.get('/recent', async (req, res) => {
     
     const calls = await prisma.callMetric.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit,
       select: {
         phoneNumber: true,
         outcome: true,
         sentiment: true,
         durationSec: true,
+        startedAt: true,
         createdAt: true,
         inProgress: true,
       },
@@ -270,7 +341,7 @@ router.get('/recent', async (req, res) => {
       outcome: c.outcome,
       sentiment: c.sentiment,
       duration: c.durationSec,
-      ago: formatRelativeTime(c.createdAt),
+      ago: formatRelativeTime(c.startedAt ?? c.createdAt),
       inProgress: c.inProgress,
     })));
   } catch (error) {
@@ -289,7 +360,8 @@ function maskPhone(phone: string): string {
   return phone.slice(0, -8) + ' **** ' + phone.slice(-4);
 }
 
-function formatRelativeTime(date: Date): string {
+function formatRelativeTime(date: Date | null): string {
+  if (!date) return '--';
   const diff = Date.now() - date.getTime();
   const secs = Math.floor(diff / 1000);
   if (secs < 60) return 'hace segundos';
