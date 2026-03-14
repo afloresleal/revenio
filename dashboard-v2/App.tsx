@@ -365,6 +365,25 @@ export default function App() {
     }
   };
 
+  const getTransferDisplay = (call: RecentCall): { value: string; source: string } => {
+    if (call.timeToTransferSec !== null && call.timeToTransferSec !== undefined) {
+      return { value: formatSeconds(call.timeToTransferSec), source: 'capturado' };
+    }
+    return { value: 'No capturado', source: 'falta evento transfer-started' };
+  };
+
+  const getSellerTalkDisplay = (call: RecentCall): { value: string; source: string } => {
+    if (call.sellerTalkSec !== null && call.sellerTalkSec !== undefined) {
+      return { value: formatSeconds(call.sellerTalkSec), source: formatSource(call.sellerTalkSource) };
+    }
+    const duration = call.duration ?? 0;
+    const t2t = call.timeToTransferSec ?? 0;
+    if (duration > 0 && t2t > 0 && duration >= t2t) {
+      return { value: formatSeconds(duration - t2t), source: 'Estimado (duración total - tiempo a transfer)' };
+    }
+    return { value: 'No capturado', source: 'falta evento transfer/callback telephony' };
+  };
+
   const loadCallDetail = async (callId: string, force = false) => {
     if (!force && callDetails[callId]) return callDetails[callId];
     setCallDetailLoading(prev => ({ ...prev, [callId]: true }));
@@ -761,6 +780,8 @@ export default function App() {
                   const transcript = typeof detail?.transcript === 'string' ? detail.transcript : '';
                   const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
                   const shouldShowSyncButton = !call.transferNumber || !recordingUrl;
+                  const transferDisplay = getTransferDisplay(call);
+                  const sellerTalkDisplay = getSellerTalkDisplay(call);
                   return (
                     <div key={call.callId} className="border border-slate-800 rounded-lg bg-slate-900/70 overflow-hidden">
                       <button
@@ -813,12 +834,13 @@ export default function App() {
                             </div>
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
                               <div className="text-slate-500">Tiempo a transfer</div>
-                              <div className="font-mono text-slate-300">{formatSeconds(call.timeToTransferSec)}</div>
+                              <div className="font-mono text-slate-300">{transferDisplay.value}</div>
+                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {transferDisplay.source}</div>
                             </div>
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
                               <div className="text-slate-500">Tiempo con vendedor</div>
-                              <div className="font-mono text-slate-300">{formatSeconds(call.sellerTalkSec)}</div>
-                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSource(call.sellerTalkSource)}</div>
+                              <div className="font-mono text-slate-300">{sellerTalkDisplay.value}</div>
+                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {sellerTalkDisplay.source}</div>
                             </div>
                             <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
                               <div className="text-slate-500">Inicio</div>
