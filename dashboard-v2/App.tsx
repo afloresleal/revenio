@@ -205,6 +205,9 @@ export default function App() {
   const [jsonModalData, setJsonModalData] = useState<Record<string, unknown> | null>(null);
   const [jsonModalLoading, setJsonModalLoading] = useState(false);
   const [jsonModalError, setJsonModalError] = useState<string | null>(null);
+  const [callDetails, setCallDetails] = useState<Record<string, Record<string, unknown>>>({});
+  const [callDetailLoading, setCallDetailLoading] = useState<Record<string, boolean>>({});
+  const [callDetailErrors, setCallDetailErrors] = useState<Record<string, string>>({});
 
   // Debounce effect for search
   useEffect(() => {
@@ -361,14 +364,32 @@ export default function App() {
     }
   };
 
+  const loadCallDetail = async (callId: string, force = false) => {
+    if (!force && callDetails[callId]) return callDetails[callId];
+    setCallDetailLoading(prev => ({ ...prev, [callId]: true }));
+    setCallDetailErrors(prev => ({ ...prev, [callId]: '' }));
+    try {
+      const detail = await fetchCallDetail(callId);
+      const normalized = detail as Record<string, unknown>;
+      setCallDetails(prev => ({ ...prev, [callId]: normalized }));
+      return normalized;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error fetching call detail';
+      setCallDetailErrors(prev => ({ ...prev, [callId]: message }));
+      throw error;
+    } finally {
+      setCallDetailLoading(prev => ({ ...prev, [callId]: false }));
+    }
+  };
+
   const openJsonModal = async (callId: string) => {
     setJsonModalOpen(true);
     setJsonModalCallId(callId);
     setJsonModalLoading(true);
     setJsonModalError(null);
-    setJsonModalData(null);
+    setJsonModalData(callDetails[callId] || null);
     try {
-      const detail = await fetchCallDetail(callId);
+      const detail = await loadCallDetail(callId, true);
       setJsonModalData(detail as Record<string, unknown>);
     } catch (error) {
       setJsonModalError(error instanceof Error ? error.message : 'Error fetching call detail');
@@ -720,11 +741,22 @@ export default function App() {
               ) : (
                 filteredCalls.map((call) => {
                   const isOpen = expandedCallId === call.callId;
+                  const detail = callDetails[call.callId];
+                  const detailLoading = !!callDetailLoading[call.callId];
+                  const detailError = callDetailErrors[call.callId];
+                  const transcript = typeof detail?.transcript === 'string' ? detail.transcript : '';
+                  const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
                   return (
                     <div key={call.callId} className="border border-slate-800 rounded-lg bg-slate-900/70 overflow-hidden">
                       <button
                         className="w-full px-3 py-3 hover:bg-slate-800/50 transition-colors"
-                        onClick={() => setExpandedCallId(isOpen ? null : call.callId)}
+                        onClick={() => {
+                          const nextOpen = isOpen ? null : call.callId;
+                          setExpandedCallId(nextOpen);
+                          if (nextOpen) {
+                            loadCallDetail(nextOpen).catch(() => undefined);
+                          }
+                        }}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-left">
@@ -789,6 +821,35 @@ export default function App() {
                             >
                               Ver JSON completo
                             </button>
+                          </div>
+                          <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
+                              <div className="text-slate-500 text-xs mb-2">Transcript</div>
+                              {detailLoading ? (
+                                <div className="text-xs text-slate-400">Cargando transcript...</div>
+                              ) : detailError ? (
+                                <div className="text-xs text-rose-300">{detailError}</div>
+                              ) : transcript ? (
+                                <p className="text-xs text-slate-300 whitespace-pre-wrap max-h-44 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                                  {transcript}
+                                </p>
+                              ) : (
+                                <div className="text-xs text-slate-500">Sin transcript disponible.</div>
+                              )}
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
+                              <div className="text-slate-500 text-xs mb-2">Audio</div>
+                              {detailLoading ? (
+                                <div className="text-xs text-slate-400">Cargando audio...</div>
+                              ) : recordingUrl ? (
+                                <audio controls preload="none" className="w-full">
+                                  <source src={recordingUrl} />
+                                  Tu navegador no soporta audio.
+                                </audio>
+                              ) : (
+                                <div className="text-xs text-slate-500">Sin audio disponible.</div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       )}
