@@ -90,6 +90,7 @@ interface RecentCall {
   endedAt?: string | null;
   timeToTransferSec?: number | null;
   sellerTalkSec?: number | null;
+  postTransferDurationSec?: number | null;
   ago: string;
   inProgress?: boolean;
 }
@@ -280,7 +281,7 @@ export default function App() {
   const filteredCalls = useMemo(() => {
     if (!data) return [];
     
-    return data.recent.filter(call => {
+    const filtered = data.recent.filter(call => {
       // Search Filter
       if (debouncedSearch && !call.phone.includes(debouncedSearch)) {
         return false;
@@ -294,6 +295,13 @@ export default function App() {
         return false;
       }
       return true;
+    });
+
+    // Default order: newest call first
+    return filtered.sort((a, b) => {
+      const aTs = new Date(a.startedAt ?? a.endedAt ?? 0).getTime();
+      const bTs = new Date(b.startedAt ?? b.endedAt ?? 0).getTime();
+      return bTs - aTs;
     });
   }, [data, debouncedSearch, outcomeFilter, sentimentFilter]);
 

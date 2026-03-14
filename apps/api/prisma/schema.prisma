@@ -61,6 +61,7 @@ model CallMetric {
   endedAt         DateTime? @map("ended_at")
   
   durationSec     Int?      @map("duration_sec")
+  postTransferDurationSec Int? @map("post_transfer_duration_sec")
   endedReason     String?   @map("ended_reason")
   outcome         String?   // transfer_success, abandoned, completed, failed, in_progress
   sentiment       String?   // positive, neutral, negative

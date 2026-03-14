@@ -461,6 +461,7 @@ router.get('/recent', async (req, res) => {
         outcome: true,
         sentiment: true,
         durationSec: true,
+        postTransferDurationSec: true,
         startedAt: true,
         transferredAt: true,
         endedAt: true,
@@ -481,7 +482,10 @@ router.get('/recent', async (req, res) => {
       transferredAt: c.transferredAt,
       endedAt: c.endedAt,
       timeToTransferSec: diffSeconds(c.startedAt, c.transferredAt),
-      sellerTalkSec: diffSeconds(c.transferredAt, c.endedAt),
+      sellerTalkSec:
+        c.postTransferDurationSec && c.postTransferDurationSec > 0
+          ? c.postTransferDurationSec
+          : diffSeconds(c.transferredAt, c.endedAt),
       ago: formatRelativeTime(c.startedAt ?? c.createdAt),
       inProgress: c.inProgress,
     })));
@@ -510,6 +514,7 @@ router.get('/calls/:callId', async (req, res) => {
         transferredAt: true,
         endedAt: true,
         durationSec: true,
+        postTransferDurationSec: true,
         endedReason: true,
         outcome: true,
         sentiment: true,
@@ -539,7 +544,11 @@ router.get('/calls/:callId', async (req, res) => {
       endedAt: call.endedAt,
       durationSec: call.durationSec,
       timeToTransferSec: diffSeconds(call.startedAt, call.transferredAt),
-      sellerTalkSec: diffSeconds(call.transferredAt, call.endedAt),
+      sellerTalkSec:
+        call.postTransferDurationSec && call.postTransferDurationSec > 0
+          ? call.postTransferDurationSec
+          : diffSeconds(call.transferredAt, call.endedAt),
+      postTransferDurationSec: call.postTransferDurationSec,
       endedReason: call.endedReason,
       outcome: call.outcome,
       sentiment: call.sentiment,

@@ -255,18 +255,66 @@ function extractTranscriptFromVapiPayload(payload: unknown): string | null {
 }
 
 app.post("/webhooks/twilio/status", async (req, res) => {
-  const leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
+  let leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
+  const attemptId =
+    extractAttemptId(req.body) ??
+    (typeof req.query.attempt_id === "string" ? req.query.attempt_id : null);
   const status = (req.body?.CallStatus as string | undefined) ?? "unknown";
   const providerId = (req.body?.CallSid as string | undefined) ?? null;
+  const parentCallSid = (req.body?.ParentCallSid as string | undefined) ?? null;
+  const callDurationRaw = (req.body?.CallDuration as string | number | undefined) ?? undefined;
+  const callDurationSec = typeof callDurationRaw === "string"
+    ? Number.parseInt(callDurationRaw, 10)
+    : typeof callDurationRaw === "number"
+      ? Math.trunc(callDurationRaw)
+      : null;
 
-  console.log("twilio_status", { leadId, status, providerId });
+  console.log("twilio_status", { leadId, attemptId, status, providerId, parentCallSid, callDurationSec });
+
+  let attempt =
+    attemptId
+      ? await prisma.callAttempt.findUnique({ where: { id: attemptId } })
+      : null;
+
+  if (!attempt && providerId) {
+    attempt = await prisma.callAttempt.findFirst({
+      where: { providerId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  if (!attempt && leadId) {
+    attempt = await prisma.callAttempt.findFirst({
+      where: { leadId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  if (attempt) {
+    leadId = leadId ?? attempt.leadId;
+  }
+
+  if (attempt?.providerId && Number.isFinite(callDurationSec) && (callDurationSec ?? -1) >= 0) {
+    await prisma.callMetric.updateMany({
+      where: { callId: attempt.providerId },
+      data: { postTransferDurationSec: callDurationSec as number },
+    });
+  }
 
   if (leadId) {
     await prisma.event.create({
       data: {
         leadId,
         type: "twilio_status",
-        detail: { status, providerId, raw: req.body },
+        detail: {
+          status,
+          providerId,
+          parentCallSid,
+          attemptId: attempt?.id ?? attemptId,
+          vapiCallId: attempt?.providerId ?? null,
+          callDurationSec: Number.isFinite(callDurationSec) ? callDurationSec : null,
+          raw: req.body,
+        },
       },
     });
   }

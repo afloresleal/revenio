@@ -50,6 +50,7 @@ export interface RecentCall {
   endedAt?: string | null;
   timeToTransferSec?: number | null;
   sellerTalkSec?: number | null;
+  postTransferDurationSec?: number | null;
   ago: string;
   inProgress: boolean;
 }
