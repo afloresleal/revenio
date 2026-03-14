@@ -11,6 +11,9 @@ const router = Router();
 // Some providers report duration=0 even when transfer is successful.
 const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
 const DASHBOARD_TIMEZONE = 'America/Mexico_City';
+const DEFAULT_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_LIMIT ?? 100);
+const MAX_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_MAX_LIMIT ?? 500);
+const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 
 type TzDateParts = {
   year: number;
@@ -77,6 +80,109 @@ function startOfTzDay(parts: Pick<TzDateParts, 'year' | 'month' | 'day'>): Date 
 function getDateKeyInTimezone(date: Date): string {
   const parts = getTzDateParts(date);
   return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function pickTimestamp(rec: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = asString(rec[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function buildTranscriptFromMessages(messages: unknown): string | null {
+  if (!Array.isArray(messages)) return null;
+  const lines = messages
+    .map((m) => {
+      if (!m || typeof m !== 'object') return null;
+      const msg = m as Record<string, unknown>;
+      const role = typeof msg.role === 'string' ? msg.role : null;
+      const text = typeof msg.message === 'string' ? msg.message : null;
+      if (!text) return null;
+      if (!role) return text;
+      if (role === 'assistant') return `AI: ${text}`;
+      if (role === 'user') return `User: ${text}`;
+      return `${role}: ${text}`;
+    })
+    .filter((x): x is string => !!x);
+  return lines.length ? lines.join('\n') : null;
+}
+
+function extractCallSnapshotFromVapiPayload(payload: unknown) {
+  const root = asRecord(payload);
+  if (!root) return null;
+
+  const message = asRecord(root.message);
+  const artifact = asRecord(root.artifact) || asRecord(message?.artifact);
+  const call = asRecord(root.call) || asRecord(message?.call) || root;
+  if (!call) return null;
+
+  const callId = asString(call.id);
+  if (!callId) return null;
+
+  const customer = asRecord(call.customer);
+  const destination = asRecord(call.destination);
+  const recording = asRecord(artifact?.recording);
+  const transcript =
+    asString(artifact?.transcript) ||
+    asString(root.transcript) ||
+    buildTranscriptFromMessages(root.messages) ||
+    buildTranscriptFromMessages(message?.messages) ||
+    null;
+
+  const cost = asNumber(call.cost) ?? asNumber(root.cost);
+  const duration = asNumber(call.duration) ?? asNumber(call.durationSeconds) ?? asNumber(root.duration);
+  const startedAt = pickTimestamp(call, ['startedAt', 'started_at', 'createdAt', 'created_at']);
+  const transferredAt = pickTimestamp(call, ['transferredAt', 'transferred_at']);
+  const endedAt = pickTimestamp(call, ['endedAt', 'ended_at', 'updatedAt', 'updated_at']);
+
+  return {
+    callId,
+    phoneNumber: asString(customer?.number),
+    assistantId: asString(call.assistantId) || asString(asRecord(call.assistant)?.id),
+    transferNumber:
+      asString(call.forwardedPhoneNumber) ||
+      asString(call.transferNumber) ||
+      asString(destination?.number),
+    startedAt: startedAt ? new Date(startedAt) : null,
+    transferredAt: transferredAt ? new Date(transferredAt) : null,
+    endedAt: endedAt ? new Date(endedAt) : null,
+    durationSec: duration ?? null,
+    endedReason: asString(call.endedReason) || asString(call.ended_reason) || null,
+    transcript,
+    recordingUrl: asString(recording?.url) || asString(artifact?.recordingUrl) || null,
+    cost: cost ?? null,
+  };
+}
+
+function buildBackfillWhere(onlyMissing: boolean) {
+  if (!onlyMissing) return {};
+  return {
+    OR: [
+      { assistantId: null },
+      { transferNumber: null },
+      { startedAt: null },
+      { transferredAt: null },
+      { endedAt: null },
+      { durationSec: null },
+      { endedReason: null },
+      { transcript: null },
+      { recordingUrl: null },
+      { cost: null },
+    ],
+  };
 }
 
 // Helper: Get date range for period
@@ -426,6 +532,122 @@ router.get('/calls/:callId', async (req, res) => {
     });
   } catch (error) {
     console.error('Call detail error:', error);
+    return res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
+
+// POST /api/metrics/backfill
+router.post('/backfill', async (req, res) => {
+  try {
+    const limitRaw = Number(req.query.limit ?? req.body?.limit ?? DEFAULT_BACKFILL_LIMIT);
+    const onlyMissingRaw = String(req.query.onlyMissing ?? req.body?.onlyMissing ?? 'true').toLowerCase();
+    const dryRunRaw = String(req.query.dryRun ?? req.body?.dryRun ?? 'false').toLowerCase();
+    const onlyMissing = !(onlyMissingRaw === 'false' || onlyMissingRaw === '0');
+    const dryRun = dryRunRaw === 'true' || dryRunRaw === '1';
+    const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : DEFAULT_BACKFILL_LIMIT, MAX_BACKFILL_LIMIT));
+    const apiKey = asString(req.body?.vapi_api_key) || VAPI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        error: 'missing_vapi_config',
+        message: 'VAPI_API_KEY is required (env or request body vapi_api_key).',
+      });
+    }
+
+    const candidates = await prisma.callMetric.findMany({
+      where: buildBackfillWhere(onlyMissing),
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        callId: true,
+        phoneNumber: true,
+        assistantId: true,
+        transferNumber: true,
+        startedAt: true,
+        transferredAt: true,
+        endedAt: true,
+        durationSec: true,
+        endedReason: true,
+        transcript: true,
+        recordingUrl: true,
+        cost: true,
+      },
+    });
+
+    let attempted = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: Array<{ callId: string; status?: number; message: string }> = [];
+
+    for (const metric of candidates) {
+      attempted++;
+
+      let vapiResponse: Response;
+      try {
+        vapiResponse = await fetch(`https://api.vapi.ai/call/${metric.callId}`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+      } catch (error) {
+        errors.push({ callId: metric.callId, message: `network_error: ${String(error)}` });
+        continue;
+      }
+
+      const payload = await vapiResponse.json().catch(() => ({}));
+      if (!vapiResponse.ok) {
+        errors.push({
+          callId: metric.callId,
+          status: vapiResponse.status,
+          message: asString(asRecord(payload)?.message) || 'vapi_call_lookup_failed',
+        });
+        continue;
+      }
+
+      const snapshot = extractCallSnapshotFromVapiPayload(payload);
+      if (!snapshot) {
+        skipped++;
+        continue;
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (snapshot.phoneNumber && metric.phoneNumber === 'unknown') patch.phoneNumber = snapshot.phoneNumber;
+      if (snapshot.assistantId && snapshot.assistantId !== metric.assistantId) patch.assistantId = snapshot.assistantId;
+      if (snapshot.transferNumber && snapshot.transferNumber !== metric.transferNumber) patch.transferNumber = snapshot.transferNumber;
+      if (snapshot.startedAt && !metric.startedAt) patch.startedAt = snapshot.startedAt;
+      if (snapshot.transferredAt && !metric.transferredAt) patch.transferredAt = snapshot.transferredAt;
+      if (snapshot.endedAt && !metric.endedAt) patch.endedAt = snapshot.endedAt;
+      if (snapshot.durationSec !== null && metric.durationSec == null) patch.durationSec = snapshot.durationSec;
+      if (snapshot.endedReason && !metric.endedReason) patch.endedReason = snapshot.endedReason;
+      if (snapshot.transcript && !metric.transcript) patch.transcript = snapshot.transcript;
+      if (snapshot.recordingUrl && !metric.recordingUrl) patch.recordingUrl = snapshot.recordingUrl;
+      if (snapshot.cost !== null && metric.cost == null) patch.cost = snapshot.cost;
+
+      if (!Object.keys(patch).length) {
+        skipped++;
+        continue;
+      }
+
+      if (!dryRun) {
+        await prisma.callMetric.update({
+          where: { callId: metric.callId },
+          data: patch,
+        });
+      }
+      updated++;
+    }
+
+    return res.json({
+      ok: true,
+      dryRun,
+      onlyMissing,
+      limit,
+      selected: candidates.length,
+      attempted,
+      updated,
+      skipped,
+      errors: errors.slice(0, 50),
+    });
+  } catch (error) {
+    console.error('Backfill error:', error);
     return res.status(500).json({ error: 'Internal error', message: String(error) });
   }
 });
