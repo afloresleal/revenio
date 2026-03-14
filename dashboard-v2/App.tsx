@@ -361,14 +361,6 @@ export default function App() {
     }
   };
 
-  const copyText = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch (error) {
-      console.error('Copy failed:', error);
-    }
-  };
-
   const openJsonModal = async (callId: string) => {
     setJsonModalOpen(true);
     setJsonModalCallId(callId);
@@ -792,18 +784,6 @@ export default function App() {
                           </div>
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button
-                              onClick={() => copyText(call.callId)}
-                              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
-                            >
-                              Copiar Call ID
-                            </button>
-                            <button
-                              onClick={() => copyText(`/api/metrics/calls/${call.callId}`)}
-                              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
-                            >
-                              Copiar endpoint
-                            </button>
-                            <button
                               onClick={() => openJsonModal(call.callId)}
                               className="text-xs px-2 py-1 rounded border border-blue-700/60 text-blue-300 hover:bg-blue-900/20"
                             >
@@ -897,14 +877,6 @@ export default function App() {
                   <p className="text-xs text-slate-500 font-mono">{jsonModalCallId || '--'}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {jsonModalCallId && (
-                    <button
-                      onClick={() => copyText(`/api/metrics/calls/${jsonModalCallId}`)}
-                      className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
-                    >
-                      Copiar endpoint
-                    </button>
-                  )}
                   <button
                     onClick={() => setJsonModalOpen(false)}
                     className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
