@@ -421,11 +421,33 @@ router.get('/recent', async (req, res) => {
     const sentiment = req.query.sentiment as string | undefined;
     const outcome = req.query.outcome as string | undefined;
     const search = req.query.search as string | undefined;
-    
-    const where: { sentiment?: string; outcome?: string; phoneNumber?: { contains: string } } = {};
+    const from = req.query.from as string | undefined;
+    const to = req.query.to as string | undefined;
+
+    const fromDate = from ? new Date(from) : undefined;
+    const toDate = to ? new Date(`${to}T23:59:59.999Z`) : undefined;
+    if (from && (!fromDate || Number.isNaN(fromDate.getTime()))) {
+      return res.status(400).json({ error: 'invalid_query', field: 'from' });
+    }
+    if (to && (!toDate || Number.isNaN(toDate.getTime()))) {
+      return res.status(400).json({ error: 'invalid_query', field: 'to' });
+    }
+
+    const where: {
+      sentiment?: string;
+      outcome?: string;
+      phoneNumber?: { contains: string };
+      startedAt?: { gte?: Date; lte?: Date };
+    } = {};
     if (sentiment && sentiment !== 'all') where.sentiment = sentiment;
     if (outcome && outcome !== 'all') where.outcome = outcome;
     if (search) where.phoneNumber = { contains: search };
+    if (fromDate || toDate) {
+      where.startedAt = {
+        ...(fromDate ? { gte: fromDate } : {}),
+        ...(toDate ? { lte: toDate } : {}),
+      };
+    }
     
     const calls = await prisma.callMetric.findMany({
       where,
@@ -454,7 +476,7 @@ router.get('/recent', async (req, res) => {
       transferNumber: c.transferNumber,
       outcome: c.outcome,
       sentiment: c.sentiment,
-      duration: c.durationSec,
+      duration: c.durationSec ?? diffSeconds(c.startedAt, c.endedAt),
       startedAt: c.startedAt,
       transferredAt: c.transferredAt,
       endedAt: c.endedAt,

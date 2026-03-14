@@ -38,10 +38,18 @@ export interface DailyData {
 }
 
 export interface RecentCall {
+  callId: string;
   phone: string;
+  assistantId?: string | null;
+  transferNumber?: string | null;
   outcome: string;
   sentiment: 'positive' | 'neutral' | 'negative' | null;
   duration: number | null;
+  startedAt?: string | null;
+  transferredAt?: string | null;
+  endedAt?: string | null;
+  timeToTransferSec?: number | null;
+  sellerTalkSec?: number | null;
   ago: string;
   inProgress: boolean;
 }
@@ -69,12 +77,16 @@ export async function fetchRecent(filters: {
   sentiment?: string;
   outcome?: string;
   search?: string;
+  from?: string;
+  to?: string;
 } = {}): Promise<RecentCall[]> {
   const params = new URLSearchParams();
   if (filters.limit) params.set('limit', String(filters.limit));
   if (filters.sentiment && filters.sentiment !== 'all') params.set('sentiment', filters.sentiment);
   if (filters.outcome && filters.outcome !== 'all') params.set('outcome', filters.outcome);
   if (filters.search) params.set('search', filters.search);
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
   
   const res = await fetch(`${API_BASE}/api/metrics/recent?${params}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);

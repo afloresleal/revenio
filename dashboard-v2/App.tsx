@@ -29,7 +29,9 @@ import {
   Filter,
   X,
   AlertOctagon,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { fetchAllData, fetchRecent } from './src/lib/api';
 
@@ -76,11 +78,20 @@ interface DailyData {
 }
 
 interface RecentCall {
+  callId: string;
   phone: string;
+  assistantId?: string | null;
+  transferNumber?: string | null;
   outcome: OutcomeType;
   sentiment: SentimentType | null;
   duration: number | null;
+  startedAt?: string | null;
+  transferredAt?: string | null;
+  endedAt?: string | null;
+  timeToTransferSec?: number | null;
+  sellerTalkSec?: number | null;
   ago: string;
+  inProgress?: boolean;
 }
 
 interface DashboardData {
@@ -183,6 +194,9 @@ export default function App() {
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeType | 'all'>('all');
   const [sentimentFilter, setSentimentFilter] = useState<SentimentType | 'all'>('all');
   const [showFullHistory, setShowFullHistory] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
 
   // Debounce effect for search
   useEffect(() => {
@@ -234,6 +248,8 @@ export default function App() {
           sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
           outcome: outcomeFilter !== 'all' ? outcomeFilter : undefined,
           search: debouncedSearch || undefined,
+          from: dateFrom || undefined,
+          to: dateTo || undefined,
         });
         setData(prev => prev ? { ...prev, recent: recent as DashboardData['recent'] } : null);
       } catch (err) {
@@ -242,7 +258,7 @@ export default function App() {
     };
     
     fetchFiltered();
-  }, [debouncedSearch, outcomeFilter, sentimentFilter, showFullHistory]);
+  }, [debouncedSearch, outcomeFilter, sentimentFilter, showFullHistory, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchData();
@@ -256,6 +272,8 @@ export default function App() {
     setSearch("");
     setOutcomeFilter('all');
     setSentimentFilter('all');
+    setDateFrom('');
+    setDateTo('');
   };
 
   // Filter Logic
@@ -289,6 +307,30 @@ export default function App() {
   const formatDelta = (value: number) => {
     const abs = Math.abs(value * 100).toFixed(0);
     return `${value > 0 ? '+' : ''}${abs}%`;
+  };
+
+  const formatSeconds = (value?: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return '--';
+    if (value < 60) return `${value}s`;
+    const mins = Math.floor(value / 60);
+    const secs = value % 60;
+    return `${mins}m ${secs}s`;
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '--';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleString('es-MX', {
+      timeZone: CDMX_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
   };
 
   if (!data && loading) {
@@ -527,76 +569,12 @@ export default function App() {
         {renderSentimentDistribution()}
         */}
 
-        {/* --- Main Content Grid: Chart + Table --- */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* --- Chart Section (1/3 width) --- */}
-          <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-base font-semibold text-slate-100 font-sans">Volumen últimos 7 días</h3>
-                <p className="text-xs text-slate-500 mt-1">Comparativa de tráfico y resolución</p>
-              </div>
-              {/* Removed Custom Legend in favor of Recharts Legend */}
-            </div>
-
-            <div className="h-[320px] w-full">
-              {loading ? (
-                <div className="h-full w-full flex items-end gap-2 animate-pulse px-4 pb-8">
-                    {[...Array(7)].map((_, i) => (
-                        <div key={i} className="flex-1 bg-slate-800 rounded-t-sm" style={{height: `${Math.random() * 60 + 20}%`}}></div>
-                    ))}
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data?.daily} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.4} />
-                    <XAxis 
-                        dataKey="day" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fill: '#94a3b8', fontSize: 12, fontFamily: 'Outfit' }} 
-                        dy={10}
-                    />
-                    <YAxis 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fill: '#64748b', fontSize: 12, fontFamily: 'JetBrains Mono' }} 
-                    />
-                    <Tooltip 
-                        cursor={{ stroke: '#334155', strokeWidth: 1 }}
-                        contentStyle={{ 
-                            backgroundColor: '#1e293b', 
-                            borderColor: '#334155', 
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                            color: '#f1f5f9',
-                            fontFamily: 'JetBrains Mono'
-                        }}
-                        itemStyle={{ fontSize: '12px' }}
-                        labelStyle={{ color: '#94a3b8', fontSize: '12px', marginBottom: '8px', fontFamily: 'Outfit' }}
-                    />
-                    <Legend 
-                      verticalAlign="top" 
-                      align="right"
-                      iconType="circle"
-                      wrapperStyle={{ paddingBottom: '20px', fontSize: '12px', fontFamily: 'Outfit', color: '#94a3b8' }}
-                    />
-                    <Line type="monotone" dataKey="calls" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6 }} name="Total" />
-                    <Line type="monotone" dataKey="transfers" stroke="#22c55e" strokeWidth={2} dot={{ r: 4, fill: '#22c55e', strokeWidth: 0 }} activeDot={{ r: 6 }} name="Transfer" />
-                    <Line type="monotone" dataKey="abandoned" stroke="#ef4444" strokeWidth={2} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} activeDot={{ r: 6 }} name="Abandono" />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          {/* --- Recent Calls Table (2/3 width) --- */}
-          <div className={`lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden ${showFullHistory ? 'h-auto max-h-[80vh]' : 'h-[500px]'}`}>
-            <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col gap-3 shrink-0">
+        {/* --- Calls Detail (Priority Section) --- */}
+        <div className={`bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden ${showFullHistory ? 'h-auto max-h-[80vh]' : 'h-[560px]'}`}>
+            <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col gap-3">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                      <h3 className="text-base font-semibold text-slate-100 font-sans">Últimas llamadas</h3>
+                      <h3 className="text-base font-semibold text-slate-100 font-sans">Detalle de llamadas</h3>
                       {(data?.summary.inProgressCount || 0) > 0 && (
                           <span className="flex h-2 w-2 relative">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -610,8 +588,8 @@ export default function App() {
                 </div>
                 
                 {/* --- Filters Bar --- */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <div className="relative col-span-1 md:col-span-1">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                  <div className="relative col-span-1 md:col-span-2">
                     <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
                       {search !== debouncedSearch ? (
                         <div className="w-3.5 h-3.5 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></div>
@@ -622,13 +600,13 @@ export default function App() {
                     <input
                       type="text"
                       className="block w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500 transition-colors"
-                      placeholder="Buscar..."
+                      placeholder="Buscar teléfono..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       aria-label="Buscar teléfono"
                     />
                   </div>
-                  
+
                   <select
                     className="col-span-1 bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer"
                     value={outcomeFilter}
@@ -654,17 +632,33 @@ export default function App() {
                     <option value="neutral">😐 Neutral</option>
                     <option value="negative">😟 Negativo</option>
                   </select>
+
+                  <input
+                    type="date"
+                    className="col-span-1 bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    aria-label="Fecha desde"
+                  />
+
+                  <input
+                    type="date"
+                    className="col-span-1 bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    aria-label="Fecha hasta"
+                  />
                 </div>
             </div>
 
-            <div className="overflow-y-auto flex-1 p-0 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+            <div className="overflow-y-auto flex-1 p-3 space-y-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
               {loading ? (
-                <div className="space-y-3 p-4">
+                <div className="space-y-3 p-2">
                     <div className="flex justify-center py-4">
                       <span className="text-xs text-slate-500 animate-pulse">Cargando llamadas...</span>
                     </div>
                     {[...Array(6)].map((_, i) => (
-                        <div key={i} className="h-12 bg-slate-800/50 rounded-lg animate-pulse"></div>
+                        <div key={i} className="h-20 bg-slate-800/50 rounded-lg animate-pulse"></div>
                     ))}
                 </div>
               ) : filteredCalls.length === 0 ? (
@@ -680,41 +674,73 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                  <table className="w-full text-left border-collapse" role="table">
-                    <thead className="bg-slate-900 sticky top-0 z-10 shadow-sm">
-                        <tr>
-                            <th className="py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wider bg-slate-900">Teléfono</th>
-                            <th className="py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wider text-right bg-slate-900">Estado</th>
-                            <th className="py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wider text-center bg-slate-900">Sent</th>
-                            <th className="py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wider text-right bg-slate-900">Dur</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/50">
-                        {filteredCalls.map((call, idx) => (
-                            <tr key={idx} className="group hover:bg-slate-800/50 transition-colors" role="row">
-                                <td className="py-3 px-3" role="cell">
-                                    <div className="flex flex-col">
-                                        <span className="font-mono text-sm text-slate-300">{call.phone}</span>
-                                        <span className="text-[10px] text-slate-500">{call.ago}</span>
-                                    </div>
-                                </td>
-                                <td className="py-3 px-3 text-right" role="cell">
-                                    <div className="flex justify-end">
-                                        <StatusBadge outcome={call.outcome} />
-                                    </div>
-                                </td>
-                                <td className="py-3 px-3 text-center" role="cell">
-                                   <SentimentBadge sentiment={call.sentiment} />
-                                </td>
-                                <td className="py-3 px-3 text-right" role="cell">
-                                    <span className="font-mono text-xs text-slate-400">
-                                        {call.duration ? `${call.duration}s` : '--'}
-                                    </span>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                filteredCalls.map((call) => {
+                  const isOpen = expandedCallId === call.callId;
+                  return (
+                    <div key={call.callId} className="border border-slate-800 rounded-lg bg-slate-900/70 overflow-hidden">
+                      <button
+                        className="w-full px-3 py-3 hover:bg-slate-800/50 transition-colors"
+                        onClick={() => setExpandedCallId(isOpen ? null : call.callId)}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-left">
+                            <div className="font-mono text-sm text-slate-200">{call.phone}</div>
+                            <div className="text-[11px] text-slate-500">{call.ago}</div>
+                          </div>
+                          <div className="hidden md:flex items-center gap-3">
+                            <StatusBadge outcome={call.outcome} />
+                            <SentimentBadge sentiment={call.sentiment} />
+                            <span className="font-mono text-xs text-slate-400 min-w-[70px] text-right">
+                              Dur: {formatSeconds(call.duration)}
+                            </span>
+                          </div>
+                          <div className="md:hidden flex items-center gap-2">
+                            <span className="font-mono text-xs text-slate-400">{formatSeconds(call.duration)}</span>
+                          </div>
+                          {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                        </div>
+                      </button>
+                      {isOpen && (
+                        <div className="border-t border-slate-800 bg-slate-950/50 px-3 py-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Call ID</div>
+                              <div className="font-mono text-slate-300 break-all">{call.callId || '--'}</div>
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Agente virtual</div>
+                              <div className="font-mono text-slate-300 break-all">{call.assistantId || '--'}</div>
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Vendedor (transfer)</div>
+                              <div className="font-mono text-slate-300">{call.transferNumber || '--'}</div>
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Duración total</div>
+                              <div className="font-mono text-slate-300">{formatSeconds(call.duration)}</div>
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Tiempo a transfer</div>
+                              <div className="font-mono text-slate-300">{formatSeconds(call.timeToTransferSec)}</div>
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Tiempo con vendedor</div>
+                              <div className="font-mono text-slate-300">{formatSeconds(call.sellerTalkSec)}</div>
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Inicio</div>
+                              <div className="font-mono text-slate-300">{formatDateTime(call.startedAt)}</div>
+                            </div>
+                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+                              <div className="text-slate-500">Fin</div>
+                              <div className="font-mono text-slate-300">{formatDateTime(call.endedAt)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
             {/* Table Footer */}
@@ -728,6 +754,64 @@ export default function App() {
             </div>
           </div>
 
+        {/* --- Volume Chart (Secondary Row) --- */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-base font-semibold text-slate-100 font-sans">Volumen últimos 7 días</h3>
+              <p className="text-xs text-slate-500 mt-1">Comparativa de tráfico y resolución</p>
+            </div>
+          </div>
+
+          <div className="h-[300px] w-full">
+            {loading ? (
+              <div className="h-full w-full flex items-end gap-2 animate-pulse px-4 pb-8">
+                  {[...Array(7)].map((_, i) => (
+                      <div key={i} className="flex-1 bg-slate-800 rounded-t-sm" style={{height: `${Math.random() * 60 + 20}%`}}></div>
+                  ))}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data?.daily} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.4} />
+                  <XAxis
+                      dataKey="day"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#94a3b8', fontSize: 12, fontFamily: 'Outfit' }}
+                      dy={10}
+                  />
+                  <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#64748b', fontSize: 12, fontFamily: 'JetBrains Mono' }}
+                  />
+                  <Tooltip
+                      cursor={{ stroke: '#334155', strokeWidth: 1 }}
+                      contentStyle={{
+                          backgroundColor: '#1e293b',
+                          borderColor: '#334155',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                          color: '#f1f5f9',
+                          fontFamily: 'JetBrains Mono'
+                      }}
+                      itemStyle={{ fontSize: '12px' }}
+                      labelStyle={{ color: '#94a3b8', fontSize: '12px', marginBottom: '8px', fontFamily: 'Outfit' }}
+                  />
+                  <Legend
+                    verticalAlign="top"
+                    align="right"
+                    iconType="circle"
+                    wrapperStyle={{ paddingBottom: '20px', fontSize: '12px', fontFamily: 'Outfit', color: '#94a3b8' }}
+                  />
+                  <Line type="monotone" dataKey="calls" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6 }} name="Total" />
+                  <Line type="monotone" dataKey="transfers" stroke="#22c55e" strokeWidth={2} dot={{ r: 4, fill: '#22c55e', strokeWidth: 0 }} activeDot={{ r: 6 }} name="Transfer" />
+                  <Line type="monotone" dataKey="abandoned" stroke="#ef4444" strokeWidth={2} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} activeDot={{ r: 6 }} name="Abandono" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
       </main>
     </div>
