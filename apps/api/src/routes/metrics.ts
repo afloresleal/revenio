@@ -623,13 +623,14 @@ router.get('/recent', async (req, res) => {
         startedAt: true,
         transferredAt: true,
         endedAt: true,
+        lastEventAt: true,
         createdAt: true,
         inProgress: true,
       },
     });
     
     res.json(calls.map((c: any) => {
-      const duration = c.durationSec && c.durationSec > 0 ? c.durationSec : diffSeconds(c.startedAt, c.endedAt);
+      const duration = computeDurationSeconds(c.durationSec, c.startedAt, c.endedAt, c.lastEventAt);
       const sellerTalk =
         c.postTransferDurationSec && c.postTransferDurationSec > 0
           ? c.postTransferDurationSec
@@ -642,7 +643,7 @@ router.get('/recent', async (req, res) => {
         outcome: c.outcome,
         sentiment: c.sentiment,
         duration,
-        durationSource: durationSource(c.durationSec, c.startedAt, c.endedAt),
+        durationSource: durationSource(c.durationSec, c.startedAt, c.endedAt, c.lastEventAt),
         startedAt: c.startedAt,
         transferredAt: c.transferredAt,
         endedAt: c.endedAt,
@@ -698,7 +699,7 @@ router.get('/calls/:callId', async (req, res) => {
       return res.status(404).json({ error: 'call_not_found', callId });
     }
 
-    const duration = call.durationSec && call.durationSec > 0 ? call.durationSec : diffSeconds(call.startedAt, call.endedAt);
+    const duration = computeDurationSeconds(call.durationSec, call.startedAt, call.endedAt, call.lastEventAt);
     const sellerTalk =
       call.postTransferDurationSec && call.postTransferDurationSec > 0
         ? call.postTransferDurationSec
@@ -715,7 +716,7 @@ router.get('/calls/:callId', async (req, res) => {
       endedAt: call.endedAt,
       durationSec: call.durationSec,
       duration,
-      durationSource: durationSource(call.durationSec, call.startedAt, call.endedAt),
+      durationSource: durationSource(call.durationSec, call.startedAt, call.endedAt, call.lastEventAt),
       timeToTransferSec: diffSeconds(call.startedAt, call.transferredAt),
       sellerTalkSec: sellerTalk,
       sellerTalkSource: sellerTalkSource(call.postTransferDurationSec, call.transferredAt, call.endedAt),
@@ -987,10 +988,21 @@ function diffSeconds(start: Date | null, end: Date | null): number | null {
   return Math.round(diffMs / 1000);
 }
 
-function durationSource(durationSec: number | null, startedAt: Date | null, endedAt: Date | null): 'duration_sec' | 'timestamp_fallback' | 'missing' {
+function computeDurationSeconds(durationSec: number | null, startedAt: Date | null, endedAt: Date | null, lastEventAt: Date | null): number {
+  if (durationSec !== null && durationSec > 0) return durationSec;
+  const direct = diffSeconds(startedAt, endedAt);
+  if (direct !== null && direct > 0) return direct;
+  const byLastEvent = diffSeconds(startedAt, lastEventAt);
+  if (byLastEvent !== null && byLastEvent > 0) return byLastEvent;
+  return 0;
+}
+
+function durationSource(durationSec: number | null, startedAt: Date | null, endedAt: Date | null, lastEventAt: Date | null): 'duration_sec' | 'timestamp_fallback' | 'missing' {
   if (durationSec !== null && durationSec > 0) return 'duration_sec';
   const fallback = diffSeconds(startedAt, endedAt);
   if (fallback !== null && fallback > 0) return 'timestamp_fallback';
+  const lastEventFallback = diffSeconds(startedAt, lastEventAt);
+  if (lastEventFallback !== null && lastEventFallback > 0) return 'timestamp_fallback';
   return 'missing';
 }
 

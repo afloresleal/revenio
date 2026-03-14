@@ -345,6 +345,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   // VAPI sends createdAt/updatedAt, not startedAt/endedAt
   const startedAt = pickTimestamp(call, ['startedAt', 'started_at', 'createdAt']);
   const endedAt = pickTimestamp(call, ['endedAt', 'ended_at', 'updatedAt', 'updated_at']);
+  const ingestAt = new Date();
   
   // Calculate duration from timestamps if not provided
   let calculatedDuration = duration;
@@ -383,6 +384,23 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   const existing = await prisma.callMetric.findUnique({
     where: { callId },
   });
+  const startedAtDate = (() => {
+    if (startedAt) {
+      const parsed = new Date(startedAt);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    return existing?.startedAt ?? null;
+  })();
+  let endedAtDate = (() => {
+    if (endedAt) {
+      const parsed = new Date(endedAt);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    return ingestAt;
+  })();
+  if (startedAtDate && endedAtDate.getTime() <= startedAtDate.getTime() && ingestAt.getTime() > startedAtDate.getTime()) {
+    endedAtDate = ingestAt;
+  }
   
   const hadTransferredAt = existing?.transferredAt != null;
   const endedReasonHasTransfer = looksLikeTransferEndedReason(endedReason ?? null);
@@ -404,6 +422,13 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     endedReason: endedReason ?? null,
   });
 
+  const finalDuration =
+    calculatedDuration && calculatedDuration > 0
+      ? calculatedDuration
+      : startedAtDate
+        ? Math.max(0, Math.round((endedAtDate.getTime() - startedAtDate.getTime()) / 1000))
+        : null;
+
   await prisma.callMetric.upsert({
     where: { callId },
     create: {
@@ -411,9 +436,9 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       phoneNumber: asString(asRecord(call.customer)?.number) || 'unknown',
       assistantId,
       transferNumber: forwardedPhoneNumber ?? existing?.transferNumber ?? null,
-      startedAt: startedAt ? new Date(startedAt) : undefined,
-      endedAt: endedAt ? new Date(endedAt) : new Date(),
-      durationSec: calculatedDuration,
+      startedAt: startedAtDate ?? undefined,
+      endedAt: endedAtDate,
+      durationSec: finalDuration,
       endedReason,
       outcome,
       sentiment,
@@ -425,11 +450,11 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       lastEventAt: new Date(),
     },
     update: {
-      startedAt: startedAt ? new Date(startedAt) : undefined,
-      endedAt: endedAt ? new Date(endedAt) : new Date(),
+      startedAt: startedAtDate ?? undefined,
+      endedAt: endedAtDate,
       assistantId,
       transferNumber: forwardedPhoneNumber ?? existing?.transferNumber ?? null,
-      durationSec: calculatedDuration,
+      durationSec: finalDuration ?? existing?.durationSec ?? null,
       endedReason,
       outcome,
       sentiment,
