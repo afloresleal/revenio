@@ -27,6 +27,11 @@ interface TwilioCallsResponse {
   calls: TwilioCall[];
 }
 
+interface TwilioCallDetail {
+  sid?: string;
+  duration?: string;
+}
+
 /**
  * Fetch child calls from Twilio by parent CallSid
  */
@@ -54,6 +59,25 @@ async function fetchTwilioChildCalls(parentCallSid: string): Promise<TwilioCall[
   } catch (error) {
     console.error('sync-transfer-metrics: Twilio fetch error', { error: String(error), parentCallSid });
     return [];
+  }
+}
+
+async function fetchTwilioCallDuration(callSid: string): Promise<number | null> {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !callSid) return null;
+
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(callSid)}.json`;
+
+  try {
+    const resp = await fetch(url, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json() as TwilioCallDetail;
+    const durationSec = data.duration ? Number.parseInt(data.duration, 10) : NaN;
+    return Number.isFinite(durationSec) && durationSec >= 0 ? durationSec : null;
+  } catch {
+    return null;
   }
 }
 
@@ -113,6 +137,7 @@ router.post('/sync-transfer-metrics', async (req, res) => {
     callId: string;
     status: 'updated' | 'no_child' | 'not_completed' | 'no_twilio_sid' | 'error';
     postTransferDurationSec?: number;
+    totalDurationSec?: number;
     childCallSid?: string;
     error?: string;
   }> = [];
@@ -127,44 +152,49 @@ router.post('/sync-transfer-metrics', async (req, res) => {
         continue;
       }
 
+      const twilioTotalDurationSec = await fetchTwilioCallDuration(twilioParentSid);
+
       // Fetch child calls
       const childCalls = await fetchTwilioChildCalls(twilioParentSid);
-      
-      if (childCalls.length === 0) {
-        results.push({ callId: call.callId, status: 'no_child' });
-        continue;
-      }
 
       // Find the transfer child call (prefer completed, match transfer number if available)
       const completedChild = childCalls.find(c => c.status === 'completed' && parseInt(c.duration, 10) > 0);
-      
-      if (!completedChild) {
-        results.push({ callId: call.callId, status: 'not_completed' });
-        continue;
-      }
-
-      const durationSec = parseInt(completedChild.duration, 10);
+      const postTransferDurationSec = completedChild ? parseInt(completedChild.duration, 10) : null;
 
       if (!dryRun) {
+        const nextDurationSec =
+          twilioTotalDurationSec !== null && twilioTotalDurationSec > (call.durationSec ?? 0)
+            ? twilioTotalDurationSec
+            : call.durationSec;
         await prisma.callMetric.update({
           where: { callId: call.callId },
           data: {
-            postTransferDurationSec: durationSec
+            postTransferDurationSec: postTransferDurationSec ?? undefined,
+            durationSec: nextDurationSec ?? undefined
           }
         });
       }
 
+      let status: 'updated' | 'no_child' | 'not_completed' = 'updated';
+      const hasAnyDuration = postTransferDurationSec !== null || twilioTotalDurationSec !== null;
+      if (!hasAnyDuration) {
+        if (childCalls.length === 0) status = 'no_child';
+        else if (!completedChild) status = 'not_completed';
+      }
+
       results.push({
         callId: call.callId,
-        status: 'updated',
-        postTransferDurationSec: durationSec,
-        childCallSid: completedChild.sid
+        status,
+        postTransferDurationSec: postTransferDurationSec ?? undefined,
+        totalDurationSec: twilioTotalDurationSec ?? undefined,
+        childCallSid: completedChild?.sid
       });
 
       console.log('sync-transfer-metrics: Updated call', {
         callId: call.callId,
-        postTransferDurationSec: durationSec,
-        childCallSid: completedChild.sid,
+        postTransferDurationSec: postTransferDurationSec,
+        totalDurationSec: twilioTotalDurationSec,
+        childCallSid: completedChild?.sid,
         dryRun
       });
 

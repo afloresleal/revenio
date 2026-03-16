@@ -149,6 +149,28 @@ async function fetchTwilioPostTransferDuration(parentCallSid: string, transferNu
   return { durationSec: best.durationSec, childCallSid: best.sid || null };
 }
 
+async function fetchTwilioCallDuration(callSid: string): Promise<number | null> {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !callSid) return null;
+
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(callSid)}.json`;
+
+  const resp = await fetch(url, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    console.warn('Twilio call duration lookup failed:', { status: resp.status, callSid, body });
+    return null;
+  }
+
+  const call = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+  const durationRaw = asString(call.duration);
+  if (!durationRaw) return null;
+  const durationSec = Number.parseInt(durationRaw, 10);
+  return Number.isFinite(durationSec) && durationSec >= 0 ? durationSec : null;
+}
+
 function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
   const root = asRecord(body);
   if (!root) return null;
@@ -495,8 +517,10 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     endedReason: endedReason ?? null,
   });
   let postTransferDurationSec: number | null = null;
+  let twilioTotalDurationSec: number | null = null;
   if (wasTransferred && twilioParentCallSid) {
     try {
+      twilioTotalDurationSec = await fetchTwilioCallDuration(twilioParentCallSid);
       const transferLookup = await fetchTwilioPostTransferDuration(twilioParentCallSid, forwardedPhoneNumber);
       if (transferLookup.durationSec !== null && transferLookup.durationSec >= 0) {
         postTransferDurationSec = transferLookup.durationSec;
@@ -508,14 +532,31 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
         error: String(error),
       });
     }
+  } else if (twilioParentCallSid) {
+    try {
+      twilioTotalDurationSec = await fetchTwilioCallDuration(twilioParentCallSid);
+    } catch (error) {
+      console.warn('Twilio total duration lookup error:', {
+        callId,
+        twilioParentCallSid,
+        error: String(error),
+      });
+    }
   }
 
-  const finalDuration =
+  let finalDuration =
     calculatedDuration && calculatedDuration > 0
       ? calculatedDuration
       : startedAtDate
         ? Math.max(0, Math.round((endedAtDate.getTime() - startedAtDate.getTime()) / 1000))
         : null;
+  if (twilioTotalDurationSec !== null && twilioTotalDurationSec > 0) {
+    finalDuration = Math.max(finalDuration ?? 0, twilioTotalDurationSec);
+  }
+  if (startedAtDate && finalDuration !== null && finalDuration > 0) {
+    const candidateEnd = new Date(startedAtDate.getTime() + finalDuration * 1000);
+    if (candidateEnd.getTime() > endedAtDate.getTime()) endedAtDate = candidateEnd;
+  }
 
   await prisma.callMetric.upsert({
     where: { callId },
