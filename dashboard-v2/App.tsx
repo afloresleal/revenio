@@ -206,7 +206,6 @@ export default function App() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeType | 'all'>('all');
   const [sentimentFilter, setSentimentFilter] = useState<SentimentType | 'all'>('all');
-  const [showFullHistory, setShowFullHistory] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
@@ -248,6 +247,9 @@ export default function App() {
     // Real API call
     try {
       const dashboardData = await fetchAllData(period);
+      const recentLimit = historyOnlyView ? 100 : 5;
+      const recent = await fetchRecent({ limit: recentLimit });
+      (dashboardData as DashboardData).recent = recent as DashboardData['recent'];
       setData(dashboardData as DashboardData);
       setLastUpdated(new Date());
     } catch (err) {
@@ -266,7 +268,7 @@ export default function App() {
     const fetchFiltered = async () => {
       try {
         const recent = await fetchRecent({
-          limit: showFullHistory ? 100 : 20,
+          limit: historyOnlyView ? 100 : 5,
           sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
           outcome: outcomeFilter !== 'all' ? outcomeFilter : undefined,
           search: debouncedSearch || undefined,
@@ -280,15 +282,11 @@ export default function App() {
     };
     
     fetchFiltered();
-  }, [debouncedSearch, outcomeFilter, sentimentFilter, showFullHistory, dateFrom, dateTo]);
+  }, [debouncedSearch, outcomeFilter, sentimentFilter, historyOnlyView, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchData();
   }, [period]);
-
-  useEffect(() => {
-    if (historyOnlyView) setShowFullHistory(true);
-  }, [historyOnlyView]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -310,7 +308,6 @@ export default function App() {
       next.searchParams.set('view', 'history');
       window.history.pushState({}, '', next.toString());
     }
-    setShowFullHistory(true);
     setHistoryOnlyView(true);
   };
 
@@ -497,7 +494,7 @@ export default function App() {
 
   const refreshRecentCalls = async () => {
     const recent = await fetchRecent({
-      limit: showFullHistory ? 100 : 20,
+      limit: historyOnlyView ? 100 : 5,
       sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
       outcome: outcomeFilter !== 'all' ? outcomeFilter : undefined,
       search: debouncedSearch || undefined,
@@ -886,12 +883,20 @@ export default function App() {
         )}
 
         {/* --- Calls Detail (Priority Section) --- */}
+        {historyOnlyView && (
+          <div className="flex items-center">
+            <button
+              onClick={closeHistoryView}
+              className="text-sm px-3 py-2 rounded-lg border border-slate-700 text-slate-200 hover:bg-slate-800 transition-colors"
+            >
+              ← Volver al dashboard
+            </button>
+          </div>
+        )}
         <div className={`bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden ${
           historyOnlyView
             ? 'h-[calc(100vh-170px)]'
-            : showFullHistory
-              ? 'h-auto max-h-[80vh]'
-              : 'h-[560px]'
+            : 'h-[560px]'
         }`}>
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col gap-3">
                 <div className="flex justify-between items-center">
@@ -904,19 +909,9 @@ export default function App() {
                           </span>
                       )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    {historyOnlyView && (
-                      <button
-                        onClick={closeHistoryView}
-                        className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
-                      >
-                        Volver al dashboard
-                      </button>
-                    )}
-                    <button className="text-slate-500 hover:text-white transition-colors">
-                        <MoreHorizontal size={18} />
-                    </button>
-                  </div>
+                  <button className="text-slate-500 hover:text-white transition-colors">
+                      <MoreHorizontal size={18} />
+                  </button>
                 </div>
                 
                 {/* --- Filters Bar --- */}
@@ -1042,21 +1037,16 @@ export default function App() {
               )}
             </div>
             {/* Table Footer */}
-            <div className="p-3 border-t border-slate-800 bg-slate-900 text-center shrink-0">
-                <button 
-                  onClick={() => {
-                    if (historyOnlyView) {
-                      setShowFullHistory(false);
-                      closeHistoryView();
-                      return;
-                    }
-                    openHistoryView();
-                  }}
-                  className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
-                >
-                    {historyOnlyView ? 'Salir de historial completo' : 'Ver historial completo'}
-                </button>
-            </div>
+            {!historyOnlyView && (
+              <div className="p-3 border-t border-slate-800 bg-slate-900 text-center shrink-0">
+                  <button
+                    onClick={openHistoryView}
+                    className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                  >
+                      Ver historial completo
+                  </button>
+              </div>
+            )}
           </div>
 
         {!historyOnlyView && (
