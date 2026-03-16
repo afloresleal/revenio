@@ -30,8 +30,7 @@ import {
   X,
   AlertOctagon,
   AlertTriangle,
-  ChevronDown,
-  ChevronUp
+  ChevronDown
 } from 'lucide-react';
 import { fetchAllData, fetchRecent, fetchCallDetail, syncCallDetail } from './src/lib/api';
 
@@ -199,7 +198,6 @@ export default function App() {
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
   const [jsonModalCallId, setJsonModalCallId] = useState<string | null>(null);
   const [jsonModalData, setJsonModalData] = useState<Record<string, unknown> | null>(null);
@@ -879,23 +877,13 @@ export default function App() {
                 </div>
               ) : (
                 filteredCalls.map((call) => {
-                  const isOpen = expandedCallId === call.callId;
                   return (
                     <div key={call.callId} className="border border-slate-800 rounded-lg bg-slate-900/70 overflow-hidden">
                       <button
                         className="w-full px-3 py-3 hover:bg-slate-800/50 transition-colors"
                         onClick={() => {
-                          const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
-                          if (isMobile) {
-                            setCallLightboxCallId(call.callId);
-                            loadCallDetail(call.callId).catch(() => undefined);
-                            return;
-                          }
-                          const nextOpen = isOpen ? null : call.callId;
-                          setExpandedCallId(nextOpen);
-                          if (nextOpen) {
-                            loadCallDetail(nextOpen).catch(() => undefined);
-                          }
+                          setCallLightboxCallId(call.callId);
+                          loadCallDetail(call.callId).catch(() => undefined);
                         }}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -913,15 +901,9 @@ export default function App() {
                           <div className="md:hidden flex items-center gap-2">
                             <span className="font-mono text-xs text-slate-400">{formatSeconds(call.duration)}</span>
                           </div>
-                          <span className="hidden md:inline">
-                            {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-                          </span>
-                          <span className="md:hidden text-[11px] text-slate-400">Ver detalle</span>
+                          <ChevronDown size={16} className="text-slate-400" />
                         </div>
                       </button>
-                      {isOpen && (
-                        renderCallDetailPanel(call)
-                      )}
                     </div>
                   );
                 })
@@ -999,9 +981,9 @@ export default function App() {
         </div>
 
         {lightboxCall && (
-          <div className="fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm md:hidden">
+          <div className="fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm">
             <div className="h-full w-full overflow-y-auto p-3">
-              <div className="rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+              <div className="mx-auto w-full max-w-5xl rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
                 <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
                   <div>
                     <h4 className="text-sm font-semibold text-slate-100">Detalle de llamada</h4>
