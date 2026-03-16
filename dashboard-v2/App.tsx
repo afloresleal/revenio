@@ -101,6 +101,14 @@ interface DashboardData {
   recent: RecentCall[];
 }
 
+const ASSISTANT_LABELS: Record<string, string> = {
+  '6b9e8a41-43f5-4439-b14c-6c842fee7d66': 'Bella - EN - Caribbean Luxury',
+  '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7': 'Brenda - EN - Caribbean Luxury',
+  'a60e02cb-182f-4fb9-a4d3-76cf74828e19': 'Casalba Los Cabos - Marina v2',
+  '675d2cb2-7047-4949-8735-bedb29351991': 'Marina - Casalba Los Cabos',
+  '04f3ee06-7c49-43b0-b7be-91eac0c43955': 'Riley',
+};
+
 // --- Helper Components ---
 
 const StatusBadge: React.FC<{ outcome: OutcomeType }> = ({ outcome }) => {
@@ -363,6 +371,13 @@ export default function App() {
     }
   };
 
+  const getAssistantDisplay = (assistantId?: string | null): { label: string; id: string | null } => {
+    if (!assistantId) return { label: '--', id: null };
+    const label = ASSISTANT_LABELS[assistantId];
+    if (!label) return { label: assistantId, id: null };
+    return { label, id: assistantId };
+  };
+
   const getTransferDisplay = (call: RecentCall): { value: string; source: string } => {
     if (call.timeToTransferSec !== null && call.timeToTransferSec !== undefined) {
       return { value: formatSeconds(call.timeToTransferSec), source: 'capturado' };
@@ -557,6 +572,7 @@ export default function App() {
     const shouldShowSyncButton = !call.transferNumber || !recordingUrl;
     const transferDisplay = getTransferDisplay(call);
     const sellerTalkDisplay = getSellerTalkDisplay(call);
+    const assistantDisplay = getAssistantDisplay(call.assistantId);
 
     return (
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
@@ -567,7 +583,10 @@ export default function App() {
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Agente virtual</div>
-            <div className="font-mono text-slate-300 break-all">{call.assistantId || '--'}</div>
+            <div className="text-slate-200 break-words">{assistantDisplay.label}</div>
+            {assistantDisplay.id && (
+              <div className="font-mono text-[11px] text-slate-500 break-all mt-1">{assistantDisplay.id}</div>
+            )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Vendedor (transfer)</div>
