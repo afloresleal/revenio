@@ -386,15 +386,42 @@ export default function App() {
   };
 
   const getSellerTalkDisplay = (call: RecentCall): { value: string; source: string } => {
-    if (call.sellerTalkSec !== null && call.sellerTalkSec !== undefined) {
+    const hasTwilioSellerTalk =
+      (call.postTransferDurationSec ?? 0) > 0 ||
+      call.sellerTalkSource === 'post_transfer_duration_sec';
+    if (hasTwilioSellerTalk && call.sellerTalkSec !== null && call.sellerTalkSec !== undefined) {
       return { value: formatSeconds(call.sellerTalkSec), source: formatSource(call.sellerTalkSource) };
     }
-    const duration = call.duration ?? 0;
-    const t2t = call.timeToTransferSec ?? 0;
-    if (duration > 0 && t2t > 0 && duration >= t2t) {
-      return { value: formatSeconds(duration - t2t), source: 'Estimado (duración total - tiempo a transfer)' };
+    if ((call.postTransferDurationSec ?? 0) === 0) {
+      return { value: 'No capturado', source: 'Twilio reportó 0s en transfer leg' };
     }
-    return { value: 'No capturado', source: 'falta evento transfer/callback telephony' };
+    return { value: 'No capturado', source: 'falta callback telephony del transfer leg' };
+  };
+
+  const getDataQuality = (call: RecentCall) => {
+    const durationQuality = call.durationSource === 'duration_sec'
+      ? { label: 'Duración: Capturada', tone: 'good' as const }
+      : call.durationSource === 'timestamp_fallback'
+        ? { label: 'Duración: Fallback', tone: 'warn' as const }
+        : { label: 'Duración: Sin dato', tone: 'bad' as const };
+
+    const transferQuality = call.timeToTransferSec !== null && call.timeToTransferSec !== undefined
+      ? { label: 'Transfer: Capturado', tone: 'good' as const }
+      : { label: 'Transfer: Sin dato', tone: 'bad' as const };
+
+    const sellerQuality = (call.postTransferDurationSec ?? 0) > 0
+      ? { label: 'Vendedor: Capturado', tone: 'good' as const }
+      : (call.postTransferDurationSec ?? null) === 0
+        ? { label: 'Vendedor: 0s Twilio', tone: 'warn' as const }
+        : { label: 'Vendedor: Sin dato', tone: 'bad' as const };
+
+    return [durationQuality, transferQuality, sellerQuality];
+  };
+
+  const qualityBadgeClass = (tone: 'good' | 'warn' | 'bad') => {
+    if (tone === 'good') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+    if (tone === 'warn') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+    return 'border-rose-500/30 bg-rose-500/10 text-rose-300';
   };
 
   const loadCallDetail = async (callId: string, force = false) => {
@@ -431,11 +458,24 @@ export default function App() {
     }
   };
 
+  const refreshRecentCalls = async () => {
+    const recent = await fetchRecent({
+      limit: showFullHistory ? 100 : 20,
+      sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
+      outcome: outcomeFilter !== 'all' ? outcomeFilter : undefined,
+      search: debouncedSearch || undefined,
+      from: dateFrom || undefined,
+      to: dateTo || undefined,
+    });
+    setData(prev => prev ? { ...prev, recent: recent as DashboardData['recent'] } : null);
+  };
+
   const handleSyncCallDetail = async (callId: string) => {
     setCallDetailSyncing(prev => ({ ...prev, [callId]: true }));
     try {
       await syncCallDetail(callId);
       await loadCallDetail(callId, true);
+      await refreshRecentCalls();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error syncing call detail';
       setCallDetailErrors(prev => ({ ...prev, [callId]: message }));
@@ -573,9 +613,20 @@ export default function App() {
     const transferDisplay = getTransferDisplay(call);
     const sellerTalkDisplay = getSellerTalkDisplay(call);
     const assistantDisplay = getAssistantDisplay(call.assistantId);
+    const quality = getDataQuality(call);
 
     return (
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
+        <div className="mb-3 flex flex-wrap gap-2">
+          {quality.map((item) => (
+            <span
+              key={item.label}
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${qualityBadgeClass(item.tone)}`}
+            >
+              {item.label}
+            </span>
+          ))}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Call ID</div>
@@ -623,18 +674,17 @@ export default function App() {
           >
             Ver JSON completo
           </button>
+          <button
+            onClick={() => handleSyncCallDetail(call.callId)}
+            disabled={!!callDetailSyncing[call.callId]}
+            className="text-xs px-2 py-1 rounded border border-amber-700/60 text-amber-300 hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {callDetailSyncing[call.callId] ? 'Sincronizando...' : 'Sincronizar solo esta llamada'}
+          </button>
+          {shouldShowSyncButton && (
+            <span className="text-[11px] text-slate-500">Sugerido: faltan campos de transfer o audio.</span>
+          )}
         </div>
-        {shouldShowSyncButton && (
-          <div className="mt-2">
-            <button
-              onClick={() => handleSyncCallDetail(call.callId)}
-              disabled={!!callDetailSyncing[call.callId]}
-              className="text-xs px-2 py-1 rounded border border-amber-700/60 text-amber-300 hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {callDetailSyncing[call.callId] ? 'Sincronizando...' : 'Reintentar sync transcript/audio'}
-            </button>
-          </div>
-        )}
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
             <div className="text-slate-500 text-xs mb-2">Transcript</div>
