@@ -12,6 +12,8 @@ const router = Router();
 const DEFAULT_ADVISOR_NUMBER = process.env.TRANSFER_NUMBER ?? '+525527326714';
 const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
 
 function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
   if (!reason) return false;
@@ -75,6 +77,76 @@ function extractTransferNumber(call: Record<string, unknown>, message?: Record<s
     asString(asRecord(message?.destination)?.number) ||
     asString(asRecord(message?.transferDestination)?.number)
   );
+}
+
+function extractTwilioCallSid(call: Record<string, unknown>, message?: Record<string, unknown> | null): string | undefined {
+  const candidates: unknown[] = [
+    call.phoneCallProviderId,
+    call.providerCallSid,
+    call.callSid,
+    call.sid,
+    asRecord(call.phoneCallTransport)?.providerCallSid,
+    asRecord(call.phoneCallTransport)?.callSid,
+    asRecord(message)?.phoneCallProviderId,
+    asRecord(message)?.providerCallSid,
+  ];
+  for (const value of candidates) {
+    const asStr = asString(value);
+    if (asStr && asStr.startsWith('CA')) return asStr;
+  }
+  return undefined;
+}
+
+async function fetchTwilioPostTransferDuration(parentCallSid: string, transferNumber: string | null | undefined): Promise<{ durationSec: number | null; childCallSid: string | null }> {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    return { durationSec: null, childCallSid: null };
+  }
+
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+  const url = new URL(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`);
+  url.searchParams.set('ParentCallSid', parentCallSid);
+  url.searchParams.set('PageSize', '50');
+
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    console.warn('Twilio child call lookup failed:', { status: resp.status, body });
+    return { durationSec: null, childCallSid: null };
+  }
+
+  const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+  const calls = Array.isArray(data.calls) ? (data.calls as Array<Record<string, unknown>>) : [];
+  if (calls.length === 0) return { durationSec: null, childCallSid: null };
+
+  const normalizedTransfer = transferNumber ? transferNumber.replace(/[^\d+]/g, '') : null;
+  const candidates = calls
+    .map((c) => {
+      const to = asString(c.to) ?? '';
+      const normalizedTo = to.replace(/[^\d+]/g, '');
+      const durationRaw = asString(c.duration);
+      const durationSec = durationRaw ? Number.parseInt(durationRaw, 10) : NaN;
+      const startTime = asString(c.start_time) ?? '';
+      const sid = asString(c.sid) ?? '';
+      const score = (normalizedTransfer && normalizedTo === normalizedTransfer ? 10 : 0)
+        + (Number.isFinite(durationSec) && durationSec >= 0 ? 3 : 0)
+        + (asString(c.status) === 'completed' ? 1 : 0);
+      return {
+        sid,
+        score,
+        durationSec: Number.isFinite(durationSec) ? durationSec : null,
+        startTime,
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.startTime.localeCompare(a.startTime);
+    });
+
+  const best = candidates[0];
+  if (!best) return { durationSec: null, childCallSid: null };
+  return { durationSec: best.durationSec, childCallSid: best.sid || null };
 }
 
 function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
@@ -332,6 +404,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     asString(call.forwardedPhoneNumber) ||
     asString(message?.forwardedPhoneNumber) ||
     asString(asRecord(message?.destination)?.number);
+  const twilioParentCallSid = extractTwilioCallSid(call, message);
   const assistantId = extractAssistantId(call, message);
   
   // Extract transcript from artifact
@@ -421,6 +494,21 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     durationSec: duration ?? null,
     endedReason: endedReason ?? null,
   });
+  let postTransferDurationSec: number | null = null;
+  if (wasTransferred && twilioParentCallSid) {
+    try {
+      const transferLookup = await fetchTwilioPostTransferDuration(twilioParentCallSid, forwardedPhoneNumber);
+      if (transferLookup.durationSec !== null && transferLookup.durationSec >= 0) {
+        postTransferDurationSec = transferLookup.durationSec;
+      }
+    } catch (error) {
+      console.warn('Twilio transfer duration lookup error:', {
+        callId,
+        twilioParentCallSid,
+        error: String(error),
+      });
+    }
+  }
 
   const finalDuration =
     calculatedDuration && calculatedDuration > 0
@@ -445,6 +533,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       transcript,
       recordingUrl,
       cost: cost !== undefined ? cost : undefined,
+      postTransferDurationSec: postTransferDurationSec ?? undefined,
       inProgress: false,
       lastEventType: 'end-of-call-report',
       lastEventAt: new Date(),
@@ -461,6 +550,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       transcript,
       recordingUrl,
       cost: cost !== undefined ? cost : undefined,
+      postTransferDurationSec: postTransferDurationSec ?? existing?.postTransferDurationSec ?? undefined,
       inProgress: false,
       lastEventType: 'end-of-call-report',
       lastEventAt: new Date(),
@@ -473,7 +563,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     outcome, 
     hasTranscript: !!transcript,
     hasRecording: !!recordingUrl,
-    durationSec: duration 
+    durationSec: duration,
+    postTransferDurationSec,
   };
 }
 
