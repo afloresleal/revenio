@@ -209,6 +209,7 @@ export default function App() {
   const [callDetailLoading, setCallDetailLoading] = useState<Record<string, boolean>>({});
   const [callDetailErrors, setCallDetailErrors] = useState<Record<string, string>>({});
   const [callDetailSyncing, setCallDetailSyncing] = useState<Record<string, boolean>>({});
+  const [callLightboxCallId, setCallLightboxCallId] = useState<string | null>(null);
 
   // Debounce effect for search
   useEffect(() => {
@@ -546,6 +547,111 @@ export default function App() {
     );
   };
 
+  const renderCallDetailPanel = (call: RecentCall) => {
+    const detail = callDetails[call.callId];
+    const detailLoading = !!callDetailLoading[call.callId];
+    const detailError = callDetailErrors[call.callId];
+    const transcript = typeof detail?.transcript === 'string' ? detail.transcript : '';
+    const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
+    const shouldShowSyncButton = !call.transferNumber || !recordingUrl;
+    const transferDisplay = getTransferDisplay(call);
+    const sellerTalkDisplay = getSellerTalkDisplay(call);
+
+    return (
+      <div className="border-t border-slate-800 bg-slate-950/50 px-3 py-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Call ID</div>
+            <div className="font-mono text-slate-300 break-all">{call.callId || '--'}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Agente virtual</div>
+            <div className="font-mono text-slate-300 break-all">{call.assistantId || '--'}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Vendedor (transfer)</div>
+            <div className="font-mono text-slate-300">{call.transferNumber || '--'}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Duración total</div>
+            <div className="font-mono text-slate-300">{formatSeconds(call.duration)}</div>
+            <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSource(call.durationSource)}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Tiempo a transfer</div>
+            <div className="font-mono text-slate-300">{transferDisplay.value}</div>
+            <div className="text-[11px] text-slate-500 mt-1">Fuente: {transferDisplay.source}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Tiempo con vendedor</div>
+            <div className="font-mono text-slate-300">{sellerTalkDisplay.value}</div>
+            <div className="text-[11px] text-slate-500 mt-1">Fuente: {sellerTalkDisplay.source}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Inicio</div>
+            <div className="font-mono text-slate-300">{formatDateTime(call.startedAt)}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Fin</div>
+            <div className="font-mono text-slate-300">{formatDateTime(call.endedAt)}</div>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => openJsonModal(call.callId)}
+            className="text-xs px-2 py-1 rounded border border-blue-700/60 text-blue-300 hover:bg-blue-900/20"
+          >
+            Ver JSON completo
+          </button>
+        </div>
+        {shouldShowSyncButton && (
+          <div className="mt-2">
+            <button
+              onClick={() => handleSyncCallDetail(call.callId)}
+              disabled={!!callDetailSyncing[call.callId]}
+              className="text-xs px-2 py-1 rounded border border-amber-700/60 text-amber-300 hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {callDetailSyncing[call.callId] ? 'Sincronizando...' : 'Reintentar sync transcript/audio'}
+            </button>
+          </div>
+        )}
+        <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
+            <div className="text-slate-500 text-xs mb-2">Transcript</div>
+            {detailLoading ? (
+              <div className="text-xs text-slate-400">Cargando transcript...</div>
+            ) : detailError ? (
+              <div className="text-xs text-rose-300">{detailError}</div>
+            ) : transcript ? (
+              <p className="text-xs text-slate-300 whitespace-pre-wrap max-h-44 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                {transcript}
+              </p>
+            ) : (
+              <div className="text-xs text-slate-500">Sin transcript disponible.</div>
+            )}
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
+            <div className="text-slate-500 text-xs mb-2">Audio</div>
+            {detailLoading ? (
+              <div className="text-xs text-slate-400">Cargando audio...</div>
+            ) : recordingUrl ? (
+              <audio controls preload="none" className="w-full">
+                <source src={recordingUrl} />
+                Tu navegador no soporta audio.
+              </audio>
+            ) : (
+              <div className="text-xs text-slate-500">Sin audio disponible.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const lightboxCall = callLightboxCallId
+    ? filteredCalls.find((c) => c.callId === callLightboxCallId) ?? data?.recent.find((c) => c.callId === callLightboxCallId) ?? null
+    : null;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 pb-12 selection:bg-blue-500/30">
       
@@ -686,7 +792,7 @@ export default function App() {
                 </div>
                 
                 {/* --- Filters Bar --- */}
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
                   <div className="relative col-span-1 md:col-span-2">
                     <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
                       {search !== debouncedSearch ? (
@@ -774,19 +880,17 @@ export default function App() {
               ) : (
                 filteredCalls.map((call) => {
                   const isOpen = expandedCallId === call.callId;
-                  const detail = callDetails[call.callId];
-                  const detailLoading = !!callDetailLoading[call.callId];
-                  const detailError = callDetailErrors[call.callId];
-                  const transcript = typeof detail?.transcript === 'string' ? detail.transcript : '';
-                  const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
-                  const shouldShowSyncButton = !call.transferNumber || !recordingUrl;
-                  const transferDisplay = getTransferDisplay(call);
-                  const sellerTalkDisplay = getSellerTalkDisplay(call);
                   return (
                     <div key={call.callId} className="border border-slate-800 rounded-lg bg-slate-900/70 overflow-hidden">
                       <button
                         className="w-full px-3 py-3 hover:bg-slate-800/50 transition-colors"
                         onClick={() => {
+                          const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+                          if (isMobile) {
+                            setCallLightboxCallId(call.callId);
+                            loadCallDetail(call.callId).catch(() => undefined);
+                            return;
+                          }
                           const nextOpen = isOpen ? null : call.callId;
                           setExpandedCallId(nextOpen);
                           if (nextOpen) {
@@ -809,97 +913,14 @@ export default function App() {
                           <div className="md:hidden flex items-center gap-2">
                             <span className="font-mono text-xs text-slate-400">{formatSeconds(call.duration)}</span>
                           </div>
-                          {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                          <span className="hidden md:inline">
+                            {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                          </span>
+                          <span className="md:hidden text-[11px] text-slate-400">Ver detalle</span>
                         </div>
                       </button>
                       {isOpen && (
-                        <div className="border-t border-slate-800 bg-slate-950/50 px-3 py-3">
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Call ID</div>
-                              <div className="font-mono text-slate-300 break-all">{call.callId || '--'}</div>
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Agente virtual</div>
-                              <div className="font-mono text-slate-300 break-all">{call.assistantId || '--'}</div>
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Vendedor (transfer)</div>
-                              <div className="font-mono text-slate-300">{call.transferNumber || '--'}</div>
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Duración total</div>
-                              <div className="font-mono text-slate-300">{formatSeconds(call.duration)}</div>
-                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSource(call.durationSource)}</div>
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Tiempo a transfer</div>
-                              <div className="font-mono text-slate-300">{transferDisplay.value}</div>
-                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {transferDisplay.source}</div>
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Tiempo con vendedor</div>
-                              <div className="font-mono text-slate-300">{sellerTalkDisplay.value}</div>
-                              <div className="text-[11px] text-slate-500 mt-1">Fuente: {sellerTalkDisplay.source}</div>
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Inicio</div>
-                              <div className="font-mono text-slate-300">{formatDateTime(call.startedAt)}</div>
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-                              <div className="text-slate-500">Fin</div>
-                              <div className="font-mono text-slate-300">{formatDateTime(call.endedAt)}</div>
-                            </div>
-                          </div>
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <button
-                              onClick={() => openJsonModal(call.callId)}
-                              className="text-xs px-2 py-1 rounded border border-blue-700/60 text-blue-300 hover:bg-blue-900/20"
-                            >
-                              Ver JSON completo
-                            </button>
-                          </div>
-                          {shouldShowSyncButton && (
-                            <div className="mt-2">
-                              <button
-                                onClick={() => handleSyncCallDetail(call.callId)}
-                                disabled={!!callDetailSyncing[call.callId]}
-                                className="text-xs px-2 py-1 rounded border border-amber-700/60 text-amber-300 hover:bg-amber-900/20 disabled:opacity-60 disabled:cursor-not-allowed"
-                              >
-                                {callDetailSyncing[call.callId] ? 'Sincronizando...' : 'Reintentar sync transcript/audio'}
-                              </button>
-                            </div>
-                          )}
-                          <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
-                              <div className="text-slate-500 text-xs mb-2">Transcript</div>
-                              {detailLoading ? (
-                                <div className="text-xs text-slate-400">Cargando transcript...</div>
-                              ) : detailError ? (
-                                <div className="text-xs text-rose-300">{detailError}</div>
-                              ) : transcript ? (
-                                <p className="text-xs text-slate-300 whitespace-pre-wrap max-h-44 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                                  {transcript}
-                                </p>
-                              ) : (
-                                <div className="text-xs text-slate-500">Sin transcript disponible.</div>
-                              )}
-                            </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
-                              <div className="text-slate-500 text-xs mb-2">Audio</div>
-                              {detailLoading ? (
-                                <div className="text-xs text-slate-400">Cargando audio...</div>
-                              ) : recordingUrl ? (
-                                <audio controls preload="none" className="w-full">
-                                  <source src={recordingUrl} />
-                                  Tu navegador no soporta audio.
-                                </audio>
-                              ) : (
-                                <div className="text-xs text-slate-500">Sin audio disponible.</div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
+                        renderCallDetailPanel(call)
                       )}
                     </div>
                   );
@@ -976,6 +997,28 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {lightboxCall && (
+          <div className="fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm md:hidden">
+            <div className="h-full w-full overflow-y-auto p-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+                <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-100">Detalle de llamada</h4>
+                    <p className="text-[11px] text-slate-500 font-mono">{lightboxCall.phone}</p>
+                  </div>
+                  <button
+                    onClick={() => setCallLightboxCallId(null)}
+                    className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+                {renderCallDetailPanel(lightboxCall)}
+              </div>
+            </div>
+          </div>
+        )}
 
         {jsonModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
