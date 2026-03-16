@@ -30,7 +30,6 @@ import {
   X,
   AlertOctagon,
   AlertTriangle,
-  ChevronDown
 } from 'lucide-react';
 import { fetchAllData, fetchRecent, fetchCallDetail, syncCallDetail } from './src/lib/api';
 
@@ -545,7 +544,11 @@ export default function App() {
     );
   };
 
-  const renderCallDetailPanel = (call: RecentCall) => {
+  const renderCallDetailPanel = (
+    call: RecentCall,
+    options?: { inModal?: boolean }
+  ) => {
+    const inModal = options?.inModal === true;
     const detail = callDetails[call.callId];
     const detailLoading = !!callDetailLoading[call.callId];
     const detailError = callDetailErrors[call.callId];
@@ -556,7 +559,7 @@ export default function App() {
     const sellerTalkDisplay = getSellerTalkDisplay(call);
 
     return (
-      <div className="border-t border-slate-800 bg-slate-950/50 px-3 py-3">
+      <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Call ID</div>
@@ -901,7 +904,9 @@ export default function App() {
                           <div className="md:hidden flex items-center gap-2">
                             <span className="font-mono text-xs text-slate-400">{formatSeconds(call.duration)}</span>
                           </div>
-                          <ChevronDown size={16} className="text-slate-400" />
+                          <span className="inline-flex items-center rounded-md border border-blue-700/50 px-2 py-1 text-[11px] font-medium text-blue-300 hover:bg-blue-900/20">
+                            Ver detalle
+                          </span>
                         </div>
                       </button>
                     </div>
@@ -982,8 +987,8 @@ export default function App() {
 
         {lightboxCall && (
           <div className="fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm">
-            <div className="h-full w-full overflow-y-auto p-3">
-              <div className="mx-auto w-full max-w-5xl rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+            <div className="h-full w-full overflow-y-auto p-4 sm:p-6">
+              <div className="mx-auto w-full max-w-5xl rounded-2xl border border-slate-700/80 bg-slate-900/95 shadow-2xl overflow-hidden">
                 <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
                   <div>
                     <h4 className="text-sm font-semibold text-slate-100">Detalle de llamada</h4>
@@ -996,7 +1001,9 @@ export default function App() {
                     Cerrar
                   </button>
                 </div>
-                {renderCallDetailPanel(lightboxCall)}
+                <div className="max-h-[80vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                  {renderCallDetailPanel(lightboxCall, { inModal: true })}
+                </div>
               </div>
             </div>
           </div>
