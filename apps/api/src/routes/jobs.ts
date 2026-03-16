@@ -18,9 +18,9 @@ interface TwilioCall {
   from: string;
   status: string;
   duration: string;
-  startTime: string;
-  endTime: string;
-  parentCallSid: string | null;
+  start_time?: string;
+  end_time?: string;
+  parent_call_sid?: string | null;
 }
 
 interface TwilioCallsResponse {
@@ -30,6 +30,31 @@ interface TwilioCallsResponse {
 interface TwilioCallDetail {
   sid?: string;
   duration?: string;
+}
+
+function normalizePhone(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const keepPlus = value.trim().startsWith('+');
+  const digits = value.replace(/[^\d]/g, '');
+  if (!digits) return null;
+  return keepPlus ? `+${digits}` : digits;
+}
+
+function pickTransferChild(calls: TwilioCall[], expectedTransferNumber: string | null | undefined): TwilioCall | null {
+  const normalizedExpected = normalizePhone(expectedTransferNumber);
+  const ranked = calls
+    .map((c) => {
+      const durationSec = Number.parseInt(c.duration ?? '0', 10);
+      const normalizedTo = normalizePhone(c.to);
+      const score =
+        (normalizedExpected && normalizedTo && normalizedExpected === normalizedTo ? 10 : 0) +
+        (Number.isFinite(durationSec) && durationSec > 0 ? 3 : 0) +
+        (c.status === 'completed' ? 1 : 0);
+      return { call: c, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  return ranked[0]?.call ?? null;
 }
 
 /**
@@ -107,6 +132,7 @@ async function getVapiCallTwilioSid(vapiCallId: string): Promise<string | null> 
  * Finds calls with:
  * - outcome = 'transfer_success'
  * - postTransferDurationSec IS NULL or 0
+ *   OR transfer metadata is incomplete (transferNumber/transferredAt)
  * - ended in last 24 hours
  * 
  * For each, fetches Twilio child call duration and updates the metric.
@@ -123,7 +149,9 @@ router.post('/sync-transfer-metrics', async (req, res) => {
       outcome: 'transfer_success',
       OR: [
         { postTransferDurationSec: null },
-        { postTransferDurationSec: 0 }
+        { postTransferDurationSec: 0 },
+        { transferNumber: null },
+        { transferredAt: null },
       ],
       endedAt: { gte: cutoff }
     },
@@ -157,20 +185,28 @@ router.post('/sync-transfer-metrics', async (req, res) => {
       // Fetch child calls
       const childCalls = await fetchTwilioChildCalls(twilioParentSid);
 
-      // Find the transfer child call (prefer completed, match transfer number if available)
-      const completedChild = childCalls.find(c => c.status === 'completed' && parseInt(c.duration, 10) > 0);
-      const postTransferDurationSec = completedChild ? parseInt(completedChild.duration, 10) : null;
+      // Find transfer leg (prioritize expected transfer number if present)
+      const transferChild = pickTransferChild(childCalls, call.transferNumber);
+      const postTransferDurationSec = transferChild ? parseInt(transferChild.duration ?? '0', 10) : null;
+      const transferNumberFromTwilio = transferChild?.to ?? null;
+      const transferredAtFromTwilio = transferChild?.start_time ? new Date(transferChild.start_time) : null;
 
       if (!dryRun) {
         const nextDurationSec =
           twilioTotalDurationSec !== null && twilioTotalDurationSec > (call.durationSec ?? 0)
             ? twilioTotalDurationSec
             : call.durationSec;
+        const validTransferredAt =
+          transferredAtFromTwilio && !Number.isNaN(transferredAtFromTwilio.getTime())
+            ? transferredAtFromTwilio
+            : call.transferredAt;
         await prisma.callMetric.update({
           where: { callId: call.callId },
           data: {
             postTransferDurationSec: postTransferDurationSec ?? undefined,
-            durationSec: nextDurationSec ?? undefined
+            durationSec: nextDurationSec ?? undefined,
+            transferNumber: transferNumberFromTwilio ?? call.transferNumber ?? undefined,
+            transferredAt: validTransferredAt ?? undefined,
           }
         });
       }
@@ -179,7 +215,7 @@ router.post('/sync-transfer-metrics', async (req, res) => {
       const hasAnyDuration = postTransferDurationSec !== null || twilioTotalDurationSec !== null;
       if (!hasAnyDuration) {
         if (childCalls.length === 0) status = 'no_child';
-        else if (!completedChild) status = 'not_completed';
+        else if (!transferChild) status = 'not_completed';
       }
 
       results.push({
@@ -187,14 +223,16 @@ router.post('/sync-transfer-metrics', async (req, res) => {
         status,
         postTransferDurationSec: postTransferDurationSec ?? undefined,
         totalDurationSec: twilioTotalDurationSec ?? undefined,
-        childCallSid: completedChild?.sid
+        childCallSid: transferChild?.sid
       });
 
       console.log('sync-transfer-metrics: Updated call', {
         callId: call.callId,
         postTransferDurationSec: postTransferDurationSec,
         totalDurationSec: twilioTotalDurationSec,
-        childCallSid: completedChild?.sid,
+        transferNumber: transferNumberFromTwilio,
+        transferredAt: transferredAtFromTwilio,
+        childCallSid: transferChild?.sid,
         dryRun
       });
 

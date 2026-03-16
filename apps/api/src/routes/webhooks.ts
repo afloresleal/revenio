@@ -97,9 +97,20 @@ function extractTwilioCallSid(call: Record<string, unknown>, message?: Record<st
   return undefined;
 }
 
-async function fetchTwilioPostTransferDuration(parentCallSid: string, transferNumber: string | null | undefined): Promise<{ durationSec: number | null; childCallSid: string | null }> {
+function normalizePhone(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const keepPlus = value.trim().startsWith('+');
+  const digits = value.replace(/[^\d]/g, '');
+  if (!digits) return null;
+  return keepPlus ? `+${digits}` : digits;
+}
+
+async function fetchTwilioPostTransferDuration(
+  parentCallSid: string,
+  transferNumber: string | null | undefined,
+): Promise<{ durationSec: number | null; childCallSid: string | null; transferNumber: string | null; startedAt: Date | null }> {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-    return { durationSec: null, childCallSid: null };
+    return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
   }
 
   const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
@@ -113,30 +124,33 @@ async function fetchTwilioPostTransferDuration(parentCallSid: string, transferNu
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
     console.warn('Twilio child call lookup failed:', { status: resp.status, body });
-    return { durationSec: null, childCallSid: null };
+    return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
   }
 
   const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
   const calls = Array.isArray(data.calls) ? (data.calls as Array<Record<string, unknown>>) : [];
-  if (calls.length === 0) return { durationSec: null, childCallSid: null };
+  if (calls.length === 0) return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
 
-  const normalizedTransfer = transferNumber ? transferNumber.replace(/[^\d+]/g, '') : null;
+  const normalizedTransfer = normalizePhone(transferNumber);
   const candidates = calls
     .map((c) => {
       const to = asString(c.to) ?? '';
-      const normalizedTo = to.replace(/[^\d+]/g, '');
+      const normalizedTo = normalizePhone(to);
       const durationRaw = asString(c.duration);
       const durationSec = durationRaw ? Number.parseInt(durationRaw, 10) : NaN;
       const startTime = asString(c.start_time) ?? '';
       const sid = asString(c.sid) ?? '';
-      const score = (normalizedTransfer && normalizedTo === normalizedTransfer ? 10 : 0)
+      const score = (normalizedTransfer && normalizedTo && normalizedTo === normalizedTransfer ? 10 : 0)
         + (Number.isFinite(durationSec) && durationSec >= 0 ? 3 : 0)
         + (asString(c.status) === 'completed' ? 1 : 0);
+      const startedAt = startTime ? new Date(startTime) : null;
       return {
         sid,
         score,
         durationSec: Number.isFinite(durationSec) ? durationSec : null,
         startTime,
+        startedAt: startedAt && !Number.isNaN(startedAt.getTime()) ? startedAt : null,
+        transferNumber: to || null,
       };
     })
     .sort((a, b) => {
@@ -145,8 +159,13 @@ async function fetchTwilioPostTransferDuration(parentCallSid: string, transferNu
     });
 
   const best = candidates[0];
-  if (!best) return { durationSec: null, childCallSid: null };
-  return { durationSec: best.durationSec, childCallSid: best.sid || null };
+  if (!best) return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
+  return {
+    durationSec: best.durationSec,
+    childCallSid: best.sid || null,
+    transferNumber: best.transferNumber,
+    startedAt: best.startedAt,
+  };
 }
 
 async function fetchTwilioCallDuration(callSid: string): Promise<number | null> {
@@ -517,6 +536,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     endedReason: endedReason ?? null,
   });
   let postTransferDurationSec: number | null = null;
+  let transferNumberFromTwilio: string | null = null;
+  let transferredAtFromTwilio: Date | null = null;
   let twilioTotalDurationSec: number | null = null;
   if (wasTransferred && twilioParentCallSid) {
     try {
@@ -525,6 +546,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       if (transferLookup.durationSec !== null && transferLookup.durationSec >= 0) {
         postTransferDurationSec = transferLookup.durationSec;
       }
+      transferNumberFromTwilio = transferLookup.transferNumber;
+      transferredAtFromTwilio = transferLookup.startedAt;
     } catch (error) {
       console.warn('Twilio transfer duration lookup error:', {
         callId,
@@ -543,6 +566,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       });
     }
   }
+  const resolvedTransferNumber = forwardedPhoneNumber ?? transferNumberFromTwilio ?? existing?.transferNumber ?? null;
+  const resolvedTransferredAt = existing?.transferredAt ?? transferredAtFromTwilio ?? null;
 
   let finalDuration =
     calculatedDuration && calculatedDuration > 0
@@ -564,7 +589,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       callId,
       phoneNumber: asString(asRecord(call.customer)?.number) || 'unknown',
       assistantId,
-      transferNumber: forwardedPhoneNumber ?? existing?.transferNumber ?? null,
+      transferNumber: resolvedTransferNumber,
+      transferredAt: resolvedTransferredAt ?? undefined,
       startedAt: startedAtDate ?? undefined,
       endedAt: endedAtDate,
       durationSec: finalDuration,
@@ -583,7 +609,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       startedAt: startedAtDate ?? undefined,
       endedAt: endedAtDate,
       assistantId,
-      transferNumber: forwardedPhoneNumber ?? existing?.transferNumber ?? null,
+      transferNumber: resolvedTransferNumber,
+      transferredAt: resolvedTransferredAt ?? undefined,
       durationSec: finalDuration ?? existing?.durationSec ?? null,
       endedReason,
       outcome,
