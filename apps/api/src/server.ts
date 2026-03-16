@@ -7,6 +7,7 @@ import { PrismaClient } from "@prisma/client";
 // Import route modules
 import metricsRouter from "./routes/metrics.js";
 import webhooksRouter from "./routes/webhooks.js";
+import jobsRouter from "./routes/jobs.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -33,6 +34,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Mount route modules
 app.use('/api/metrics', metricsRouter);
+app.use('/api/jobs', jobsRouter);
 app.use('/webhooks', webhooksRouter);
 
 app.get("/health", (_req, res) => {
