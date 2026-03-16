@@ -149,8 +149,7 @@ router.post('/sync-transfer-metrics', async (req, res) => {
         await prisma.callMetric.update({
           where: { callId: call.callId },
           data: {
-            postTransferDurationSec: durationSec,
-            sellerTalkSource: 'post_transfer_duration_sec'
+            postTransferDurationSec: durationSec
           }
         });
       }
