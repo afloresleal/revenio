@@ -896,7 +896,7 @@ export default function App() {
         <div className={`bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden ${
           historyOnlyView
             ? 'h-[calc(100vh-170px)]'
-            : 'h-[560px]'
+            : 'h-auto'
         }`}>
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col gap-3">
                 <div className="flex justify-between items-center">
@@ -978,7 +978,13 @@ export default function App() {
                 </div>
             </div>
 
-            <div className="overflow-y-auto flex-1 p-3 space-y-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+            <div
+              className={`p-3 space-y-2 ${
+                historyOnlyView
+                  ? 'overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent'
+                  : ''
+              }`}
+            >
               {loading ? (
                 <div className="space-y-3 p-2">
                     <div className="flex justify-center py-4">
