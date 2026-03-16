@@ -196,6 +196,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("Hoy");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [historyOnlyView, setHistoryOnlyView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('view') === 'history';
+  });
 
   // Filters State
   const [search, setSearch] = useState("");
@@ -282,8 +286,41 @@ export default function App() {
     fetchData();
   }, [period]);
 
+  useEffect(() => {
+    if (historyOnlyView) setShowFullHistory(true);
+  }, [historyOnlyView]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      setHistoryOnlyView(params.get('view') === 'history');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const handleRefresh = () => {
     fetchData();
+  };
+
+  const openHistoryView = () => {
+    if (typeof window !== 'undefined') {
+      const next = new URL(window.location.href);
+      next.searchParams.set('view', 'history');
+      window.history.pushState({}, '', next.toString());
+    }
+    setShowFullHistory(true);
+    setHistoryOnlyView(true);
+  };
+
+  const closeHistoryView = () => {
+    if (typeof window !== 'undefined') {
+      const next = new URL(window.location.href);
+      next.searchParams.delete('view');
+      window.history.pushState({}, '', next.toString());
+    }
+    setHistoryOnlyView(false);
   };
 
   const handleClearFilters = () => {
@@ -538,11 +575,11 @@ export default function App() {
     const DeltaIcon = delta >= 0 ? ArrowUpRight : ArrowDownRight;
 
     return (
-      <div className="group relative bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg hover:border-slate-700 hover:scale-[1.01] transition-all duration-300 overflow-hidden">
+      <div className="group relative bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg hover:border-slate-700 transition-all duration-300 overflow-hidden">
         {/* Top Accent Gradient */}
         <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-${accentColor}-500 to-transparent opacity-50 group-hover:opacity-100 transition-opacity`}></div>
         
-        <div className="flex justify-between items-start mb-4">
+        <div className="flex justify-between items-start mb-3">
           <div className={`p-2.5 rounded-full bg-${accentColor}-500/10 text-${accentColor}-500 border border-${accentColor}-500/20`}>
             {icon}
           </div>
@@ -552,11 +589,11 @@ export default function App() {
           </div>
         </div>
 
-        <h3 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">{title}</h3>
+        <h3 className="text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1">{title}</h3>
         <div className="flex items-baseline gap-2">
-          <span className="text-3xl lg:text-4xl font-mono font-medium text-slate-100">{value}</span>
+          <span className="text-2xl lg:text-3xl font-mono font-medium text-slate-100">{value}</span>
         </div>
-        <p className="text-slate-500 text-xs mt-2">{subtext}</p>
+        <p className="text-slate-500 text-[11px] mt-1.5">{subtext}</p>
       </div>
     );
   };
@@ -801,8 +838,10 @@ export default function App() {
             </span>
         </div>
 
+        {!historyOnlyView && (
+        <>
         {/* --- Metrics Grid --- */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {renderMetricCard(
             "Llamadas Totales",
             data?.summary.totalCalls || 0,
@@ -843,8 +882,17 @@ export default function App() {
         {renderSentimentDistribution()}
         */}
 
+        </>
+        )}
+
         {/* --- Calls Detail (Priority Section) --- */}
-        <div className={`bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden ${showFullHistory ? 'h-auto max-h-[80vh]' : 'h-[560px]'}`}>
+        <div className={`bg-slate-900 border border-slate-800 rounded-xl shadow-sm flex flex-col overflow-hidden ${
+          historyOnlyView
+            ? 'h-[calc(100vh-170px)]'
+            : showFullHistory
+              ? 'h-auto max-h-[80vh]'
+              : 'h-[560px]'
+        }`}>
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col gap-3">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
@@ -856,9 +904,19 @@ export default function App() {
                           </span>
                       )}
                   </div>
-                  <button className="text-slate-500 hover:text-white transition-colors">
-                      <MoreHorizontal size={18} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {historyOnlyView && (
+                      <button
+                        onClick={closeHistoryView}
+                        className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800"
+                      >
+                        Volver al dashboard
+                      </button>
+                    )}
+                    <button className="text-slate-500 hover:text-white transition-colors">
+                        <MoreHorizontal size={18} />
+                    </button>
+                  </div>
                 </div>
                 
                 {/* --- Filters Bar --- */}
@@ -986,14 +1044,23 @@ export default function App() {
             {/* Table Footer */}
             <div className="p-3 border-t border-slate-800 bg-slate-900 text-center shrink-0">
                 <button 
-                  onClick={() => setShowFullHistory(!showFullHistory)}
+                  onClick={() => {
+                    if (historyOnlyView) {
+                      setShowFullHistory(false);
+                      closeHistoryView();
+                      return;
+                    }
+                    openHistoryView();
+                  }}
                   className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
                 >
-                    {showFullHistory ? 'Ver menos' : 'Ver historial completo'}
+                    {historyOnlyView ? 'Salir de historial completo' : 'Ver historial completo'}
                 </button>
             </div>
           </div>
 
+        {!historyOnlyView && (
+        <>
         {/* --- Volume Chart (Secondary Row) --- */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
@@ -1053,6 +1120,8 @@ export default function App() {
             )}
           </div>
         </div>
+        </>
+        )}
 
         {lightboxCall && (
           <div className="fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm">
