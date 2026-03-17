@@ -11,6 +11,7 @@ const router = Router();
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN = Number(process.env.SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN ?? 180);
 
 interface TwilioCall {
   sid: string;
@@ -21,6 +22,12 @@ interface TwilioCall {
   start_time?: string;
   end_time?: string;
   parent_call_sid?: string | null;
+}
+
+function parseBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+  return false;
 }
 
 interface TwilioCallsResponse {
@@ -138,42 +145,58 @@ async function getVapiCallTwilioSid(vapiCallId: string): Promise<string | null> 
  * For each, fetches Twilio child call duration and updates the metric.
  */
 router.post('/sync-transfer-metrics', async (req, res) => {
-  const dryRun = req.query.dry_run === 'true';
+  const dryRun = parseBoolean(req.query.dry_run ?? req.body?.dry_run);
   const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const lookbackMinutesRaw = Number(req.query.lookback_minutes ?? req.body?.lookback_minutes ?? SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN);
+  const lookbackMinutes = Math.max(5, Math.min(Number.isFinite(lookbackMinutesRaw) ? Math.floor(lookbackMinutesRaw) : SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN, 7 * 24 * 60));
   
   // Find calls needing sync
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24h
+  const cutoff = new Date(Date.now() - lookbackMinutes * 60 * 1000);
   
   const callsToSync = await prisma.callMetric.findMany({
     where: {
       outcome: 'transfer_success',
-      OR: [
-        { postTransferDurationSec: null },
-        { postTransferDurationSec: 0 },
-        { transferNumber: null },
-        { transferredAt: null },
-      ],
-      endedAt: { gte: cutoff }
+      AND: [
+        {
+          OR: [
+            { postTransferDurationSec: null },
+            { postTransferDurationSec: 0 },
+            { transferNumber: null },
+            { transferredAt: null },
+            { transferStatus: null },
+            { twilioParentCallSid: null },
+            { twilioTransferCallSid: null },
+          ],
+        },
+        {
+          OR: [
+            { endedAt: { gte: cutoff } },
+            { updatedAt: { gte: cutoff } },
+          ],
+        },
+      ]
     },
     orderBy: { endedAt: 'desc' },
     take: limit
   });
 
-  console.log('sync-transfer-metrics: Found calls to sync', { count: callsToSync.length, dryRun });
+  console.log('sync-transfer-metrics: Found calls to sync', { count: callsToSync.length, dryRun, lookbackMinutes });
 
   const results: Array<{
     callId: string;
     status: 'updated' | 'no_child' | 'not_completed' | 'no_twilio_sid' | 'error';
     postTransferDurationSec?: number;
     totalDurationSec?: number;
+    transferStatus?: string;
+    parentCallSid?: string;
     childCallSid?: string;
     error?: string;
   }> = [];
 
   for (const call of callsToSync) {
     try {
-      // Get Twilio parent CallSid from VAPI
-      const twilioParentSid = await getVapiCallTwilioSid(call.callId);
+      // Get Twilio parent CallSid from DB first, then VAPI fallback
+      const twilioParentSid = call.twilioParentCallSid ?? await getVapiCallTwilioSid(call.callId);
       
       if (!twilioParentSid) {
         results.push({ callId: call.callId, status: 'no_twilio_sid' });
@@ -190,6 +213,7 @@ router.post('/sync-transfer-metrics', async (req, res) => {
       const postTransferDurationSec = transferChild ? parseInt(transferChild.duration ?? '0', 10) : null;
       const transferNumberFromTwilio = transferChild?.to ?? null;
       const transferredAtFromTwilio = transferChild?.start_time ? new Date(transferChild.start_time) : null;
+      const transferStatusFromTwilio = transferChild?.status ?? null;
 
       if (!dryRun) {
         const nextDurationSec =
@@ -203,11 +227,30 @@ router.post('/sync-transfer-metrics', async (req, res) => {
         await prisma.callMetric.update({
           where: { callId: call.callId },
           data: {
+            twilioParentCallSid: twilioParentSid,
+            twilioTransferCallSid: transferChild?.sid ?? call.twilioTransferCallSid ?? undefined,
+            transferStatus: transferStatusFromTwilio ?? call.transferStatus ?? undefined,
             postTransferDurationSec: postTransferDurationSec ?? undefined,
             durationSec: nextDurationSec ?? undefined,
             transferNumber: transferNumberFromTwilio ?? call.transferNumber ?? undefined,
             transferredAt: validTransferredAt ?? undefined,
           }
+        });
+        await prisma.twilioCallLink.upsert({
+          where: { parentCallSid: twilioParentSid },
+          create: {
+            parentCallSid: twilioParentSid,
+            childCallSid: transferChild?.sid ?? null,
+            vapiCallId: call.callId,
+            childStatus: transferStatusFromTwilio ?? null,
+            lastCallbackAt: new Date(),
+          },
+          update: {
+            childCallSid: transferChild?.sid ?? undefined,
+            vapiCallId: call.callId,
+            childStatus: transferStatusFromTwilio ?? undefined,
+            lastCallbackAt: new Date(),
+          },
         });
       }
 
@@ -223,6 +266,8 @@ router.post('/sync-transfer-metrics', async (req, res) => {
         status,
         postTransferDurationSec: postTransferDurationSec ?? undefined,
         totalDurationSec: twilioTotalDurationSec ?? undefined,
+        transferStatus: transferStatusFromTwilio ?? undefined,
+        parentCallSid: twilioParentSid,
         childCallSid: transferChild?.sid
       });
 
@@ -231,6 +276,8 @@ router.post('/sync-transfer-metrics', async (req, res) => {
         postTransferDurationSec: postTransferDurationSec,
         totalDurationSec: twilioTotalDurationSec,
         transferNumber: transferNumberFromTwilio,
+        transferStatus: transferStatusFromTwilio,
+        parentCallSid: twilioParentSid,
         transferredAt: transferredAtFromTwilio,
         childCallSid: transferChild?.sid,
         dryRun
@@ -259,6 +306,7 @@ router.post('/sync-transfer-metrics', async (req, res) => {
   return res.json({
     ok: true,
     dryRun,
+    lookbackMinutes,
     summary,
     results
   });

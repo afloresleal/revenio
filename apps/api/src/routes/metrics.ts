@@ -616,11 +616,15 @@ router.get('/recent', async (req, res) => {
         phoneNumber: true,
         assistantId: true,
         transferNumber: true,
+        twilioParentCallSid: true,
+        twilioTransferCallSid: true,
         transferStatus: true,
         outcome: true,
         sentiment: true,
         durationSec: true,
         postTransferDurationSec: true,
+        transferTranscript: true,
+        transferRecordingUrl: true,
         startedAt: true,
         transferredAt: true,
         endedAt: true,
@@ -636,6 +640,14 @@ router.get('/recent', async (req, res) => {
         c.postTransferDurationSec && c.postTransferDurationSec > 0
           ? c.postTransferDurationSec
           : diffSeconds(c.transferredAt, c.endedAt);
+      const dataQuality = resolveDataQuality({
+        twilioParentCallSid: c.twilioParentCallSid,
+        twilioTransferCallSid: c.twilioTransferCallSid,
+        transferStatus: c.transferStatus,
+        postTransferDurationSec: c.postTransferDurationSec,
+        transferRecordingUrl: c.transferRecordingUrl,
+        transferTranscript: c.transferTranscript,
+      });
       return {
         callId: c.callId,
         phone: maskPhone(c.phoneNumber),
@@ -652,6 +664,7 @@ router.get('/recent', async (req, res) => {
         sellerTalkSec: sellerTalk,
         sellerTalkSource: sellerTalkSource(c.postTransferDurationSec, c.transferredAt, c.endedAt),
         postTransferDurationSec: c.postTransferDurationSec,
+        dataQuality,
         ago: formatRelativeTime(c.startedAt ?? c.createdAt),
         inProgress: c.inProgress,
       };
@@ -713,6 +726,14 @@ router.get('/calls/:callId', async (req, res) => {
       call.postTransferDurationSec && call.postTransferDurationSec > 0
         ? call.postTransferDurationSec
         : diffSeconds(call.transferredAt, call.endedAt);
+    const dataQuality = resolveDataQuality({
+      twilioParentCallSid: call.twilioParentCallSid,
+      twilioTransferCallSid: call.twilioTransferCallSid,
+      transferStatus: call.transferStatus,
+      postTransferDurationSec: call.postTransferDurationSec,
+      transferRecordingUrl: call.transferRecordingUrl,
+      transferTranscript: call.transferTranscript,
+    });
 
     return res.json({
       callId: call.callId,
@@ -743,6 +764,7 @@ router.get('/calls/:callId', async (req, res) => {
       transferRecordingUrl: call.transferRecordingUrl,
       transferRecordingDurationSec: call.transferRecordingDurationSec,
       recordings: call.recordingsJson,
+      dataQuality,
       cost: call.cost,
       inProgress: call.inProgress,
       lastEventType: call.lastEventType,
@@ -1028,6 +1050,28 @@ function sellerTalkSource(postTransferDurationSec: number | null, transferredAt:
   const fallback = diffSeconds(transferredAt, endedAt);
   if (fallback !== null && fallback > 0) return 'timestamp_fallback';
   return 'missing';
+}
+
+function resolveDataQuality(input: {
+  twilioParentCallSid: string | null;
+  twilioTransferCallSid: string | null;
+  transferStatus: string | null;
+  postTransferDurationSec: number | null;
+  transferRecordingUrl: string | null;
+  transferTranscript: string | null;
+}) {
+  const hasTwilioPolledData =
+    !!input.twilioParentCallSid &&
+    (!!input.twilioTransferCallSid || !!input.transferStatus || (input.postTransferDurationSec ?? 0) > 0);
+  const hasFullLegData =
+    hasTwilioPolledData &&
+    !!input.transferRecordingUrl &&
+    !!input.transferTranscript;
+  return {
+    mode: hasFullLegData ? 'full_leg_control' : hasTwilioPolledData ? 'twilio_polled' : 'vapi_only',
+    hasTwilioPolledData,
+    hasFullLegData,
+  };
 }
 
 export default router;

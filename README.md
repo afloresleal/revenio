@@ -150,6 +150,13 @@ Por defecto:
 - `POST /lab/sync-attempt/:id` (fallback para traer transcript/estado desde Vapi)
 - `GET /lab/call-status/:id` (estado final por `attemptId`)
 
+## Jobs de sincronización
+- `POST /api/jobs/sync-transfer-metrics`
+  - Query opcionales:
+    - `limit` (default 50, max 200)
+    - `lookback_minutes` (default 180)
+    - `dry_run=true|false`
+
 ## Helpers Vapi (solo Lab/debug)
 - `POST /vapi/validate`
 - `POST /vapi/assistants`
