@@ -256,31 +256,105 @@ function extractTranscriptFromVapiPayload(payload: unknown): string | null {
   return null;
 }
 
-app.post("/webhooks/twilio/status", async (req, res) => {
-  let leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;
-  const attemptId =
-    extractAttemptId(req.body) ??
-    (typeof req.query.attempt_id === "string" ? req.query.attempt_id : null);
-  const status = (req.body?.CallStatus as string | undefined) ?? "unknown";
-  const providerId = (req.body?.CallSid as string | undefined) ?? null;
-  const parentCallSid = (req.body?.ParentCallSid as string | undefined) ?? null;
-  const callDurationRaw = (req.body?.CallDuration as string | number | undefined) ?? undefined;
-  const callDurationSec = typeof callDurationRaw === "string"
-    ? Number.parseInt(callDurationRaw, 10)
-    : typeof callDurationRaw === "number"
-      ? Math.trunc(callDurationRaw)
-      : null;
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
-  console.log("twilio_status", { leadId, attemptId, status, providerId, parentCallSid, callDurationSec });
+function parseInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
+function composeFullTranscript(aiTranscript: string | null | undefined, transferTranscript: string | null | undefined): string | null {
+  const ai = typeof aiTranscript === "string" && aiTranscript.trim() ? aiTranscript.trim() : null;
+  const transfer = typeof transferTranscript === "string" && transferTranscript.trim() ? transferTranscript.trim() : null;
+  if (!ai && !transfer) return null;
+  if (ai && !transfer) return ai;
+  if (!ai && transfer) return `Transfer (humano): ${transfer}`;
+  return `${ai}\n\nTransfer (humano): ${transfer}`;
+}
+
+function mergeRecordingsJson(
+  existing: unknown,
+  patch: {
+    vapiUrl?: string | null;
+    twilioTransferUrl?: string | null;
+    twilioTransferDurationSec?: number | null;
+    twilioTransferCallSid?: string | null;
+    twilioRecordingSid?: string | null;
+    twilioRecordingStatus?: string | null;
+  },
+) {
+  const prev = existing && typeof existing === "object" ? (existing as Record<string, unknown>) : {};
+  const next = { ...prev } as Record<string, unknown>;
+  if (patch.vapiUrl) {
+    next.vapi = { ...(prev.vapi as Record<string, unknown> | undefined), url: patch.vapiUrl };
+  }
+  if (patch.twilioTransferUrl || patch.twilioTransferDurationSec !== null || patch.twilioTransferCallSid || patch.twilioRecordingSid || patch.twilioRecordingStatus) {
+    next.twilioTransfer = {
+      ...(prev.twilioTransfer as Record<string, unknown> | undefined),
+      ...(patch.twilioTransferUrl ? { url: patch.twilioTransferUrl } : {}),
+      ...(patch.twilioTransferDurationSec !== null && patch.twilioTransferDurationSec !== undefined
+        ? { durationSec: patch.twilioTransferDurationSec }
+        : {}),
+      ...(patch.twilioTransferCallSid ? { callSid: patch.twilioTransferCallSid } : {}),
+      ...(patch.twilioRecordingSid ? { recordingSid: patch.twilioRecordingSid } : {}),
+      ...(patch.twilioRecordingStatus ? { status: patch.twilioRecordingStatus } : {}),
+    };
+  }
+  return next;
+}
+
+async function resolveTwilioContext(payload: unknown, query: Record<string, unknown>) {
+  const body = (payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const callSid = asNonEmptyString(body.CallSid);
+  const parentCallSid = asNonEmptyString(body.ParentCallSid);
+  const parentSid = parentCallSid ?? callSid;
+  const explicitVapiCallId =
+    asNonEmptyString(body.vapi_call_id) ??
+    asNonEmptyString(query.call_id) ??
+    asNonEmptyString(query.vapi_call_id);
+
+  let leadId =
+    extractLeadId(payload) ??
+    (typeof query.lead_id === "string" ? query.lead_id : null);
+  let attemptId =
+    extractAttemptId(payload) ??
+    (typeof query.attempt_id === "string" ? query.attempt_id : null);
   let attempt =
     attemptId
       ? await prisma.callAttempt.findUnique({ where: { id: attemptId } })
       : null;
 
-  if (!attempt && providerId) {
+  if (!attempt && explicitVapiCallId) {
     attempt = await prisma.callAttempt.findFirst({
-      where: { providerId },
+      where: { providerId: explicitVapiCallId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  let link =
+    parentSid
+      ? await prisma.twilioCallLink.findUnique({ where: { parentCallSid: parentSid } })
+      : null;
+  if (!link && callSid) {
+    link = await prisma.twilioCallLink.findFirst({
+      where: { childCallSid: callSid },
+      orderBy: { updatedAt: "desc" },
+    });
+  }
+
+  if (!attempt && link?.attemptId) {
+    attempt = await prisma.callAttempt.findUnique({ where: { id: link.attemptId } });
+  }
+
+  if (!attempt && callSid) {
+    attempt = await prisma.callAttempt.findFirst({
+      where: { providerId: callSid },
       orderBy: { createdAt: "desc" },
     });
   }
@@ -292,21 +366,97 @@ app.post("/webhooks/twilio/status", async (req, res) => {
     });
   }
 
-  if (attempt) {
-    leadId = leadId ?? attempt.leadId;
+  const vapiCallId = explicitVapiCallId ?? attempt?.providerId ?? link?.vapiCallId ?? null;
+  leadId = leadId ?? attempt?.leadId ?? link?.leadId ?? null;
+  attemptId = attempt?.id ?? attemptId ?? link?.attemptId ?? null;
+
+  return {
+    callSid,
+    parentCallSid,
+    parentSid,
+    attempt,
+    attemptId,
+    leadId,
+    vapiCallId,
+    link,
+  };
+}
+
+async function upsertTwilioLink(params: {
+  parentSid: string;
+  vapiCallId: string;
+  attemptId?: string | null;
+  leadId?: string | null;
+  childCallSid?: string | null;
+  childStatus?: string | null;
+}) {
+  await prisma.twilioCallLink.upsert({
+    where: { parentCallSid: params.parentSid },
+    create: {
+      parentCallSid: params.parentSid,
+      vapiCallId: params.vapiCallId,
+      attemptId: params.attemptId ?? null,
+      leadId: params.leadId ?? null,
+      childCallSid: params.childCallSid ?? null,
+      childStatus: params.childStatus ?? null,
+      lastCallbackAt: new Date(),
+    },
+    update: {
+      vapiCallId: params.vapiCallId,
+      attemptId: params.attemptId ?? undefined,
+      leadId: params.leadId ?? undefined,
+      childCallSid: params.childCallSid ?? undefined,
+      childStatus: params.childStatus ?? undefined,
+      lastCallbackAt: new Date(),
+    },
+  });
+}
+
+async function handleTwilioStatusWebhook(req: express.Request, res: express.Response) {
+  const status = asNonEmptyString(req.body?.CallStatus) ?? "unknown";
+  const callDurationSec = parseInteger(req.body?.CallDuration);
+  const normalizedStatus = status.toLowerCase();
+  const context = await resolveTwilioContext(req.body, req.query as Record<string, unknown>);
+  const isChildLeg = typeof context.parentCallSid === "string" && context.parentCallSid.startsWith("CA");
+
+  console.log("twilio_status", {
+    leadId: context.leadId,
+    attemptId: context.attemptId,
+    status,
+    callSid: context.callSid,
+    parentCallSid: context.parentCallSid,
+    vapiCallId: context.vapiCallId,
+    callDurationSec,
+  });
+
+  if (context.parentSid && context.vapiCallId) {
+    await upsertTwilioLink({
+      parentSid: context.parentSid,
+      vapiCallId: context.vapiCallId,
+      attemptId: context.attemptId,
+      leadId: context.leadId,
+      childCallSid: isChildLeg ? context.callSid : null,
+      childStatus: isChildLeg ? normalizedStatus : null,
+    });
   }
 
-  const normalizedStatus = String(status).toLowerCase();
-  const isChildLeg = typeof parentCallSid === "string" && parentCallSid.startsWith("CA");
+  if (context.vapiCallId) {
+    await prisma.callMetric.updateMany({
+      where: { callId: context.vapiCallId },
+      data: {
+        twilioParentCallSid: context.parentSid ?? undefined,
+        twilioTransferCallSid: isChildLeg ? context.callSid ?? undefined : undefined,
+        transferStatus: isChildLeg ? normalizedStatus : undefined,
+      },
+    });
+  }
+
   const isCompleted = normalizedStatus === "completed";
   const hasPositiveDuration = Number.isFinite(callDurationSec) && (callDurationSec ?? 0) > 0;
-
-  // Only persist seller talk time from a completed Twilio child leg.
-  // This avoids overwriting real values with 0s from parent/early status callbacks.
-  if (attempt?.providerId && isChildLeg && isCompleted && hasPositiveDuration) {
+  if (context.vapiCallId && isChildLeg && isCompleted && hasPositiveDuration) {
     await prisma.callMetric.updateMany({
       where: {
-        callId: attempt.providerId,
+        callId: context.vapiCallId,
         OR: [
           { postTransferDurationSec: null },
           { postTransferDurationSec: { lt: callDurationSec as number } },
@@ -316,18 +466,108 @@ app.post("/webhooks/twilio/status", async (req, res) => {
     });
   }
 
-  if (leadId) {
+  if (context.leadId) {
     await prisma.event.create({
       data: {
-        leadId,
+        leadId: context.leadId,
         type: "twilio_status",
         detail: {
           status,
-          providerId,
-          parentCallSid,
-          attemptId: attempt?.id ?? attemptId,
-          vapiCallId: attempt?.providerId ?? null,
+          callSid: context.callSid,
+          parentCallSid: context.parentCallSid,
+          attemptId: context.attemptId,
+          vapiCallId: context.vapiCallId,
           callDurationSec: Number.isFinite(callDurationSec) ? callDurationSec : null,
+          isChildLeg,
+          raw: req.body,
+        },
+      },
+    });
+  }
+  res.status(200).send("ok");
+}
+
+async function handleTwilioTransferRecordingWebhook(req: express.Request, res: express.Response) {
+  const context = await resolveTwilioContext(req.body, req.query as Record<string, unknown>);
+  const callSid = asNonEmptyString(req.body?.CallSid) ?? context.callSid;
+  const recordingSid = asNonEmptyString(req.body?.RecordingSid);
+  const recordingStatus = asNonEmptyString(req.body?.RecordingStatus) ?? "unknown";
+  const recordingDurationSec = parseInteger(req.body?.RecordingDuration);
+  const recordingUrl = asNonEmptyString(req.body?.RecordingUrl);
+  const vapiCallId = context.vapiCallId ?? context.link?.vapiCallId ?? null;
+
+  console.log("twilio_transfer_recording", {
+    leadId: context.leadId,
+    attemptId: context.attemptId,
+    vapiCallId,
+    callSid,
+    recordingSid,
+    recordingStatus,
+    recordingDurationSec,
+    hasRecordingUrl: !!recordingUrl,
+  });
+
+  if (vapiCallId && context.parentSid) {
+    await upsertTwilioLink({
+      parentSid: context.parentSid,
+      vapiCallId,
+      attemptId: context.attemptId,
+      leadId: context.leadId,
+      childCallSid: callSid,
+    });
+  }
+
+  if (vapiCallId) {
+    const metric = await prisma.callMetric.findUnique({
+      where: { callId: vapiCallId },
+      select: {
+        callId: true,
+        recordingUrl: true,
+        recordingsJson: true,
+        postTransferDurationSec: true,
+      },
+    });
+    if (metric) {
+      const nextPostTransferDurationSec =
+        recordingDurationSec !== null && recordingDurationSec > (metric.postTransferDurationSec ?? 0)
+          ? recordingDurationSec
+          : metric.postTransferDurationSec;
+      const nextRecordingsJson = mergeRecordingsJson(metric.recordingsJson, {
+        vapiUrl: metric.recordingUrl,
+        twilioTransferUrl: recordingUrl,
+        twilioTransferDurationSec: recordingDurationSec,
+        twilioTransferCallSid: callSid,
+        twilioRecordingSid: recordingSid,
+        twilioRecordingStatus: recordingStatus,
+      });
+
+      await prisma.callMetric.update({
+        where: { callId: vapiCallId },
+        data: {
+          twilioTransferCallSid: callSid ?? undefined,
+          transferRecordingUrl: recordingUrl ?? undefined,
+          transferRecordingDurationSec: recordingDurationSec ?? undefined,
+          postTransferDurationSec: nextPostTransferDurationSec ?? undefined,
+          recordingsJson: nextRecordingsJson as any,
+        },
+      });
+    }
+  }
+
+  if (context.leadId) {
+    await prisma.event.create({
+      data: {
+        leadId: context.leadId,
+        type: "twilio_transfer_recording",
+        detail: {
+          callSid,
+          parentCallSid: context.parentCallSid,
+          attemptId: context.attemptId,
+          vapiCallId,
+          recordingSid,
+          recordingStatus,
+          recordingDurationSec,
+          recordingUrl,
           raw: req.body,
         },
       },
@@ -335,7 +575,90 @@ app.post("/webhooks/twilio/status", async (req, res) => {
   }
 
   res.status(200).send("ok");
-});
+}
+
+async function handleTwilioTransferTranscriptionWebhook(req: express.Request, res: express.Response) {
+  const context = await resolveTwilioContext(req.body, req.query as Record<string, unknown>);
+  const callSid = asNonEmptyString(req.body?.CallSid) ?? context.callSid;
+  const transcriptionSid = asNonEmptyString(req.body?.TranscriptionSid);
+  const transcriptionStatus = asNonEmptyString(req.body?.TranscriptionStatus) ?? "unknown";
+  const transcriptionText = asNonEmptyString(req.body?.TranscriptionText);
+  const vapiCallId = context.vapiCallId ?? context.link?.vapiCallId ?? null;
+
+  console.log("twilio_transfer_transcription", {
+    leadId: context.leadId,
+    attemptId: context.attemptId,
+    vapiCallId,
+    callSid,
+    transcriptionSid,
+    transcriptionStatus,
+    hasTranscript: !!transcriptionText,
+  });
+
+  if (vapiCallId && context.parentSid) {
+    await upsertTwilioLink({
+      parentSid: context.parentSid,
+      vapiCallId,
+      attemptId: context.attemptId,
+      leadId: context.leadId,
+      childCallSid: callSid,
+    });
+  }
+
+  if (vapiCallId && transcriptionText) {
+    const metric = await prisma.callMetric.findUnique({
+      where: { callId: vapiCallId },
+      select: {
+        callId: true,
+        transcript: true,
+        transferTranscript: true,
+      },
+    });
+    if (metric) {
+      const nextTransferTranscript =
+        metric.transferTranscript && metric.transferTranscript.includes(transcriptionText)
+          ? metric.transferTranscript
+          : metric.transferTranscript
+            ? `${metric.transferTranscript}\n${transcriptionText}`
+            : transcriptionText;
+      const nextFullTranscript = composeFullTranscript(metric.transcript, nextTransferTranscript);
+      await prisma.callMetric.update({
+        where: { callId: vapiCallId },
+        data: {
+          twilioTransferCallSid: callSid ?? undefined,
+          transferTranscript: nextTransferTranscript,
+          fullTranscript: nextFullTranscript ?? undefined,
+        },
+      });
+    }
+  }
+
+  if (context.leadId) {
+    await prisma.event.create({
+      data: {
+        leadId: context.leadId,
+        type: "twilio_transfer_transcription",
+        detail: {
+          callSid,
+          parentCallSid: context.parentCallSid,
+          attemptId: context.attemptId,
+          vapiCallId,
+          transcriptionSid,
+          transcriptionStatus,
+          transcriptionText,
+          raw: req.body,
+        },
+      },
+    });
+  }
+
+  res.status(200).send("ok");
+}
+
+app.post("/webhooks/twilio/status", handleTwilioStatusWebhook);
+app.post("/webhooks/twilio/transfer-status", handleTwilioStatusWebhook);
+app.post("/webhooks/twilio/transfer-recording", handleTwilioTransferRecordingWebhook);
+app.post("/webhooks/twilio/transfer-transcription", handleTwilioTransferTranscriptionWebhook);
 
 app.post("/webhooks/vapi/result", async (req, res) => {
   let leadId = extractLeadId(req.body) ?? (req.query.lead_id as string | undefined) ?? null;

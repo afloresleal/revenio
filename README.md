@@ -140,6 +140,9 @@ Por defecto:
 
 ## Webhooks
 - `POST /webhooks/twilio/status`
+- `POST /webhooks/twilio/transfer-status`
+- `POST /webhooks/twilio/transfer-recording`
+- `POST /webhooks/twilio/transfer-transcription`
 - `POST /webhooks/vapi/result`
 
 ## Utilidades lab
@@ -213,6 +216,17 @@ Acciones:
 1. Confirmar webhook Vapi configurado.
 2. Confirmar `vapi_result` en eventos.
 3. Si no llegó webhook, usar botón `Sincronizar transcript` (Lab).
+4. Para transcript post-transfer (humano), configurar en Twilio `TranscriptionCallback` a `/webhooks/twilio/transfer-transcription`.
+
+## G) Falta audio o duración después del transfer
+1. Configurar `StatusCallback` del leg transferido a `/webhooks/twilio/transfer-status` (o `/webhooks/twilio/status`).
+2. Configurar `RecordingStatusCallback` a `/webhooks/twilio/transfer-recording`.
+3. Verificar en `GET /api/metrics/calls/:callId`:
+   - `twilioParentCallSid`
+   - `twilioTransferCallSid`
+   - `transferStatus`
+   - `postTransferDurationSec`
+   - `transferRecordingUrl`
 
 ## F) `P1001 Can't reach database`
 - Si sale `localhost`, estás usando `.env` local incorrecto para entorno remoto.
@@ -259,4 +273,3 @@ npm -w apps/api exec prisma migrate deploy
 # Ver estado de git
 git status --short
 ```
-

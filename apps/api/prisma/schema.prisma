@@ -55,6 +55,9 @@ model CallMetric {
   phoneNumber     String    @map("phone_number")
   assistantId     String?   @map("assistant_id")
   transferNumber  String?   @map("transfer_number")
+  twilioParentCallSid String? @map("twilio_parent_call_sid")
+  twilioTransferCallSid String? @map("twilio_transfer_call_sid")
+  transferStatus  String?   @map("transfer_status")
   
   startedAt       DateTime? @map("started_at")
   transferredAt   DateTime? @map("transferred_at")
@@ -68,7 +71,12 @@ model CallMetric {
   
   // End-of-call-report data
   transcript      String?   @map("transcript")
+  transferTranscript String? @map("transfer_transcript")
+  fullTranscript  String?   @map("full_transcript")
   recordingUrl    String?   @map("recording_url")
+  transferRecordingUrl String? @map("transfer_recording_url")
+  transferRecordingDurationSec Int? @map("transfer_recording_duration_sec")
+  recordingsJson  Json?     @map("recordings_json")
   cost            Decimal?  @map("cost") @db.Decimal(10, 4)
   
   inProgress      Boolean   @default(true) @map("in_progress")
@@ -84,4 +92,23 @@ model CallMetric {
   @@index([sentiment])
   @@index([startedAt, outcome])
   @@index([sentiment, outcome])
+}
+
+model TwilioCallLink {
+  id            String   @id @default(uuid())
+  parentCallSid String   @unique @map("parent_call_sid")
+  childCallSid  String?  @map("child_call_sid")
+  vapiCallId    String   @map("vapi_call_id")
+  leadId        String?  @map("lead_id")
+  attemptId     String?  @map("attempt_id")
+  childStatus   String?  @map("child_status")
+  lastCallbackAt DateTime? @map("last_callback_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("twilio_call_link")
+  @@index([vapiCallId])
+  @@index([leadId])
+  @@index([attemptId])
+  @@index([childCallSid])
 }

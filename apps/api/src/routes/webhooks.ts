@@ -580,6 +580,29 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   let transferredAtFromTwilio: Date | null = null;
   let twilioTotalDurationSec: number | null = null;
   const twilioParentCallSid = twilioParentCallSidFromPayload ?? await fetchVapiTwilioParentSid(callId);
+  if (twilioParentCallSid) {
+    const attempt = await prisma.callAttempt.findFirst({
+      where: { providerId: callId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, leadId: true },
+    });
+    await prisma.twilioCallLink.upsert({
+      where: { parentCallSid: twilioParentCallSid },
+      create: {
+        parentCallSid: twilioParentCallSid,
+        vapiCallId: callId,
+        attemptId: attempt?.id ?? null,
+        leadId: attempt?.leadId ?? null,
+        lastCallbackAt: new Date(),
+      },
+      update: {
+        vapiCallId: callId,
+        attemptId: attempt?.id ?? undefined,
+        leadId: attempt?.leadId ?? undefined,
+        lastCallbackAt: new Date(),
+      },
+    });
+  }
   if (wasTransferred && twilioParentCallSid) {
     try {
       twilioTotalDurationSec = await fetchTwilioCallDuration(twilioParentCallSid);
@@ -631,6 +654,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       phoneNumber: asString(asRecord(call.customer)?.number) || 'unknown',
       assistantId,
       transferNumber: resolvedTransferNumber,
+      twilioParentCallSid: twilioParentCallSid ?? undefined,
       transferredAt: resolvedTransferredAt ?? undefined,
       startedAt: startedAtDate ?? undefined,
       endedAt: endedAtDate,
@@ -651,6 +675,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       endedAt: endedAtDate,
       assistantId,
       transferNumber: resolvedTransferNumber,
+      twilioParentCallSid: twilioParentCallSid ?? existing?.twilioParentCallSid ?? undefined,
       transferredAt: resolvedTransferredAt ?? undefined,
       durationSec: finalDuration ?? existing?.durationSec ?? null,
       endedReason,
