@@ -52,6 +52,24 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function buildTranscriptFromMessages(messages: unknown): string | null {
+  if (!Array.isArray(messages)) return null;
+  const lines = messages
+    .map((m) => {
+      if (!m || typeof m !== 'object') return null;
+      const msg = m as Record<string, unknown>;
+      const role = asString(msg.role);
+      const text = asString(msg.message);
+      if (!text) return null;
+      if (!role) return text;
+      if (role === 'assistant') return `AI: ${text}`;
+      if (role === 'user') return `User: ${text}`;
+      return `${role}: ${text}`;
+    })
+    .filter((x): x is string => !!x);
+  return lines.length ? lines.join('\n') : null;
+}
+
 function pickTimestamp(rec: Record<string, unknown>, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = asString(rec[key]);
@@ -188,6 +206,22 @@ async function fetchTwilioCallDuration(callSid: string): Promise<number | null> 
   if (!durationRaw) return null;
   const durationSec = Number.parseInt(durationRaw, 10);
   return Number.isFinite(durationSec) && durationSec >= 0 ? durationSec : null;
+}
+
+async function fetchVapiTwilioParentSid(callId: string): Promise<string | null> {
+  if (!VAPI_API_KEY || !callId) return null;
+
+  try {
+    const resp = await fetch(`https://api.vapi.ai/call/${encodeURIComponent(callId)}`, {
+      headers: { Authorization: `Bearer ${VAPI_API_KEY}` },
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+    const sid = asString(data.phoneCallProviderId);
+    return sid && sid.startsWith('CA') ? sid : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
@@ -445,11 +479,17 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     asString(call.forwardedPhoneNumber) ||
     asString(message?.forwardedPhoneNumber) ||
     asString(asRecord(message?.destination)?.number);
-  const twilioParentCallSid = extractTwilioCallSid(call, message);
+  const twilioParentCallSidFromPayload = extractTwilioCallSid(call, message);
   const assistantId = extractAssistantId(call, message);
   
-  // Extract transcript from artifact
-  const transcript = asString(artifact?.transcript);
+  // Extract transcript from artifact; fallback to message arrays when explicit transcript is missing.
+  const transcript =
+    asString(artifact?.transcript) ||
+    asString(message?.transcript) ||
+    buildTranscriptFromMessages(message?.messages) ||
+    buildTranscriptFromMessages(artifact?.messages) ||
+    buildTranscriptFromMessages(call.messages) ||
+    null;
   
   // Extract recording URL
   const recording = asRecord(artifact?.recording);
@@ -539,6 +579,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   let transferNumberFromTwilio: string | null = null;
   let transferredAtFromTwilio: Date | null = null;
   let twilioTotalDurationSec: number | null = null;
+  const twilioParentCallSid = twilioParentCallSidFromPayload ?? await fetchVapiTwilioParentSid(callId);
   if (wasTransferred && twilioParentCallSid) {
     try {
       twilioTotalDurationSec = await fetchTwilioCallDuration(twilioParentCallSid);

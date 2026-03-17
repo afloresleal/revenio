@@ -296,9 +296,22 @@ app.post("/webhooks/twilio/status", async (req, res) => {
     leadId = leadId ?? attempt.leadId;
   }
 
-  if (attempt?.providerId && Number.isFinite(callDurationSec) && (callDurationSec ?? -1) >= 0) {
+  const normalizedStatus = String(status).toLowerCase();
+  const isChildLeg = typeof parentCallSid === "string" && parentCallSid.startsWith("CA");
+  const isCompleted = normalizedStatus === "completed";
+  const hasPositiveDuration = Number.isFinite(callDurationSec) && (callDurationSec ?? 0) > 0;
+
+  // Only persist seller talk time from a completed Twilio child leg.
+  // This avoids overwriting real values with 0s from parent/early status callbacks.
+  if (attempt?.providerId && isChildLeg && isCompleted && hasPositiveDuration) {
     await prisma.callMetric.updateMany({
-      where: { callId: attempt.providerId },
+      where: {
+        callId: attempt.providerId,
+        OR: [
+          { postTransferDurationSec: null },
+          { postTransferDurationSec: { lt: callDurationSec as number } },
+        ],
+      },
       data: { postTransferDurationSec: callDurationSec as number },
     });
   }
