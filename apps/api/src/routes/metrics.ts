@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { canTranscribeWithOpenAI, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
+import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 
 const router = Router();
 // Minimum duration fallback for transfer connection heuristic.
@@ -811,8 +811,11 @@ router.post('/calls/:callId/transcribe-full', async (req, res) => {
   try {
     const callId = String(req.params.callId || '').trim();
     if (!callId) return res.status(400).json({ error: 'invalid_call_id' });
-    if (!canTranscribeWithOpenAI()) {
-      return res.status(400).json({ error: 'missing_openai_config', message: 'OPENAI_API_KEY is required.' });
+    if (!canTranscribeRecording()) {
+      return res.status(400).json({
+        error: 'missing_transcription_config',
+        message: 'Configure OPENAI_API_KEY or enable local whisper (WHISPER_LOCAL_ENABLED=true).',
+      });
     }
 
     const force = parseBooleanFlag(req.query.force ?? req.body?.force, false);
@@ -840,7 +843,7 @@ router.post('/calls/:callId/transcribe-full', async (req, res) => {
 
     const generated = await transcribeRecordingFromUrl(sourceUrl);
     const fallback = composeFullTranscript(call.transcript, call.transferTranscript);
-    const nextFullTranscript = generated ?? fallback;
+    const nextFullTranscript = generated.text ?? fallback;
     if (!nextFullTranscript) {
       return res.status(422).json({ error: 'transcription_empty', message: 'Transcription did not return text.' });
     }
@@ -854,7 +857,7 @@ router.post('/calls/:callId/transcribe-full', async (req, res) => {
       ok: true,
       callId,
       updated: true,
-      source: generated ? 'openai_audio_transcription' : 'fallback_compose',
+      source: generated.source ?? 'fallback_compose',
       fullTranscript: nextFullTranscript,
     });
   } catch (error) {
@@ -866,8 +869,11 @@ router.post('/calls/:callId/transcribe-full', async (req, res) => {
 // POST /api/metrics/transcribe-missing
 router.post('/transcribe-missing', async (req, res) => {
   try {
-    if (!canTranscribeWithOpenAI()) {
-      return res.status(400).json({ error: 'missing_openai_config', message: 'OPENAI_API_KEY is required.' });
+    if (!canTranscribeRecording()) {
+      return res.status(400).json({
+        error: 'missing_transcription_config',
+        message: 'Configure OPENAI_API_KEY or enable local whisper (WHISPER_LOCAL_ENABLED=true).',
+      });
     }
 
     const limitRaw = Number(req.query.limit ?? req.body?.limit ?? 30);
@@ -909,7 +915,7 @@ router.post('/transcribe-missing', async (req, res) => {
     const results: Array<{
       callId: string;
       status: 'updated' | 'skipped' | 'failed';
-      source?: 'openai_audio_transcription' | 'fallback_compose';
+      source?: 'openai_audio_transcription' | 'local_whisper_transcription' | 'fallback_compose';
       reason?: string;
     }> = [];
 
@@ -926,7 +932,7 @@ router.post('/transcribe-missing', async (req, res) => {
         }
         const generated = await transcribeRecordingFromUrl(sourceUrl);
         const fallback = composeFullTranscript(call.transcript, call.transferTranscript);
-        const nextFullTranscript = generated ?? fallback;
+        const nextFullTranscript = generated.text ?? fallback;
         if (!nextFullTranscript) {
           results.push({ callId: call.callId, status: 'failed', reason: 'transcription_empty' });
           continue;
@@ -938,7 +944,7 @@ router.post('/transcribe-missing', async (req, res) => {
         results.push({
           callId: call.callId,
           status: 'updated',
-          source: generated ? 'openai_audio_transcription' : 'fallback_compose',
+          source: generated.source ?? 'fallback_compose',
         });
       } catch (error) {
         results.push({ callId: call.callId, status: 'failed', reason: String(error) });

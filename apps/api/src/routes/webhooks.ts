@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
-import { canTranscribeWithOpenAI, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
+import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 
 const router = Router();
 
@@ -634,10 +634,15 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   const resolvedTransferNumber = forwardedPhoneNumber ?? transferNumberFromTwilio ?? existing?.transferNumber ?? null;
   const resolvedTransferredAt = existing?.transferredAt ?? transferredAtFromTwilio ?? null;
   let generatedFullTranscript: string | null = existing?.fullTranscript ?? null;
-  if (recordingUrl && canTranscribeWithOpenAI()) {
+  if (recordingUrl && canTranscribeRecording()) {
     try {
-      generatedFullTranscript = await transcribeRecordingFromUrl(recordingUrl);
-      console.log('end-of-call-report full transcript generated:', { callId, hasFullTranscript: !!generatedFullTranscript });
+      const generated = await transcribeRecordingFromUrl(recordingUrl);
+      generatedFullTranscript = generated.text;
+      console.log('end-of-call-report full transcript generated:', {
+        callId,
+        hasFullTranscript: !!generatedFullTranscript,
+        source: generated.source,
+      });
     } catch (error) {
       console.warn('end-of-call-report full transcription failed:', { callId, error: String(error) });
     }

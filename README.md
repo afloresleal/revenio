@@ -194,6 +194,12 @@ Sin esto, no llegarán `vapi_result` y no habrá transcript en historial.
 - `OPENAI_API_KEY` (opcional, para generar `fullTranscript` desde audio)
 - `OPENAI_AUDIO_MODEL` (opcional, default `whisper-1`)
 - `OPENAI_TRANSCRIBE_TIMEOUT_MS` (opcional, default `45000`)
+- `TRANSCRIPTION_PROVIDER` (opcional: `auto` | `openai` | `local`, default `auto`)
+- `WHISPER_LOCAL_ENABLED` (opcional, `true`/`false`)
+- `WHISPER_LOCAL_BIN` (opcional, default `whisper`)
+- `WHISPER_LOCAL_MODEL` (opcional, default `base`)
+- `WHISPER_LOCAL_LANGUAGE` (opcional, por ejemplo `es`)
+- `WHISPER_LOCAL_TIMEOUT_MS` (opcional, default `180000`)
 - `PORT` (Railway lo inyecta, no forzar salvo caso especial)
 
 ## Post deploy checklist
