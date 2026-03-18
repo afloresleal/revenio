@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
 const OPENAI_AUDIO_MODEL = process.env.OPENAI_AUDIO_MODEL ?? 'whisper-1';
 const OPENAI_TRANSCRIBE_TIMEOUT_MS = Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? 45000);
+const RECORDING_DOWNLOAD_TIMEOUT_MS = Number(process.env.RECORDING_DOWNLOAD_TIMEOUT_MS ?? 30000);
 
 const TRANSCRIPTION_PROVIDER = (process.env.TRANSCRIPTION_PROVIDER ?? 'auto').toLowerCase(); // auto|openai|local
 const WHISPER_LOCAL_ENABLED = String(process.env.WHISPER_LOCAL_ENABLED ?? '').toLowerCase() === 'true';
@@ -54,14 +55,25 @@ function extensionFromContentType(contentType: string | null): string {
 
 async function downloadRecording(recordingUrl: string): Promise<{ buffer: ArrayBuffer; contentType: string; ext: string } | null> {
   if (!recordingUrl || typeof recordingUrl !== 'string') return null;
-  const audioResp = await fetch(recordingUrl);
-  if (!audioResp.ok) {
-    throw new Error(`recording_download_failed:${audioResp.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RECORDING_DOWNLOAD_TIMEOUT_MS);
+  try {
+    const audioResp = await fetch(recordingUrl, { signal: controller.signal });
+    if (!audioResp.ok) {
+      throw new Error(`recording_download_failed:${audioResp.status}`);
+    }
+    const contentType = audioResp.headers.get('content-type') || 'audio/wav';
+    const buffer = await audioResp.arrayBuffer();
+    if (!buffer.byteLength) return { buffer, contentType, ext: extensionFromContentType(contentType) };
+    return { buffer, contentType, ext: extensionFromContentType(contentType) };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`recording_download_timeout:${RECORDING_DOWNLOAD_TIMEOUT_MS}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  const contentType = audioResp.headers.get('content-type') || 'audio/wav';
-  const buffer = await audioResp.arrayBuffer();
-  if (!buffer.byteLength) return { buffer, contentType, ext: extensionFromContentType(contentType) };
-  return { buffer, contentType, ext: extensionFromContentType(contentType) };
 }
 
 async function transcribeWithOpenAI(input: { buffer: ArrayBuffer; contentType: string }): Promise<string | null> {
