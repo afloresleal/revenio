@@ -145,6 +145,9 @@ Por defecto:
 - `POST /webhooks/twilio/transfer-transcription`
 - `POST /webhooks/vapi/result`
 
+## Métricas (extra)
+- `POST /api/metrics/calls/:callId/transcribe-full` (genera/regen `fullTranscript` desde audio)
+
 ## Utilidades lab
 - `GET /lab/history`
 - `POST /lab/sync-attempt/:id` (fallback para traer transcript/estado desde Vapi)
@@ -188,6 +191,9 @@ Sin esto, no llegarán `vapi_result` y no habrá transcript en historial.
 - `VAPI_API_KEY`
 - `VAPI_ASSISTANT_ID`
 - `VAPI_PHONE_NUMBER_ID`
+- `OPENAI_API_KEY` (opcional, para generar `fullTranscript` desde audio)
+- `OPENAI_AUDIO_MODEL` (opcional, default `whisper-1`)
+- `OPENAI_TRANSCRIBE_TIMEOUT_MS` (opcional, default `45000`)
 - `PORT` (Railway lo inyecta, no forzar salvo caso especial)
 
 ## Post deploy checklist

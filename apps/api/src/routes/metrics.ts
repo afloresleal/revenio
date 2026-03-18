@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
+import { canTranscribeWithOpenAI, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 
 const router = Router();
 // Minimum duration fallback for transfer connection heuristic.
@@ -801,6 +802,63 @@ router.get('/calls/:callId', async (req, res) => {
     });
   } catch (error) {
     console.error('Call detail error:', error);
+    return res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
+
+// POST /api/metrics/calls/:callId/transcribe-full
+router.post('/calls/:callId/transcribe-full', async (req, res) => {
+  try {
+    const callId = String(req.params.callId || '').trim();
+    if (!callId) return res.status(400).json({ error: 'invalid_call_id' });
+    if (!canTranscribeWithOpenAI()) {
+      return res.status(400).json({ error: 'missing_openai_config', message: 'OPENAI_API_KEY is required.' });
+    }
+
+    const force = parseBooleanFlag(req.query.force ?? req.body?.force, false);
+    const call = await prisma.callMetric.findUnique({
+      where: { callId },
+      select: {
+        callId: true,
+        transcript: true,
+        transferTranscript: true,
+        fullTranscript: true,
+        recordingUrl: true,
+        transferRecordingUrl: true,
+      },
+    });
+    if (!call) return res.status(404).json({ error: 'call_not_found', callId });
+
+    if (!force && call.fullTranscript && call.fullTranscript.trim()) {
+      return res.json({ ok: true, callId, updated: false, reason: 'already_present', fullTranscript: call.fullTranscript });
+    }
+
+    const sourceUrl = call.recordingUrl ?? call.transferRecordingUrl;
+    if (!sourceUrl) {
+      return res.status(400).json({ error: 'missing_recording_url', message: 'No recording URL available for transcription.' });
+    }
+
+    const generated = await transcribeRecordingFromUrl(sourceUrl);
+    const fallback = composeFullTranscript(call.transcript, call.transferTranscript);
+    const nextFullTranscript = generated ?? fallback;
+    if (!nextFullTranscript) {
+      return res.status(422).json({ error: 'transcription_empty', message: 'Transcription did not return text.' });
+    }
+
+    await prisma.callMetric.update({
+      where: { callId },
+      data: { fullTranscript: nextFullTranscript },
+    });
+
+    return res.json({
+      ok: true,
+      callId,
+      updated: true,
+      source: generated ? 'openai_audio_transcription' : 'fallback_compose',
+      fullTranscript: nextFullTranscript,
+    });
+  } catch (error) {
+    console.error('Manual full transcription error:', error);
     return res.status(500).json({ error: 'Internal error', message: String(error) });
   }
 });

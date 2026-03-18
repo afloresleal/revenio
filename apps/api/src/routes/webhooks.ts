@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
+import { canTranscribeWithOpenAI, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 
 const router = Router();
 
@@ -632,6 +633,20 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   }
   const resolvedTransferNumber = forwardedPhoneNumber ?? transferNumberFromTwilio ?? existing?.transferNumber ?? null;
   const resolvedTransferredAt = existing?.transferredAt ?? transferredAtFromTwilio ?? null;
+  let generatedFullTranscript: string | null = existing?.fullTranscript ?? null;
+  if (recordingUrl && canTranscribeWithOpenAI()) {
+    try {
+      generatedFullTranscript = await transcribeRecordingFromUrl(recordingUrl);
+      console.log('end-of-call-report full transcript generated:', { callId, hasFullTranscript: !!generatedFullTranscript });
+    } catch (error) {
+      console.warn('end-of-call-report full transcription failed:', { callId, error: String(error) });
+    }
+  }
+  const fallbackCombinedTranscript = composeFullTranscript(
+    transcript ?? existing?.transcript ?? null,
+    existing?.transferTranscript ?? null,
+  );
+  const fullTranscript = generatedFullTranscript ?? fallbackCombinedTranscript;
 
   let finalDuration =
     calculatedDuration && calculatedDuration > 0
@@ -663,6 +678,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       outcome,
       sentiment,
       transcript,
+      fullTranscript: fullTranscript ?? undefined,
       recordingUrl,
       cost: cost !== undefined ? cost : undefined,
       postTransferDurationSec: postTransferDurationSec ?? undefined,
@@ -682,6 +698,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       outcome,
       sentiment,
       transcript,
+      fullTranscript: fullTranscript ?? existing?.fullTranscript ?? undefined,
       recordingUrl,
       cost: cost !== undefined ? cost : undefined,
       postTransferDurationSec: postTransferDurationSec ?? existing?.postTransferDurationSec ?? undefined,
