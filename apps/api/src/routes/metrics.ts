@@ -648,11 +648,23 @@ router.get('/recent', async (req, res) => {
         transferRecordingUrl: c.transferRecordingUrl,
         transferTranscript: c.transferTranscript,
       });
+      const transferRecordingSource = resolveRecordingSource({
+        transferRecordingUrl: c.transferRecordingUrl,
+        recordingUrl: null, // Not fetched in recent for performance
+        twilioTransferCallSid: c.twilioTransferCallSid,
+      });
+      const transferTranscriptSource = resolveTranscriptSource({
+        transferTranscript: c.transferTranscript,
+        transcript: null, // Not fetched in recent for performance
+        twilioTransferCallSid: c.twilioTransferCallSid,
+      });
       return {
         callId: c.callId,
         phone: maskPhone(c.phoneNumber),
         assistantId: c.assistantId,
         transferNumber: c.transferNumber,
+        twilioTransferCallSid: c.twilioTransferCallSid,
+        transferStatus: c.transferStatus,
         outcome: c.outcome,
         sentiment: c.sentiment,
         duration,
@@ -664,6 +676,8 @@ router.get('/recent', async (req, res) => {
         sellerTalkSec: sellerTalk,
         sellerTalkSource: sellerTalkSource(c.postTransferDurationSec, c.transferredAt, c.endedAt),
         postTransferDurationSec: c.postTransferDurationSec,
+        transferRecordingSource,
+        transferTranscriptSource,
         dataQuality,
         ago: formatRelativeTime(c.startedAt ?? c.createdAt),
         inProgress: c.inProgress,
@@ -735,6 +749,17 @@ router.get('/calls/:callId', async (req, res) => {
       transferTranscript: call.transferTranscript,
     });
 
+    const transferRecordingSource = resolveRecordingSource({
+      transferRecordingUrl: call.transferRecordingUrl,
+      recordingUrl: call.recordingUrl,
+      twilioTransferCallSid: call.twilioTransferCallSid,
+    });
+    const transferTranscriptSource = resolveTranscriptSource({
+      transferTranscript: call.transferTranscript,
+      transcript: call.transcript,
+      twilioTransferCallSid: call.twilioTransferCallSid,
+    });
+
     return res.json({
       callId: call.callId,
       phone: maskPhone(call.phoneNumber),
@@ -763,6 +788,8 @@ router.get('/calls/:callId', async (req, res) => {
       recordingUrl: call.recordingUrl,
       transferRecordingUrl: call.transferRecordingUrl,
       transferRecordingDurationSec: call.transferRecordingDurationSec,
+      transferRecordingSource,
+      transferTranscriptSource,
       recordings: call.recordingsJson,
       dataQuality,
       cost: call.cost,
@@ -1049,6 +1076,54 @@ function sellerTalkSource(postTransferDurationSec: number | null, transferredAt:
   if (postTransferDurationSec !== null && postTransferDurationSec > 0) return 'post_transfer_duration_sec';
   const fallback = diffSeconds(transferredAt, endedAt);
   if (fallback !== null && fallback > 0) return 'timestamp_fallback';
+  return 'missing';
+}
+
+type DataSource = 'twilio' | 'vapi' | 'missing';
+
+function resolveRecordingSource(input: {
+  transferRecordingUrl: string | null;
+  recordingUrl: string | null;
+  twilioTransferCallSid: string | null;
+}): DataSource {
+  // If we have a transfer-specific recording URL and Twilio child call, it's from Twilio
+  if (input.transferRecordingUrl && input.twilioTransferCallSid) {
+    // Check if URL contains twilio domain
+    if (input.transferRecordingUrl.includes('twilio') || input.transferRecordingUrl.includes('api.twilio')) {
+      return 'twilio';
+    }
+  }
+  // If we have transferRecordingUrl (could be from VAPI's end-of-call-report)
+  if (input.transferRecordingUrl) {
+    return 'vapi';
+  }
+  // If we have general recordingUrl from VAPI
+  if (input.recordingUrl) {
+    return 'vapi';
+  }
+  return 'missing';
+}
+
+function resolveTranscriptSource(input: {
+  transferTranscript: string | null;
+  transcript: string | null;
+  twilioTransferCallSid: string | null;
+}): DataSource {
+  // If we have a transfer-specific transcript and Twilio child call, check origin
+  if (input.transferTranscript && input.twilioTransferCallSid) {
+    // Twilio transcription is typically shorter and comes from their STT
+    // For now, we assume transferTranscript from our DB is VAPI-sourced unless we add metadata
+    // In the future, we could store a source field directly
+    return 'vapi'; // Default to vapi since VAPI sends transcript in end-of-call-report
+  }
+  // If we have transferTranscript without Twilio context
+  if (input.transferTranscript) {
+    return 'vapi';
+  }
+  // If we have general transcript from VAPI
+  if (input.transcript) {
+    return 'vapi';
+  }
   return 'missing';
 }
 
