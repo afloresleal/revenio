@@ -863,6 +863,104 @@ router.post('/calls/:callId/transcribe-full', async (req, res) => {
   }
 });
 
+// POST /api/metrics/transcribe-missing
+router.post('/transcribe-missing', async (req, res) => {
+  try {
+    if (!canTranscribeWithOpenAI()) {
+      return res.status(400).json({ error: 'missing_openai_config', message: 'OPENAI_API_KEY is required.' });
+    }
+
+    const limitRaw = Number(req.query.limit ?? req.body?.limit ?? 30);
+    const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 30, 200));
+    const lookbackHoursRaw = Number(req.query.lookback_hours ?? req.body?.lookback_hours ?? 72);
+    const lookbackHours = Math.max(1, Math.min(Number.isFinite(lookbackHoursRaw) ? Math.floor(lookbackHoursRaw) : 72, 24 * 14));
+    const force = parseBooleanFlag(req.query.force ?? req.body?.force, false);
+    const cutoff = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+
+    const candidates = await prisma.callMetric.findMany({
+      where: {
+        outcome: 'transfer_success',
+        updatedAt: { gte: cutoff },
+        OR: [
+          { fullTranscript: null },
+          { fullTranscript: '' },
+        ],
+        AND: [
+          {
+            OR: [
+              { recordingUrl: { not: null } },
+              { transferRecordingUrl: { not: null } },
+            ],
+          },
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+      select: {
+        callId: true,
+        transcript: true,
+        transferTranscript: true,
+        fullTranscript: true,
+        recordingUrl: true,
+        transferRecordingUrl: true,
+      },
+    });
+
+    const results: Array<{
+      callId: string;
+      status: 'updated' | 'skipped' | 'failed';
+      source?: 'openai_audio_transcription' | 'fallback_compose';
+      reason?: string;
+    }> = [];
+
+    for (const call of candidates) {
+      try {
+        if (!force && call.fullTranscript && call.fullTranscript.trim()) {
+          results.push({ callId: call.callId, status: 'skipped', reason: 'already_present' });
+          continue;
+        }
+        const sourceUrl = call.recordingUrl ?? call.transferRecordingUrl;
+        if (!sourceUrl) {
+          results.push({ callId: call.callId, status: 'skipped', reason: 'missing_recording_url' });
+          continue;
+        }
+        const generated = await transcribeRecordingFromUrl(sourceUrl);
+        const fallback = composeFullTranscript(call.transcript, call.transferTranscript);
+        const nextFullTranscript = generated ?? fallback;
+        if (!nextFullTranscript) {
+          results.push({ callId: call.callId, status: 'failed', reason: 'transcription_empty' });
+          continue;
+        }
+        await prisma.callMetric.update({
+          where: { callId: call.callId },
+          data: { fullTranscript: nextFullTranscript },
+        });
+        results.push({
+          callId: call.callId,
+          status: 'updated',
+          source: generated ? 'openai_audio_transcription' : 'fallback_compose',
+        });
+      } catch (error) {
+        results.push({ callId: call.callId, status: 'failed', reason: String(error) });
+      }
+    }
+
+    return res.json({
+      ok: true,
+      limit,
+      lookbackHours,
+      processed: candidates.length,
+      updated: results.filter((r) => r.status === 'updated').length,
+      skipped: results.filter((r) => r.status === 'skipped').length,
+      failed: results.filter((r) => r.status === 'failed').length,
+      results,
+    });
+  } catch (error) {
+    console.error('Bulk missing transcription error:', error);
+    return res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
+
 // POST /api/metrics/calls/:callId/sync
 router.post('/calls/:callId/sync', async (req, res) => {
   try {
