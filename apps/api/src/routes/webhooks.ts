@@ -1199,10 +1199,10 @@ router.post('/twilio/recording-status', async (req, res) => {
     });
     
     if (metric) {
-      // Update with the recording info (no auto-transcription - use /retranscribe endpoint manually)
       const durationSec = recordingDuration ? parseInt(recordingDuration, 10) : null;
       const fullRecordingUrl = recordingUrl ? `${recordingUrl}.mp3` : null;
       
+      // Update recording URL first
       await prisma.callMetric.update({
         where: { id: metric.id },
         data: {
@@ -1219,6 +1219,33 @@ router.post('/twilio/recording-status', async (req, res) => {
         transferRecordingUrl: fullRecordingUrl,
         durationSec,
       });
+      
+      // Auto-transcribe with OpenAI if available (async, don't block response)
+      if (fullRecordingUrl && canTranscribeRecording()) {
+        transcribeRecordingFromUrl(fullRecordingUrl)
+          .then(async ({ text, source }) => {
+            if (text) {
+              const updatedMetric = await prisma.callMetric.findUnique({
+                where: { id: metric.id },
+                select: { transcript: true },
+              });
+              const fullTranscript = composeFullTranscript(updatedMetric?.transcript ?? null, text);
+              await prisma.callMetric.update({
+                where: { id: metric.id },
+                data: {
+                  transferTranscript: text,
+                  fullTranscript: fullTranscript ?? undefined,
+                  lastEventType: 'auto-transcription-completed',
+                  lastEventAt: new Date(),
+                },
+              });
+              console.log('Auto-transcribed transfer recording:', { callId: metric.callId, source, chars: text.length });
+            }
+          })
+          .catch((err) => {
+            console.warn('Auto-transcription failed:', { callId: metric.callId, error: String(err) });
+          });
+      }
     } else {
       // Try to find by parent call SID (the child call may not be linked yet)
       const link = await prisma.twilioCallLink.findFirst({

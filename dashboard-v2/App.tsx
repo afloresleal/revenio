@@ -1086,6 +1086,9 @@ export default function App() {
                 </div>
               ) : (
                 filteredCalls.map((call) => {
+                  // Calculate total duration: Vapi duration + Twilio post-transfer duration
+                  const totalDuration = (call.duration ?? 0) + (call.postTransferDurationSec ?? 0);
+                  const displayDuration = totalDuration > 0 ? totalDuration : call.duration;
                   return (
                     <div key={call.callId} className="border border-slate-800 rounded-lg bg-slate-900/70 overflow-hidden">
                       <button
@@ -1104,11 +1107,11 @@ export default function App() {
                             <StatusBadge outcome={call.outcome} />
                             <SentimentBadge sentiment={call.sentiment} />
                             <span className="font-mono text-xs text-slate-400 min-w-[70px] text-right">
-                              Dur: {formatSeconds(call.duration)}
+                              Dur: {formatSeconds(displayDuration)}
                             </span>
                           </div>
                           <div className="md:hidden flex items-center gap-2">
-                            <span className="font-mono text-xs text-slate-400">{formatSeconds(call.duration)}</span>
+                            <span className="font-mono text-xs text-slate-400">{formatSeconds(displayDuration)}</span>
                           </div>
                           <span className="inline-flex items-center rounded-md border border-blue-700/50 px-2 py-1 text-[11px] font-medium text-blue-300 hover:bg-blue-900/20">
                             Ver detalle
