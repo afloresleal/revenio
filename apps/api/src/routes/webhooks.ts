@@ -832,7 +832,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
   const callId = asString(call?.id);
   const twilioCallSid = extractTwilioCallSid(call ?? {}, message);
   
-  console.log('status-update:', { status, callId, twilioCallSid });
+  console.log('status-update received:', { status, callId, twilioCallSid, eventType });
   
   // When call is forwarding, try to start recording on the child call
   if (status === 'forwarding' && twilioCallSid) {
@@ -879,7 +879,68 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     return { ok: true, action: 'recording-failed', callId, error };
   }
   
-  return { ok: true, ignored: true, reason: 'not-forwarding-status' };
+  return { ok: true, ignored: true, reason: 'not-forwarding-status', status };
+}
+
+/**
+ * Transfer update handler - activates recording on child calls when transfer completes
+ * This is a backup in case status-update with forwarding doesn't fire
+ */
+async function processTransferRecording(body: unknown): Promise<HandlerResult | null> {
+  const root = asRecord(body);
+  const message = asRecord(root?.message) || root;
+  
+  const eventType = asString(message?.type);
+  if (eventType !== 'transfer-update') return null;
+  
+  const call = asRecord(message?.call);
+  const callId = asString(call?.id);
+  const twilioCallSid = extractTwilioCallSid(call ?? {}, message);
+  
+  console.log('transfer-update received, attempting to start recording:', { callId, twilioCallSid });
+  
+  if (!twilioCallSid) {
+    console.log('No twilioCallSid found in transfer-update');
+    return { ok: true, ignored: true, reason: 'no-twilio-sid' };
+  }
+  
+  // Wait a bit for the child call to be established
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  
+  const { childCallSid, recordingSid, error } = await startRecordingOnChildCalls(twilioCallSid);
+  
+  if (recordingSid) {
+    await prisma.callMetric.upsert({
+      where: { callId: callId ?? '' },
+      create: {
+        callId: callId ?? '',
+        phoneNumber: 'unknown',
+        twilioParentCallSid: twilioCallSid,
+        twilioTransferCallSid: childCallSid,
+        transferredAt: new Date(),
+        lastEventType: 'transfer-update-recording',
+        lastEventAt: new Date(),
+      },
+      update: {
+        twilioParentCallSid: twilioCallSid,
+        twilioTransferCallSid: childCallSid,
+        lastEventType: 'transfer-update-recording',
+        lastEventAt: new Date(),
+      },
+    });
+    
+    return { 
+      ok: true, 
+      action: 'recording-started-via-transfer-update', 
+      callId, 
+      twilioCallSid, 
+      childCallSid, 
+      recordingSid 
+    };
+  }
+  
+  console.log('Could not start recording via transfer-update:', { callId, error });
+  return { ok: true, action: 'recording-failed', callId, error };
 }
 
 /**
@@ -1057,6 +1118,16 @@ router.post('/vapi/events', async (req, res) => {
       const action = asRecord(statusUpdate)?.action;
       if (action === 'recording-started' || action === 'recording-failed') {
         return res.json({ ...statusUpdate, via: 'status-update' });
+      }
+      // If ignored, continue processing other event types
+    }
+    
+    // Transfer recording handler (backup) - start recording when transfer-update fires
+    const transferRecording = await processTransferRecording(req.body);
+    if (transferRecording) {
+      const action = asRecord(transferRecording)?.action;
+      if (action === 'recording-started-via-transfer-update' || action === 'recording-failed') {
+        return res.json({ ...transferRecording, via: 'transfer-update-recording' });
       }
       // If ignored, continue processing other event types
     }
