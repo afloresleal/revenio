@@ -18,6 +18,9 @@ const WHISPER_LOCAL_MODEL = process.env.WHISPER_LOCAL_MODEL ?? 'base';
 const WHISPER_LOCAL_LANGUAGE = process.env.WHISPER_LOCAL_LANGUAGE ?? '';
 const WHISPER_LOCAL_TIMEOUT_MS = Number(process.env.WHISPER_LOCAL_TIMEOUT_MS ?? 180000);
 
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
+
 export type TranscriptSource = 'openai_audio_transcription' | 'local_whisper_transcription' | 'fallback_compose';
 
 export function composeFullTranscript(aiTranscript: string | null | undefined, transferTranscript: string | null | undefined): string | null {
@@ -53,12 +56,27 @@ function extensionFromContentType(contentType: string | null): string {
   return 'wav';
 }
 
+function getTwilioAuth(): string {
+  return Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+}
+
+function isTwilioUrl(url: string): boolean {
+  return url.includes('api.twilio.com') || url.includes('twilio.com');
+}
+
 async function downloadRecording(recordingUrl: string): Promise<{ buffer: ArrayBuffer; contentType: string; ext: string } | null> {
   if (!recordingUrl || typeof recordingUrl !== 'string') return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), RECORDING_DOWNLOAD_TIMEOUT_MS);
+  
+  // Add Twilio auth headers if this is a Twilio URL
+  const headers: Record<string, string> = {};
+  if (isTwilioUrl(recordingUrl) && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
+    headers['Authorization'] = `Basic ${getTwilioAuth()}`;
+  }
+  
   try {
-    const audioResp = await fetch(recordingUrl, { signal: controller.signal });
+    const audioResp = await fetch(recordingUrl, { signal: controller.signal, headers });
     if (!audioResp.ok) {
       throw new Error(`recording_download_failed:${audioResp.status}`);
     }

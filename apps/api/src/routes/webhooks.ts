@@ -1330,4 +1330,67 @@ router.post('/twilio/transcription-complete', async (req, res) => {
   }
 });
 
+/**
+ * Re-transcribe a transfer recording for an existing call
+ * POST /webhooks/twilio/retranscribe/:callId
+ */
+router.post('/twilio/retranscribe/:callId', async (req, res) => {
+  try {
+    const { callId } = req.params;
+    
+    if (!callId) {
+      return res.status(400).json({ ok: false, error: 'Missing callId' });
+    }
+    
+    const metric = await prisma.callMetric.findUnique({
+      where: { callId },
+    });
+    
+    if (!metric) {
+      return res.status(404).json({ ok: false, error: 'Call not found' });
+    }
+    
+    if (!metric.transferRecordingUrl) {
+      return res.status(400).json({ ok: false, error: 'No transfer recording URL found' });
+    }
+    
+    console.log('Re-transcribing transfer recording:', { callId, url: metric.transferRecordingUrl });
+    
+    if (!canTranscribeRecording()) {
+      return res.status(500).json({ ok: false, error: 'Transcription not available (check OPENAI_API_KEY or WHISPER_LOCAL_ENABLED)' });
+    }
+    
+    const transcription = await transcribeRecordingFromUrl(metric.transferRecordingUrl);
+    
+    if (!transcription.text) {
+      return res.status(500).json({ ok: false, error: 'Transcription failed', source: transcription.source });
+    }
+    
+    const fullTranscript = composeFullTranscript(metric.transcript, transcription.text);
+    
+    await prisma.callMetric.update({
+      where: { id: metric.id },
+      data: {
+        transferTranscript: transcription.text,
+        fullTranscript,
+        lastEventType: 'manual-retranscribe',
+        lastEventAt: new Date(),
+      },
+    });
+    
+    console.log('Re-transcription successful:', { callId, source: transcription.source, length: transcription.text.length });
+    
+    return res.json({
+      ok: true,
+      callId,
+      source: transcription.source,
+      transferTranscript: transcription.text,
+      fullTranscript,
+    });
+  } catch (error) {
+    console.error('Re-transcription error:', error);
+    return res.status(500).json({ ok: false, error: 'Internal error', message: String(error) });
+  }
+});
+
 export default router;
