@@ -109,6 +109,19 @@ const ASSISTANT_LABELS: Record<string, string> = {
   '04f3ee06-7c49-43b0-b7be-91eac0c43955': 'Riley',
 };
 
+// --- Twilio Recording Proxy ---
+// Converts direct Twilio recording URLs to our proxy endpoint
+const getTwilioProxyUrl = (twilioUrl: string): string => {
+  // Extract Recording SID from URL like:
+  // https://api.twilio.com/2010-04-01/Accounts/ACxxx/Recordings/REyyy.mp3
+  const match = twilioUrl.match(/Recordings\/(RE[a-f0-9]+)/i);
+  if (match && match[1]) {
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+    return `${API_URL}/api/recordings/${match[1]}`;
+  }
+  return twilioUrl; // Fallback to original if can't parse
+};
+
 // --- Helper Components ---
 
 const StatusBadge: React.FC<{ outcome: OutcomeType }> = ({ outcome }) => {
@@ -697,7 +710,7 @@ export default function App() {
     const transferRecordingUrl = typeof detail?.transferRecordingUrl === 'string' ? detail.transferRecordingUrl : '';
     const audioEntries = [
       recordingUrl ? { label: 'Audio Vapi', url: recordingUrl } : null,
-      transferRecordingUrl ? { label: 'Audio Twilio (transfer)', url: transferRecordingUrl } : null,
+      transferRecordingUrl ? { label: 'Audio Twilio (transfer)', url: getTwilioProxyUrl(transferRecordingUrl) } : null,
     ].filter((entry): entry is { label: string; url: string } => !!entry);
     const audioSources = audioEntries.filter((entry, index, all) => all.findIndex((other) => other.url === entry.url) === index);
     const shouldShowSyncButton = !call.transferNumber || audioSources.length === 0;
