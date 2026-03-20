@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
+import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
 
 const router = Router();
 
@@ -817,6 +818,71 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
 }
 
 /**
+ * Status update handler - activates recording on child calls when transfer starts
+ */
+async function processStatusUpdate(body: unknown): Promise<HandlerResult | null> {
+  const root = asRecord(body);
+  const message = asRecord(root?.message) || root;
+  
+  const eventType = asString(message?.type);
+  if (eventType !== 'status-update') return null;
+  
+  const status = asString(message?.status);
+  const call = asRecord(message?.call);
+  const callId = asString(call?.id);
+  const twilioCallSid = extractTwilioCallSid(call ?? {}, message);
+  
+  console.log('status-update:', { status, callId, twilioCallSid });
+  
+  // When call is forwarding, try to start recording on the child call
+  if (status === 'forwarding' && twilioCallSid) {
+    console.log('Transfer in progress, attempting to start recording on child call:', { callId, twilioCallSid });
+    
+    // Small delay to allow child call to be created
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const { childCallSid, recordingSid, error } = await startRecordingOnChildCalls(twilioCallSid);
+    
+    if (recordingSid) {
+      // Store the recording info in the database
+      await prisma.callMetric.upsert({
+        where: { callId: callId ?? '' },
+        create: {
+          callId: callId ?? '',
+          phoneNumber: 'unknown',
+          twilioParentCallSid: twilioCallSid,
+          twilioTransferCallSid: childCallSid,
+          transferredAt: new Date(),
+          lastEventType: 'status-update-forwarding',
+          lastEventAt: new Date(),
+        },
+        update: {
+          twilioParentCallSid: twilioCallSid,
+          twilioTransferCallSid: childCallSid,
+          transferredAt: new Date(),
+          lastEventType: 'status-update-forwarding',
+          lastEventAt: new Date(),
+        },
+      });
+      
+      return { 
+        ok: true, 
+        action: 'recording-started', 
+        callId, 
+        twilioCallSid, 
+        childCallSid, 
+        recordingSid 
+      };
+    }
+    
+    console.log('Could not start recording on child call:', { callId, error });
+    return { ok: true, action: 'recording-failed', callId, error };
+  }
+  
+  return { ok: true, ignored: true, reason: 'not-forwarding-status' };
+}
+
+/**
  * Auto-transfer handler for Brenda
  * Triggers transfer after first assistant message (turn 1)
  */
@@ -985,6 +1051,16 @@ router.post('/vapi/transfer', async (req, res) => {
  */
 router.post('/vapi/events', async (req, res) => {
   try {
+    // Status update handler - start recording on child calls when forwarding
+    const statusUpdate = await processStatusUpdate(req.body);
+    if (statusUpdate) {
+      const action = asRecord(statusUpdate)?.action;
+      if (action === 'recording-started' || action === 'recording-failed') {
+        return res.json({ ...statusUpdate, via: 'status-update' });
+      }
+      // If ignored, continue processing other event types
+    }
+
     // Auto-transfer for Brenda (speech-update handler)
     const speechUpdate = await processSpeechUpdate(req.body);
     if (speechUpdate) {
@@ -1020,6 +1096,168 @@ router.post('/vapi/events', async (req, res) => {
   } catch (error) {
     console.error('Unified webhook error:', error);
     return res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
+
+/**
+ * Twilio recording status callback
+ * Receives notification when a recording completes
+ */
+router.post('/twilio/recording-status', async (req, res) => {
+  try {
+    const body = req.body;
+    const callSid = body.CallSid;
+    const recordingSid = body.RecordingSid;
+    const recordingUrl = body.RecordingUrl;
+    const recordingStatus = body.RecordingStatus;
+    const recordingDuration = body.RecordingDuration;
+    
+    console.log('Twilio recording-status callback:', {
+      callSid,
+      recordingSid,
+      recordingStatus,
+      recordingDuration,
+      recordingUrl,
+    });
+    
+    if (recordingStatus !== 'completed') {
+      return res.status(200).send('OK');
+    }
+    
+    // Find the call metric by twilioTransferCallSid
+    const metric = await prisma.callMetric.findFirst({
+      where: { twilioTransferCallSid: callSid },
+    });
+    
+    if (metric) {
+      // Update with the recording info
+      const durationSec = recordingDuration ? parseInt(recordingDuration, 10) : null;
+      
+      // Transcribe the recording
+      let transferTranscript: string | null = null;
+      const fullRecordingUrl = recordingUrl ? `${recordingUrl}.mp3` : null;
+      
+      if (fullRecordingUrl && canTranscribeRecording()) {
+        try {
+          const transcription = await transcribeRecordingFromUrl(fullRecordingUrl);
+          transferTranscript = transcription.text;
+          console.log('Transfer recording transcribed:', {
+            callId: metric.callId,
+            hasTranscript: !!transferTranscript,
+            source: transcription.source,
+          });
+        } catch (error) {
+          console.warn('Transfer transcription failed:', { callId: metric.callId, error: String(error) });
+        }
+      }
+      
+      // Compose full transcript
+      const fullTranscript = composeFullTranscript(metric.transcript, transferTranscript);
+      
+      await prisma.callMetric.update({
+        where: { id: metric.id },
+        data: {
+          transferRecordingUrl: fullRecordingUrl,
+          transferRecordingDurationSec: Number.isFinite(durationSec) ? durationSec : null,
+          postTransferDurationSec: Number.isFinite(durationSec) ? durationSec : metric.postTransferDurationSec,
+          transferTranscript,
+          fullTranscript,
+          lastEventType: 'twilio-recording-completed',
+          lastEventAt: new Date(),
+        },
+      });
+      
+      console.log('Updated call metric with transfer recording:', {
+        callId: metric.callId,
+        transferRecordingUrl: fullRecordingUrl,
+        durationSec,
+        hasTransferTranscript: !!transferTranscript,
+      });
+    } else {
+      // Try to find by parent call SID (the child call may not be linked yet)
+      const link = await prisma.twilioCallLink.findFirst({
+        where: { childCallSid: callSid },
+      });
+      
+      if (link) {
+        console.log('Found TwilioCallLink for recording, updating metric:', link.vapiCallId);
+        const fullRecordingUrl = recordingUrl ? `${recordingUrl}.mp3` : null;
+        const durationSec = recordingDuration ? parseInt(recordingDuration, 10) : null;
+        
+        await prisma.callMetric.updateMany({
+          where: { callId: link.vapiCallId },
+          data: {
+            twilioTransferCallSid: callSid,
+            transferRecordingUrl: fullRecordingUrl,
+            transferRecordingDurationSec: Number.isFinite(durationSec) ? durationSec : null,
+            postTransferDurationSec: Number.isFinite(durationSec) ? durationSec : undefined,
+            lastEventType: 'twilio-recording-completed',
+            lastEventAt: new Date(),
+          },
+        });
+      } else {
+        console.log('No metric found for recording callback, callSid:', callSid);
+      }
+    }
+    
+    return res.status(200).send('OK');
+  } catch (error) {
+    console.error('Recording status webhook error:', error);
+    return res.status(500).send('Error');
+  }
+});
+
+/**
+ * Twilio transcription callback
+ * Receives transcription when it completes
+ */
+router.post('/twilio/transcription-complete', async (req, res) => {
+  try {
+    const body = req.body;
+    const recordingSid = body.RecordingSid;
+    const transcriptionText = body.TranscriptionText;
+    const transcriptionStatus = body.TranscriptionStatus;
+    
+    console.log('Twilio transcription-complete callback:', {
+      recordingSid,
+      transcriptionStatus,
+      hasText: !!transcriptionText,
+    });
+    
+    if (transcriptionStatus !== 'completed' || !transcriptionText) {
+      return res.status(200).send('OK');
+    }
+    
+    // Find the metric by recording URL pattern
+    const metric = await prisma.callMetric.findFirst({
+      where: {
+        transferRecordingUrl: { contains: recordingSid },
+      },
+    });
+    
+    if (metric) {
+      const fullTranscript = composeFullTranscript(metric.transcript, transcriptionText);
+      
+      await prisma.callMetric.update({
+        where: { id: metric.id },
+        data: {
+          transferTranscript: transcriptionText,
+          fullTranscript,
+          lastEventType: 'twilio-transcription-completed',
+          lastEventAt: new Date(),
+        },
+      });
+      
+      console.log('Updated call metric with Twilio transcription:', {
+        callId: metric.callId,
+        hasTranscript: true,
+      });
+    }
+    
+    return res.status(200).send('OK');
+  } catch (error) {
+    console.error('Transcription webhook error:', error);
+    return res.status(500).send('Error');
   }
 });
 

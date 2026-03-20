@@ -1,0 +1,203 @@
+/**
+ * Twilio Recording helpers
+ * Enables recording on child calls (post-transfer) and fetches transcriptions
+ */
+
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
+const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL ?? 'https://revenioapi-production.up.railway.app';
+
+function getTwilioAuth(): string {
+  return Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+}
+
+export function canUseTwilio(): boolean {
+  return Boolean(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN);
+}
+
+/**
+ * Start recording on an active Twilio call
+ * Returns the recording SID if successful
+ */
+export async function startRecordingOnCall(callSid: string): Promise<{ recordingSid: string | null; error: string | null }> {
+  if (!canUseTwilio() || !callSid) {
+    return { recordingSid: null, error: 'missing_credentials_or_callsid' };
+  }
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${callSid}/Recordings.json`;
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${getTwilioAuth()}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        'RecordingStatusCallback': `${WEBHOOK_BASE_URL}/webhooks/twilio/recording-status`,
+        'RecordingStatusCallbackEvent': 'completed',
+        'RecordingChannels': 'dual',
+      }).toString(),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      // Call may have already ended or recording already exists
+      if (resp.status === 400 && body.includes('already has a recording')) {
+        console.log('Recording already exists for call:', callSid);
+        return { recordingSid: null, error: 'recording_already_exists' };
+      }
+      if (resp.status === 404) {
+        console.log('Call not found or already ended:', callSid);
+        return { recordingSid: null, error: 'call_not_found' };
+      }
+      console.warn('Failed to start recording:', { status: resp.status, body, callSid });
+      return { recordingSid: null, error: `twilio_error:${resp.status}` };
+    }
+
+    const data = await resp.json() as Record<string, unknown>;
+    const recordingSid = typeof data.sid === 'string' ? data.sid : null;
+    console.log('Recording started:', { callSid, recordingSid });
+    return { recordingSid, error: null };
+  } catch (error) {
+    console.error('Error starting recording:', { callSid, error: String(error) });
+    return { recordingSid: null, error: String(error) };
+  }
+}
+
+/**
+ * Find child calls for a parent call and start recording on them
+ */
+export async function startRecordingOnChildCalls(parentCallSid: string): Promise<{
+  childCallSid: string | null;
+  recordingSid: string | null;
+  error: string | null;
+}> {
+  if (!canUseTwilio() || !parentCallSid) {
+    return { childCallSid: null, recordingSid: null, error: 'missing_credentials_or_callsid' };
+  }
+
+  try {
+    // Find child calls
+    const listUrl = new URL(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`);
+    listUrl.searchParams.set('ParentCallSid', parentCallSid);
+    listUrl.searchParams.set('Status', 'in-progress');
+    listUrl.searchParams.set('PageSize', '10');
+
+    const listResp = await fetch(listUrl.toString(), {
+      headers: { 'Authorization': `Basic ${getTwilioAuth()}` },
+    });
+
+    if (!listResp.ok) {
+      const body = await listResp.text().catch(() => '');
+      console.warn('Failed to list child calls:', { status: listResp.status, body });
+      return { childCallSid: null, recordingSid: null, error: `list_failed:${listResp.status}` };
+    }
+
+    const data = await listResp.json() as Record<string, unknown>;
+    const calls = Array.isArray(data.calls) ? data.calls as Array<Record<string, unknown>> : [];
+
+    if (calls.length === 0) {
+      console.log('No in-progress child calls found for:', parentCallSid);
+      return { childCallSid: null, recordingSid: null, error: 'no_child_calls' };
+    }
+
+    // Start recording on the first in-progress child call
+    const childCall = calls[0];
+    const childCallSid = typeof childCall.sid === 'string' ? childCall.sid : null;
+
+    if (!childCallSid) {
+      return { childCallSid: null, recordingSid: null, error: 'invalid_child_call' };
+    }
+
+    const { recordingSid, error } = await startRecordingOnCall(childCallSid);
+    return { childCallSid, recordingSid, error };
+  } catch (error) {
+    console.error('Error in startRecordingOnChildCalls:', { parentCallSid, error: String(error) });
+    return { childCallSid: null, recordingSid: null, error: String(error) };
+  }
+}
+
+/**
+ * Get recording URL for a call
+ */
+export async function getRecordingForCall(callSid: string): Promise<{
+  recordingUrl: string | null;
+  recordingSid: string | null;
+  duration: number | null;
+}> {
+  if (!canUseTwilio() || !callSid) {
+    return { recordingUrl: null, recordingSid: null, duration: null };
+  }
+
+  try {
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${callSid}/Recordings.json`;
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Basic ${getTwilioAuth()}` },
+    });
+
+    if (!resp.ok) {
+      return { recordingUrl: null, recordingSid: null, duration: null };
+    }
+
+    const data = await resp.json() as Record<string, unknown>;
+    const recordings = Array.isArray(data.recordings) ? data.recordings as Array<Record<string, unknown>> : [];
+
+    if (recordings.length === 0) {
+      return { recordingUrl: null, recordingSid: null, duration: null };
+    }
+
+    const recording = recordings[0];
+    const recordingSid = typeof recording.sid === 'string' ? recording.sid : null;
+    const durationStr = typeof recording.duration === 'string' ? recording.duration : null;
+    const duration = durationStr ? parseInt(durationStr, 10) : null;
+
+    // Construct recording URL
+    const recordingUrl = recordingSid
+      ? `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Recordings/${recordingSid}.mp3`
+      : null;
+
+    return { recordingUrl, recordingSid, duration: Number.isFinite(duration) ? duration : null };
+  } catch (error) {
+    console.error('Error getting recording:', { callSid, error: String(error) });
+    return { recordingUrl: null, recordingSid: null, duration: null };
+  }
+}
+
+/**
+ * Request transcription for a recording
+ */
+export async function requestTranscription(recordingSid: string): Promise<{ transcriptionSid: string | null; error: string | null }> {
+  if (!canUseTwilio() || !recordingSid) {
+    return { transcriptionSid: null, error: 'missing_credentials_or_recordingsid' };
+  }
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Recordings/${recordingSid}/Transcriptions.json`;
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${getTwilioAuth()}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        'TranscriptionCallbackUrl': `${WEBHOOK_BASE_URL}/webhooks/twilio/transcription-complete`,
+      }).toString(),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      console.warn('Failed to request transcription:', { status: resp.status, body, recordingSid });
+      return { transcriptionSid: null, error: `twilio_error:${resp.status}` };
+    }
+
+    const data = await resp.json() as Record<string, unknown>;
+    const transcriptionSid = typeof data.sid === 'string' ? data.sid : null;
+    console.log('Transcription requested:', { recordingSid, transcriptionSid });
+    return { transcriptionSid, error: null };
+  } catch (error) {
+    console.error('Error requesting transcription:', { recordingSid, error: String(error) });
+    return { transcriptionSid: null, error: String(error) };
+  }
+}
