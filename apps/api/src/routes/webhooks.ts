@@ -1199,29 +1199,9 @@ router.post('/twilio/recording-status', async (req, res) => {
     });
     
     if (metric) {
-      // Update with the recording info
+      // Update with the recording info (no auto-transcription - use /retranscribe endpoint manually)
       const durationSec = recordingDuration ? parseInt(recordingDuration, 10) : null;
-      
-      // Transcribe the recording
-      let transferTranscript: string | null = null;
       const fullRecordingUrl = recordingUrl ? `${recordingUrl}.mp3` : null;
-      
-      if (fullRecordingUrl && canTranscribeRecording()) {
-        try {
-          const transcription = await transcribeRecordingFromUrl(fullRecordingUrl);
-          transferTranscript = transcription.text;
-          console.log('Transfer recording transcribed:', {
-            callId: metric.callId,
-            hasTranscript: !!transferTranscript,
-            source: transcription.source,
-          });
-        } catch (error) {
-          console.warn('Transfer transcription failed:', { callId: metric.callId, error: String(error) });
-        }
-      }
-      
-      // Compose full transcript
-      const fullTranscript = composeFullTranscript(metric.transcript, transferTranscript);
       
       await prisma.callMetric.update({
         where: { id: metric.id },
@@ -1229,8 +1209,6 @@ router.post('/twilio/recording-status', async (req, res) => {
           transferRecordingUrl: fullRecordingUrl,
           transferRecordingDurationSec: Number.isFinite(durationSec) ? durationSec : null,
           postTransferDurationSec: Number.isFinite(durationSec) ? durationSec : metric.postTransferDurationSec,
-          transferTranscript,
-          fullTranscript,
           lastEventType: 'twilio-recording-completed',
           lastEventAt: new Date(),
         },
@@ -1240,7 +1218,6 @@ router.post('/twilio/recording-status', async (req, res) => {
         callId: metric.callId,
         transferRecordingUrl: fullRecordingUrl,
         durationSec,
-        hasTransferTranscript: !!transferTranscript,
       });
     } else {
       // Try to find by parent call SID (the child call may not be linked yet)
