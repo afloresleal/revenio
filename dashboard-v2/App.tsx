@@ -298,6 +298,25 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!jsonModalOpen && !callLightboxCallId) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (jsonModalOpen) {
+        setJsonModalOpen(false);
+        return;
+      }
+      if (callLightboxCallId) {
+        setCallLightboxCallId(null);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [jsonModalOpen, callLightboxCallId]);
+
   const handleRefresh = () => {
     fetchData();
   };
@@ -403,6 +422,38 @@ export default function App() {
       default:
         return 'sin fuente';
     }
+  };
+
+  const asFiniteNumber = (value: unknown): number | null => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    return value;
+  };
+
+  const getTotalDurationDisplay = (
+    call: RecentCall,
+    detail?: Record<string, unknown>
+  ): { value: string; source: string } => {
+    const baseDuration = asFiniteNumber(detail?.duration) ?? call.duration;
+    const baseSource = typeof detail?.durationSource === 'string'
+      ? detail.durationSource
+      : call.durationSource;
+    const sellerTalk = asFiniteNumber(detail?.sellerTalkSec) ?? call.sellerTalkSec ?? null;
+    const sellerSource = typeof detail?.sellerTalkSource === 'string'
+      ? detail.sellerTalkSource
+      : call.sellerTalkSource;
+
+    if (baseDuration === null || baseDuration === undefined) {
+      return { value: '--', source: 'sin fuente' };
+    }
+
+    if (sellerTalk !== null && sellerTalk > 0) {
+      return {
+        value: formatSeconds(baseDuration + sellerTalk),
+        source: `${formatSource(baseSource)} + ${formatSource(sellerSource)}`,
+      };
+    }
+
+    return { value: formatSeconds(baseDuration), source: formatSource(baseSource) };
   };
 
   const getAssistantDisplay = (assistantId?: string | null): { label: string; id: string | null } => {
@@ -643,11 +694,18 @@ export default function App() {
     const detailError = callDetailErrors[call.callId];
     const transcript = typeof detail?.transcript === 'string' ? detail.transcript : '';
     const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
-    const shouldShowSyncButton = !call.transferNumber || !recordingUrl;
+    const transferRecordingUrl = typeof detail?.transferRecordingUrl === 'string' ? detail.transferRecordingUrl : '';
+    const audioEntries = [
+      recordingUrl ? { label: 'Audio Vapi', url: recordingUrl } : null,
+      transferRecordingUrl ? { label: 'Audio Twilio (transfer)', url: transferRecordingUrl } : null,
+    ].filter((entry): entry is { label: string; url: string } => !!entry);
+    const audioSources = audioEntries.filter((entry, index, all) => all.findIndex((other) => other.url === entry.url) === index);
+    const shouldShowSyncButton = !call.transferNumber || audioSources.length === 0;
     const transferDisplay = getTransferDisplay(call);
     const sellerTalkDisplay = getSellerTalkDisplay(call);
     const assistantDisplay = getAssistantDisplay(call.assistantId);
     const quality = getDataQuality(call);
+    const totalDurationDisplay = getTotalDurationDisplay(call, detail);
 
     return (
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
@@ -679,8 +737,8 @@ export default function App() {
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Duración total</div>
-            <div className="font-mono text-slate-300">{formatSeconds(call.duration)}</div>
-            <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSource(call.durationSource)}</div>
+            <div className="font-mono text-slate-300">{totalDurationDisplay.value}</div>
+            <div className="text-[11px] text-slate-500 mt-1">Fuente: {totalDurationDisplay.source}</div>
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Tiempo a transfer</div>
@@ -738,11 +796,18 @@ export default function App() {
             <div className="text-slate-500 text-xs mb-2">Audio</div>
             {detailLoading ? (
               <div className="text-xs text-slate-400">Cargando audio...</div>
-            ) : recordingUrl ? (
-              <audio controls preload="none" className="w-full">
-                <source src={recordingUrl} />
-                Tu navegador no soporta audio.
-              </audio>
+            ) : audioSources.length > 0 ? (
+              <div className="space-y-3">
+                {audioSources.map((source) => (
+                  <div key={source.url}>
+                    <div className="text-[11px] text-slate-500 mb-1">{source.label}</div>
+                    <audio controls preload="none" className="w-full">
+                      <source src={source.url} />
+                      Tu navegador no soporta audio.
+                    </audio>
+                  </div>
+                ))}
+              </div>
             ) : (
               <div className="text-xs text-slate-500">Sin audio disponible.</div>
             )}
