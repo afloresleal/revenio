@@ -78,9 +78,10 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
     return { childCallSid: null, recordingSid: null, error: 'missing_credentials_or_callsid' };
   }
 
-  // Retry logic: try up to 5 times with increasing delays
-  const maxRetries = 5;
-  const delays = [1000, 2000, 3000, 4000, 5000]; // 1s, 2s, 3s, 4s, 5s
+  // Retry logic: try up to 8 times with delays
+  // Phone calls to Mexico can take 5-15 seconds to connect
+  const maxRetries = 8;
+  const delays = [2000, 3000, 3000, 4000, 4000, 5000, 5000, 5000]; // ~30s total
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -106,44 +107,53 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
       const data = await listResp.json() as Record<string, unknown>;
       const calls = Array.isArray(data.calls) ? data.calls as Array<Record<string, unknown>> : [];
 
-      // Filter to find calls that can be recorded (in-progress, ringing, or queued)
-      const recordableCalls = calls.filter(c => {
-        const status = typeof c.status === 'string' ? c.status : '';
-        return status === 'in-progress' || status === 'ringing' || status === 'queued';
-      });
+      // Log all child call statuses for debugging
+      const statuses = calls.map(c => ({ sid: c.sid, status: c.status }));
+      console.log(`Child calls for ${parentCallSid} (attempt ${attempt + 1}/${maxRetries}):`, JSON.stringify(statuses));
 
-      if (recordableCalls.length === 0) {
-        console.log(`No recordable child calls found for ${parentCallSid} (attempt ${attempt + 1}/${maxRetries}, found ${calls.length} total calls)`);
-        if (attempt < maxRetries - 1) {
+      // Only in-progress calls can be recorded (not queued, not ringing)
+      const inProgressCalls = calls.filter(c => c.status === 'in-progress');
+      
+      if (inProgressCalls.length === 0) {
+        // Check if there are calls that might become in-progress soon
+        const pendingCalls = calls.filter(c => c.status === 'queued' || c.status === 'ringing');
+        if (pendingCalls.length > 0 && attempt < maxRetries - 1) {
+          console.log(`Found ${pendingCalls.length} pending child call(s), waiting for in-progress...`);
           await new Promise(resolve => setTimeout(resolve, delays[attempt]));
           continue;
         }
         
-        // On last attempt, log all child call statuses for debugging
-        const statuses = calls.map(c => ({ sid: c.sid, status: c.status }));
-        console.log('Child call statuses:', JSON.stringify(statuses));
-        return { childCallSid: null, recordingSid: null, error: 'no_recordable_child_calls' };
+        if (calls.length === 0) {
+          console.log(`No child calls found for ${parentCallSid}`);
+        } else {
+          console.log(`No in-progress child calls (found ${calls.length} with other statuses)`);
+        }
+        
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+          continue;
+        }
+        return { childCallSid: null, recordingSid: null, error: 'no_in_progress_child_calls' };
       }
 
-      // Start recording on the first recordable child call
-      const childCall = recordableCalls[0];
+      // Start recording on the first in-progress child call
+      const childCall = inProgressCalls[0];
       const childCallSid = typeof childCall.sid === 'string' ? childCall.sid : null;
-      const childStatus = typeof childCall.status === 'string' ? childCall.status : 'unknown';
 
       if (!childCallSid) {
         return { childCallSid: null, recordingSid: null, error: 'invalid_child_call' };
       }
 
-      console.log(`Found child call ${childCallSid} with status ${childStatus}, starting recording...`);
+      console.log(`Found in-progress child call ${childCallSid}, starting recording...`);
       const { recordingSid, error } = await startRecordingOnCall(childCallSid);
       
       if (recordingSid) {
         return { childCallSid, recordingSid, error: null };
       }
       
-      // If recording failed but call exists, maybe it's not ready yet - retry
-      if (error && error.includes('call_not_found') && attempt < maxRetries - 1) {
-        console.log(`Recording failed for ${childCallSid}, retrying...`);
+      // If recording failed, retry
+      if (attempt < maxRetries - 1) {
+        console.log(`Recording failed for ${childCallSid} (${error}), retrying...`);
         await new Promise(resolve => setTimeout(resolve, delays[attempt]));
         continue;
       }
