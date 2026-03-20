@@ -67,6 +67,7 @@ export async function startRecordingOnCall(callSid: string): Promise<{ recording
 
 /**
  * Find child calls for a parent call and start recording on them
+ * Retries multiple times since child call may take time to appear
  */
 export async function startRecordingOnChildCalls(parentCallSid: string): Promise<{
   childCallSid: string | null;
@@ -77,45 +78,88 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
     return { childCallSid: null, recordingSid: null, error: 'missing_credentials_or_callsid' };
   }
 
-  try {
-    // Find child calls
-    const listUrl = new URL(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`);
-    listUrl.searchParams.set('ParentCallSid', parentCallSid);
-    listUrl.searchParams.set('Status', 'in-progress');
-    listUrl.searchParams.set('PageSize', '10');
+  // Retry logic: try up to 5 times with increasing delays
+  const maxRetries = 5;
+  const delays = [1000, 2000, 3000, 4000, 5000]; // 1s, 2s, 3s, 4s, 5s
 
-    const listResp = await fetch(listUrl.toString(), {
-      headers: { 'Authorization': `Basic ${getTwilioAuth()}` },
-    });
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Find child calls - don't filter by status, get all recent child calls
+      const listUrl = new URL(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`);
+      listUrl.searchParams.set('ParentCallSid', parentCallSid);
+      listUrl.searchParams.set('PageSize', '10');
 
-    if (!listResp.ok) {
-      const body = await listResp.text().catch(() => '');
-      console.warn('Failed to list child calls:', { status: listResp.status, body });
-      return { childCallSid: null, recordingSid: null, error: `list_failed:${listResp.status}` };
+      const listResp = await fetch(listUrl.toString(), {
+        headers: { 'Authorization': `Basic ${getTwilioAuth()}` },
+      });
+
+      if (!listResp.ok) {
+        const body = await listResp.text().catch(() => '');
+        console.warn('Failed to list child calls:', { status: listResp.status, body, attempt });
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+          continue;
+        }
+        return { childCallSid: null, recordingSid: null, error: `list_failed:${listResp.status}` };
+      }
+
+      const data = await listResp.json() as Record<string, unknown>;
+      const calls = Array.isArray(data.calls) ? data.calls as Array<Record<string, unknown>> : [];
+
+      // Filter to find calls that can be recorded (in-progress, ringing, or queued)
+      const recordableCalls = calls.filter(c => {
+        const status = typeof c.status === 'string' ? c.status : '';
+        return status === 'in-progress' || status === 'ringing' || status === 'queued';
+      });
+
+      if (recordableCalls.length === 0) {
+        console.log(`No recordable child calls found for ${parentCallSid} (attempt ${attempt + 1}/${maxRetries}, found ${calls.length} total calls)`);
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+          continue;
+        }
+        
+        // On last attempt, log all child call statuses for debugging
+        const statuses = calls.map(c => ({ sid: c.sid, status: c.status }));
+        console.log('Child call statuses:', JSON.stringify(statuses));
+        return { childCallSid: null, recordingSid: null, error: 'no_recordable_child_calls' };
+      }
+
+      // Start recording on the first recordable child call
+      const childCall = recordableCalls[0];
+      const childCallSid = typeof childCall.sid === 'string' ? childCall.sid : null;
+      const childStatus = typeof childCall.status === 'string' ? childCall.status : 'unknown';
+
+      if (!childCallSid) {
+        return { childCallSid: null, recordingSid: null, error: 'invalid_child_call' };
+      }
+
+      console.log(`Found child call ${childCallSid} with status ${childStatus}, starting recording...`);
+      const { recordingSid, error } = await startRecordingOnCall(childCallSid);
+      
+      if (recordingSid) {
+        return { childCallSid, recordingSid, error: null };
+      }
+      
+      // If recording failed but call exists, maybe it's not ready yet - retry
+      if (error && error.includes('call_not_found') && attempt < maxRetries - 1) {
+        console.log(`Recording failed for ${childCallSid}, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        continue;
+      }
+      
+      return { childCallSid, recordingSid, error };
+    } catch (error) {
+      console.error('Error in startRecordingOnChildCalls:', { parentCallSid, attempt, error: String(error) });
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        continue;
+      }
+      return { childCallSid: null, recordingSid: null, error: String(error) };
     }
-
-    const data = await listResp.json() as Record<string, unknown>;
-    const calls = Array.isArray(data.calls) ? data.calls as Array<Record<string, unknown>> : [];
-
-    if (calls.length === 0) {
-      console.log('No in-progress child calls found for:', parentCallSid);
-      return { childCallSid: null, recordingSid: null, error: 'no_child_calls' };
-    }
-
-    // Start recording on the first in-progress child call
-    const childCall = calls[0];
-    const childCallSid = typeof childCall.sid === 'string' ? childCall.sid : null;
-
-    if (!childCallSid) {
-      return { childCallSid: null, recordingSid: null, error: 'invalid_child_call' };
-    }
-
-    const { recordingSid, error } = await startRecordingOnCall(childCallSid);
-    return { childCallSid, recordingSid, error };
-  } catch (error) {
-    console.error('Error in startRecordingOnChildCalls:', { parentCallSid, error: String(error) });
-    return { childCallSid: null, recordingSid: null, error: String(error) };
   }
+
+  return { childCallSid: null, recordingSid: null, error: 'max_retries_exceeded' };
 }
 
 /**

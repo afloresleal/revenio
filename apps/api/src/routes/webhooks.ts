@@ -838,9 +838,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
   if (status === 'forwarding' && twilioCallSid) {
     console.log('Transfer in progress, attempting to start recording on child call:', { callId, twilioCallSid });
     
-    // Small delay to allow child call to be created
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    // startRecordingOnChildCalls has built-in retry logic
     const { childCallSid, recordingSid, error } = await startRecordingOnChildCalls(twilioCallSid);
     
     if (recordingSid) {
