@@ -1415,6 +1415,64 @@ app.get("/lab/call-status/:id", async (req, res) => {
   });
 });
 
+// ============ TWILIO RECORDING PROXY ============
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
+
+function getTwilioAuth(): string {
+  return Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+}
+
+/**
+ * Proxy endpoint to serve Twilio recordings without exposing auth credentials
+ * GET /api/recordings/:recordingSid
+ */
+app.get("/api/recordings/:recordingSid", async (req, res) => {
+  const { recordingSid } = req.params;
+  
+  if (!recordingSid || !recordingSid.startsWith('RE')) {
+    return res.status(400).json({ error: 'Invalid recording SID' });
+  }
+  
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    return res.status(500).json({ error: 'Twilio credentials not configured' });
+  }
+  
+  const format = req.query.format === 'wav' ? '' : '.mp3';
+  const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Recordings/${recordingSid}${format}`;
+  
+  try {
+    const response = await fetch(twilioUrl, {
+      headers: {
+        'Authorization': `Basic ${getTwilioAuth()}`,
+      },
+    });
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: 'Failed to fetch recording', 
+        status: response.status 
+      });
+    }
+    
+    const contentType = response.headers.get('content-type') || 'audio/mpeg';
+    const contentLength = response.headers.get('content-length');
+    
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    
+    // Stream the response
+    const buffer = await response.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.error('Recording proxy error:', error);
+    return res.status(500).json({ error: 'Failed to proxy recording' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);
 });
