@@ -705,7 +705,9 @@ export default function App() {
     const detail = callDetails[call.callId];
     const detailLoading = !!callDetailLoading[call.callId];
     const detailError = callDetailErrors[call.callId];
-    const transcript = typeof detail?.transcript === 'string' ? detail.transcript : '';
+    // Prefer fullTranscript (AI + transfer), fallback to transcript (AI only)
+    const fullTranscript = typeof detail?.fullTranscript === 'string' ? detail.fullTranscript : '';
+    const transcript = fullTranscript || (typeof detail?.transcript === 'string' ? detail.transcript : '');
     const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
     const transferRecordingUrl = typeof detail?.transferRecordingUrl === 'string' ? detail.transferRecordingUrl : '';
     const audioEntries = [
