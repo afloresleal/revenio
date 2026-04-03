@@ -152,54 +152,74 @@
 
           <div class="subsection">
             <p class="subsection-title">Round Robin · Agentes Humanos (Transfer)</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+            <div class="rr-header">
               <label class="inline-flex items-center gap-2 text-sm text-slate-300">
                 <input id="round_robin_enabled" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-800" />
                 Habilitar round robin en transferencia
               </label>
-              <p class="text-xs text-slate-500">Captura hasta 5 agentes humanos (nombre opcional + número E.164).</p>
+              <div class="actions actions-row button-group">
+                <button id="btn_rr_clear" class="ghost compact-btn compact-btn--sm" type="button">Limpiar agentes</button>
+              </div>
             </div>
+            <p class="text-xs text-slate-500 mt-2">
+              Configura hasta 5 agentes humanos. Si capturas números, se aplicará round robin automáticamente aunque el switch esté apagado.
+            </p>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-3">
-              <div>
-                <label class="field-label">Agente 1 · Nombre</label>
-                <input id="rr_agent_name_1" class="field-input" placeholder="Ana" />
+            <div class="rr-agents mt-3">
+              <div class="rr-agent-row">
+                <div class="rr-agent-index">Agente 1</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="rr_agent_name_1" class="field-input" placeholder="Ana" />
+                </div>
+                <div>
+                  <label class="field-label">Número (E.164)</label>
+                  <input id="rr_agent_number_1" class="field-input" placeholder="+5255..." />
+                </div>
               </div>
-              <div>
-                <label class="field-label">Agente 1 · Número</label>
-                <input id="rr_agent_number_1" class="field-input" placeholder="+5255..." />
+              <div class="rr-agent-row">
+                <div class="rr-agent-index">Agente 2</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="rr_agent_name_2" class="field-input" placeholder="Luis" />
+                </div>
+                <div>
+                  <label class="field-label">Número (E.164)</label>
+                  <input id="rr_agent_number_2" class="field-input" placeholder="+5255..." />
+                </div>
               </div>
-              <div>
-                <label class="field-label">Agente 2 · Nombre</label>
-                <input id="rr_agent_name_2" class="field-input" placeholder="Luis" />
+              <div class="rr-agent-row">
+                <div class="rr-agent-index">Agente 3</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="rr_agent_name_3" class="field-input" placeholder="Sofía" />
+                </div>
+                <div>
+                  <label class="field-label">Número (E.164)</label>
+                  <input id="rr_agent_number_3" class="field-input" placeholder="+5255..." />
+                </div>
               </div>
-              <div>
-                <label class="field-label">Agente 2 · Número</label>
-                <input id="rr_agent_number_2" class="field-input" placeholder="+5255..." />
+              <div class="rr-agent-row">
+                <div class="rr-agent-index">Agente 4</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="rr_agent_name_4" class="field-input" placeholder="Carlos" />
+                </div>
+                <div>
+                  <label class="field-label">Número (E.164)</label>
+                  <input id="rr_agent_number_4" class="field-input" placeholder="+5255..." />
+                </div>
               </div>
-              <div>
-                <label class="field-label">Agente 3 · Nombre</label>
-                <input id="rr_agent_name_3" class="field-input" placeholder="Sofía" />
-              </div>
-              <div>
-                <label class="field-label">Agente 3 · Número</label>
-                <input id="rr_agent_number_3" class="field-input" placeholder="+5255..." />
-              </div>
-              <div>
-                <label class="field-label">Agente 4 · Nombre</label>
-                <input id="rr_agent_name_4" class="field-input" placeholder="Carlos" />
-              </div>
-              <div>
-                <label class="field-label">Agente 4 · Número</label>
-                <input id="rr_agent_number_4" class="field-input" placeholder="+5255..." />
-              </div>
-              <div>
-                <label class="field-label">Agente 5 · Nombre</label>
-                <input id="rr_agent_name_5" class="field-input" placeholder="María" />
-              </div>
-              <div>
-                <label class="field-label">Agente 5 · Número</label>
-                <input id="rr_agent_number_5" class="field-input" placeholder="+5255..." />
+              <div class="rr-agent-row">
+                <div class="rr-agent-index">Agente 5</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="rr_agent_name_5" class="field-input" placeholder="María" />
+                </div>
+                <div>
+                  <label class="field-label">Número (E.164)</label>
+                  <input id="rr_agent_number_5" class="field-input" placeholder="+5255..." />
+                </div>
               </div>
             </div>
           </div>

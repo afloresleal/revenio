@@ -213,6 +213,26 @@ function collectRoundRobinAgents() {
   return agents;
 }
 
+function clearRoundRobinAgents() {
+  for (let i = 1; i <= 5; i += 1) {
+    const nameEl = $(`rr_agent_name_${i}`);
+    const numberEl = $(`rr_agent_number_${i}`);
+    if (nameEl) {
+      nameEl.value = "";
+      localStorage.setItem(`rr_agent_name_${i}`, "");
+    }
+    if (numberEl) {
+      numberEl.value = "";
+      localStorage.setItem(`rr_agent_number_${i}`, "");
+    }
+  }
+  const rrToggle = $("round_robin_enabled");
+  if (rrToggle) {
+    rrToggle.checked = false;
+    localStorage.setItem("round_robin_enabled", "false");
+  }
+}
+
 $("btn_validate").addEventListener("click", async () => {
   out.textContent = "Validando IDs...";
   const payload = {
@@ -330,6 +350,13 @@ $("btn_call").addEventListener("click", async () => {
   out.textContent = JSON.stringify(result, null, 2);
   await loadHistory();
 });
+
+if ($("btn_rr_clear")) {
+  $("btn_rr_clear").addEventListener("click", () => {
+    clearRoundRobinAgents();
+    out.textContent = "Configuración de round robin limpiada.";
+  });
+}
 
 $("btn_load").addEventListener("click", async () => {
   setActiveTab("history");

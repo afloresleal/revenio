@@ -65,6 +65,47 @@ body {
   color: rgb(100 116 139);
 }
 
+.rr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.rr-agents {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.rr-agent-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: end;
+  border: 1px solid rgb(30 41 59 / 0.85);
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+  background: rgb(15 23 42 / 0.45);
+}
+
+.rr-agent-index {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgb(148 163 184);
+  padding-bottom: 0.4rem;
+}
+
+@media (max-width: 960px) {
+  .rr-agent-row {
+    grid-template-columns: 1fr;
+  }
+
+  .rr-agent-index {
+    padding-bottom: 0.1rem;
+  }
+}
+
 .field-label {
   display: block;
   margin-bottom: 0.375rem;
