@@ -886,6 +886,13 @@ const callDirectSchema = z.object({
   vapi_phone_number_id: z.string().min(6).optional(),
   vapi_assistant_id: z.string().min(6).optional(),
   transfer_number: z.string().min(6).optional(),
+  round_robin_enabled: z.boolean().optional(),
+  round_robin_agents: z.array(
+    z.object({
+      name: z.string().min(1).max(80).optional(),
+      transfer_number: z.string().min(6),
+    }),
+  ).min(1).max(5).optional(),
   to_number: z.string().min(6),
   lead_id: z.string().uuid().optional(),
   lead_name: z.string().min(1).max(80).optional(),
@@ -959,13 +966,39 @@ app.post("/call/test/direct", async (req, res) => {
     return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
   }
 
-  const { vapi_api_key, vapi_phone_number_id, vapi_assistant_id, transfer_number, to_number, lead_id, lead_name, lead_source } =
+  const {
+    vapi_api_key,
+    vapi_phone_number_id,
+    vapi_assistant_id,
+    transfer_number,
+    round_robin_enabled,
+    round_robin_agents,
+    to_number,
+    lead_id,
+    lead_name,
+    lead_source,
+  } =
     parsed.data;
   const resolvedVapiApiKey = vapi_api_key ?? VAPI_API_KEY;
   const resolvedVapiPhoneNumberId = vapi_phone_number_id ?? VAPI_PHONE_NUMBER_ID;
   const resolvedVapiAssistantId = vapi_assistant_id ?? VAPI_ASSISTANT_ID;
-  const resolvedTransferNumber = transfer_number ?? TRANSFER_NUMBER;
+  const defaultTransferNumber = transfer_number ?? TRANSFER_NUMBER;
   const safeName = lead_name ? sanitizeName(lead_name) : null;
+  const requestAgents = getRoundRobinHumanAgentsFromRequest(round_robin_agents);
+  const envAgents = getRoundRobinHumanAgentsFromEnv(defaultTransferNumber);
+  const configuredRoundRobinAgents = requestAgents.length ? requestAgents : envAgents;
+  const roundRobinRequested = round_robin_enabled === true || requestAgents.length > 0;
+  const shouldUseRoundRobin = roundRobinRequested && configuredRoundRobinAgents.length > 0;
+  let selectedTransferNumber = defaultTransferNumber;
+  let selectedAgentName: string | null = null;
+  let selectedAgentIndex: number | null = null;
+  if (shouldUseRoundRobin) {
+    const attemptsCount = await prisma.callAttempt.count();
+    selectedAgentIndex = attemptsCount % configuredRoundRobinAgents.length;
+    const selectedAgent = configuredRoundRobinAgents[selectedAgentIndex];
+    selectedTransferNumber = selectedAgent.transferNumber;
+    selectedAgentName = selectedAgent.name ?? null;
+  }
 
   if (!resolvedVapiApiKey || !resolvedVapiPhoneNumberId || !resolvedVapiAssistantId) {
     return res.status(400).json({
@@ -997,7 +1030,7 @@ app.post("/call/test/direct", async (req, res) => {
 
   // Build payload with assistantOverrides for personalized greeting (language-aware)
   const language = getLanguageForAssistant(resolvedVapiAssistantId);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, resolvedTransferNumber, language);
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, selectedTransferNumber, language);
   const payload = {
     phoneNumberId: resolvedVapiPhoneNumberId,
     assistantId: resolvedVapiAssistantId,
@@ -1039,6 +1072,15 @@ app.post("/call/test/direct", async (req, res) => {
         flow: safeName ? "with_name" : "without_name",
         greeting: getFirstMessage(safeName, language),
         language,
+        roundRobin: shouldUseRoundRobin
+          ? {
+              enabled: true,
+              selectedAgentIndex,
+              selectedAgentName,
+              selectedTransferNumber,
+              poolSize: configuredRoundRobinAgents.length,
+            }
+          : { enabled: false },
       } as any,
     },
   });
@@ -1054,7 +1096,15 @@ app.post("/call/test/direct", async (req, res) => {
       providerId: typeof data.id === "string" ? data.id : null,
       controlUrl: data?.monitor?.controlUrl ?? null,
       resultJson: {
-        transferNumber: resolvedTransferNumber,
+        transferNumber: selectedTransferNumber,
+        roundRobin: shouldUseRoundRobin
+          ? {
+              enabled: true,
+              selectedAgentIndex,
+              selectedAgentName,
+              poolSize: configuredRoundRobinAgents.length,
+            }
+          : { enabled: false },
       } as any,
     },
   });
@@ -1066,6 +1116,14 @@ app.post("/call/test/direct", async (req, res) => {
     flow: safeName ? "with_name" : "without_name",
     greeting: getFirstMessage(safeName, language),
     language,
+    selected_agent: {
+      assistant_id: resolvedVapiAssistantId,
+      human_agent_name: selectedAgentName,
+      transfer_number: selectedTransferNumber,
+      round_robin_enabled: shouldUseRoundRobin,
+      round_robin_index: selectedAgentIndex,
+      round_robin_pool_size: shouldUseRoundRobin ? configuredRoundRobinAgents.length : 0,
+    },
     vapi: data 
   });
 });
@@ -1078,7 +1136,50 @@ const callVapiSchema = z.object({
   lead_name: z.string().min(1).max(80).optional(),
   lead_id: z.string().uuid().optional(),
   lead_source: z.string().min(1).optional(),
+  round_robin_enabled: z.boolean().optional(),
+  round_robin_agents: z.array(
+    z.object({
+      name: z.string().min(1).max(80).optional(),
+      transfer_number: z.string().min(6),
+    }),
+  ).min(1).max(5).optional(),
 });
+
+type RoundRobinHumanAgent = {
+  name?: string;
+  transferNumber: string;
+};
+
+const MAX_ROUND_ROBIN_AGENTS = 5;
+
+function parseCsvList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getRoundRobinHumanAgentsFromEnv(defaultTransferNumber: string): RoundRobinHumanAgent[] {
+  const transferNumbers = parseCsvList(process.env.HUMAN_AGENT_NUMBERS || process.env.TRANSFER_NUMBERS)
+    .slice(0, MAX_ROUND_ROBIN_AGENTS);
+  const names = parseCsvList(process.env.HUMAN_AGENT_NAMES);
+  if (!transferNumbers.length) return [];
+  return transferNumbers.map((transferNumber, index) => ({
+    transferNumber: transferNumber || defaultTransferNumber,
+    name: names[index],
+  }));
+}
+
+function getRoundRobinHumanAgentsFromRequest(
+  agents: Array<{ name?: string; transfer_number: string }> | undefined,
+): RoundRobinHumanAgent[] {
+  if (!agents?.length) return [];
+  return agents.slice(0, MAX_ROUND_ROBIN_AGENTS).map((agent) => ({
+    name: agent.name?.trim() || undefined,
+    transferNumber: agent.transfer_number,
+  }));
+}
 
 app.post("/call/vapi", async (req, res) => {
   // 🚫 VALIDATE BUSINESS HOURS FIRST
@@ -1091,21 +1192,38 @@ app.post("/call/vapi", async (req, res) => {
     });
   }
 
-  if (!VAPI_API_KEY || !VAPI_PHONE_NUMBER_ID || !VAPI_ASSISTANT_ID) {
+  const parsed = callVapiSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const { to_number, transfer_number, lead_name, lead_id, lead_source, round_robin_enabled, round_robin_agents } = parsed.data;
+  const defaultTransferNumber = transfer_number ?? TRANSFER_NUMBER;
+  const safeName = lead_name ? sanitizeName(lead_name) : null;
+  const requestAgents = getRoundRobinHumanAgentsFromRequest(round_robin_agents);
+  const envAgents = getRoundRobinHumanAgentsFromEnv(defaultTransferNumber);
+  const configuredRoundRobinAgents = requestAgents.length ? requestAgents : envAgents;
+  const roundRobinRequested = round_robin_enabled === true || requestAgents.length > 0;
+  const shouldUseRoundRobin = roundRobinRequested && configuredRoundRobinAgents.length > 0;
+  const selectedAssistantId = VAPI_ASSISTANT_ID;
+
+  if (!VAPI_API_KEY || !VAPI_PHONE_NUMBER_ID || !selectedAssistantId) {
     return res.status(400).json({
       error: "missing_vapi_config",
       required: ["VAPI_API_KEY", "VAPI_PHONE_NUMBER_ID", "VAPI_ASSISTANT_ID"],
     });
   }
 
-  const parsed = callVapiSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  let selectedTransferNumber = defaultTransferNumber;
+  let selectedAgentName: string | null = null;
+  let selectedAgentIndex: number | null = null;
+  if (shouldUseRoundRobin) {
+    const attemptsCount = await prisma.callAttempt.count();
+    selectedAgentIndex = attemptsCount % configuredRoundRobinAgents.length;
+    const selectedAgent = configuredRoundRobinAgents[selectedAgentIndex];
+    selectedTransferNumber = selectedAgent.transferNumber;
+    selectedAgentName = selectedAgent.name ?? null;
   }
-
-  const { to_number, transfer_number, lead_name, lead_id, lead_source } = parsed.data;
-  const resolvedTransferNumber = transfer_number ?? TRANSFER_NUMBER;
-  const safeName = lead_name ? sanitizeName(lead_name) : null;
 
   // Get or create lead
   const lead =
@@ -1131,11 +1249,11 @@ app.post("/call/vapi", async (req, res) => {
   });
 
   // Build VAPI payload using shared helper (language-aware)
-  const language = getLanguageForAssistant(VAPI_ASSISTANT_ID);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, resolvedTransferNumber, language);
+  const language = getLanguageForAssistant(selectedAssistantId);
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, selectedTransferNumber, language);
   const payload = {
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
-    assistantId: VAPI_ASSISTANT_ID,
+    assistantId: selectedAssistantId,
     customer: { number: to_number },
     assistantOverrides,
   };
@@ -1174,6 +1292,15 @@ app.post("/call/vapi", async (req, res) => {
         flow: safeName ? "with_name" : "without_name",
         greeting: getFirstMessage(safeName, language),
         language,
+        roundRobin: shouldUseRoundRobin
+          ? {
+              enabled: true,
+              selectedAgentIndex,
+              selectedAgentName,
+              selectedTransferNumber,
+              poolSize: configuredRoundRobinAgents.length,
+            }
+          : { enabled: false },
       } as any,
     },
   });
@@ -1193,7 +1320,16 @@ app.post("/call/vapi", async (req, res) => {
       providerId: typeof data.id === "string" ? data.id : null,
       controlUrl: data?.monitor?.controlUrl ?? null,
       resultJson: {
-        transferNumber: resolvedTransferNumber,
+        transferNumber: selectedTransferNumber,
+        assistantId: selectedAssistantId,
+        roundRobin: shouldUseRoundRobin
+          ? {
+              enabled: true,
+              selectedAgentIndex,
+              selectedAgentName,
+              poolSize: configuredRoundRobinAgents.length,
+            }
+          : { enabled: false },
       } as any,
     },
   });
@@ -1205,6 +1341,14 @@ app.post("/call/vapi", async (req, res) => {
     flow: safeName ? "with_name" : "without_name",
     greeting: getFirstMessage(safeName, language),
     language,
+    selected_agent: {
+      assistant_id: selectedAssistantId,
+      human_agent_name: selectedAgentName,
+      transfer_number: selectedTransferNumber,
+      round_robin_enabled: shouldUseRoundRobin,
+      round_robin_index: selectedAgentIndex,
+      round_robin_pool_size: shouldUseRoundRobin ? configuredRoundRobinAgents.length : 0,
+    },
     vapi: data 
   });
 });

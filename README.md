@@ -1,46 +1,30 @@
 # Revenio Call Campaign
 
-Monorepo para pruebas y operación de llamadas outbound con Vapi/Twilio.
+Monorepo para operacion de llamadas outbound con Vapi + Twilio.
 
 Incluye:
-- API en Node/Express + Prisma + PostgreSQL
-- UI de laboratorio (`/`) para depuración operativa
-- Landing simplificada (`/campaign.html`) para usuarios no técnicos
+- API en Node/Express + Prisma + PostgreSQL (`apps/api`)
+- Lab UI para pruebas manuales (`apps/lab`)
+- Dashboard React/Vite para metricas (`dashboard-v2`)
 
 ---
 
 ## 1) Arquitectura (resumen)
 
 ### Flujo principal
-1. Usuario envía `nombre` + `telefono` en `/campaign.html`.
-2. Frontend llama `POST /call/test/direct` al API.
-3. API crea `Lead` + `CallAttempt` y dispara llamada en Vapi (`/call/phone`).
-4. Vapi envía resultados a webhook (`/webhooks/vapi/result`).
-5. API guarda eventos (`Event`) y JSON final (`CallAttempt.resultJson`).
-6. Lab consulta historial por `GET /lab/history`.
+1. Se crea/recibe un lead.
+2. API dispara llamada via `POST /call/test`, `POST /call/test/direct` o `POST /call/vapi`.
+3. Vapi y Twilio envian eventos a `/webhooks/*`.
+4. API consolida eventos y metricas en `CallAttempt`, `Event` y `CallMetric`.
+5. Lab y Dashboard consultan la API (`/lab/*` y `/api/metrics/*`).
 
-### Componentes
-- `apps/api`: backend principal.
-- `apps/lab`: servidor estático con:
-  - `index.html` (Lab)
-  - `campaign.html` (landing de campaña)
+### Voice agents (multi-idioma)
+El backend soporta asistentes en ES/EN y ajusta:
+- greeting inicial
+- mensaje de transfer
+- prompt de sistema para el flujo sin nombre
 
-### Voice Agents (Multi-idioma)
-
-El sistema soporta 3 asistentes de voz con detección automática de idioma:
-
-| Agente | Idioma | Greeting | Uso |
-|--------|--------|----------|-----|
-| **Marina** (1-ES-F) | Español | "Hola, ¿hablo con {name}?" | Leads hispanohablantes |
-| **Rachel** (2-EN-F) | English | "Hi, am I speaking with {name}?" | English leads (professional) |
-| **Bella** (3-EN-F) | English | "Hi! Am I talking to {name}?" | English leads (friendly) |
-
-La API detecta automáticamente el idioma según el `assistantId` y genera:
-- First message en el idioma correcto
-- Transfer message localizado
-- System prompt apropiado
-
-Ver [docs/VAPI-CONFIG.md](docs/VAPI-CONFIG.md) para configuración detallada.
+Referencia: [docs/VAPI-CONFIG.md](docs/VAPI-CONFIG.md)
 
 ---
 
@@ -49,47 +33,50 @@ Ver [docs/VAPI-CONFIG.md](docs/VAPI-CONFIG.md) para configuración detallada.
 ```text
 .
 ├─ apps/
-│  ├─ api/
-│  │  ├─ src/server.ts
-│  │  ├─ prisma/schema.prisma
-│  │  └─ prisma/migrations/
-│  └─ lab/
-│     ├─ server.js
-│     └─ public/
-│        ├─ index.html
-│        ├─ app.js
-│        ├─ campaign.html
-│        ├─ campaign.js
-│        └─ *.css
-├─ package.json (workspaces)
-└─ docker-compose.yml
+│  ├─ api/              # API principal
+│  └─ lab/              # UI estatica para debug
+├─ dashboard/           # Dashboard legacy (vanilla)
+├─ dashboard-v2/        # Dashboard actual (React + Vite)
+├─ docs/
+├─ docker-compose.yml
+└─ package.json         # workspaces (apps/*, packages/*)
 ```
 
 ---
 
-## 3) Stack y versiones
+## 3) Stack
 
-- Node.js 22.x (Railway build actual: Node 22)
+- Node.js 22+
 - npm workspaces
 - Express 4
 - Prisma 5 + PostgreSQL
-- Frontend vanilla JS/HTML/CSS
+- Frontend: vanilla JS (Lab) + React 19 / Vite (Dashboard v2)
 
 ---
 
-## 4) Configuración local
+## 4) Configuracion local
 
-## Requisitos
+### Requisitos
 - Node 22+
 - PostgreSQL accesible
 
-## Instalar dependencias
+### Instalar dependencias
+En la raiz:
+
 ```bash
 npm ci
 ```
 
-## Variables de entorno (API)
-Crear `.env` en raíz (o en `apps/api` según tu flujo) con:
+Para dashboard v2 (no vive en workspaces):
+
+```bash
+npm --prefix dashboard-v2 ci
+```
+
+### Variables de entorno (API)
+Crear `.env` (raiz o `apps/api/.env`).
+
+Minimas para llamadas Vapi:
 
 ```bash
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DB
@@ -100,195 +87,215 @@ VAPI_ASSISTANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 VAPI_PHONE_NUMBER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
-Notas:
-- `VAPI_API_KEY` debe ser **private/server key**.
-- La landing simplificada no pide keys; usa estas variables del backend.
+Variables comunes opcionales:
 
-## Migraciones Prisma
+```bash
+# CORS
+DASHBOARD_URL=http://localhost:5173
+
+# Transfer
+TRANSFER_NUMBER=+52...
+HUMAN_AGENT_NUMBERS=+5255...,+5255...,+5255...
+HUMAN_AGENT_NAMES=Ana,Luis,Sofia
+TRANSFER_CONNECTED_MIN_SEC=10
+
+# Twilio (duracion post-transfer, grabaciones, callbacks)
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+
+# Transcripcion
+TRANSCRIPTION_PROVIDER=auto
+OPENAI_API_KEY=...
+OPENAI_AUDIO_MODEL=whisper-1
+OPENAI_TRANSCRIBE_TIMEOUT_MS=45000
+WHISPER_LOCAL_ENABLED=false
+WHISPER_LOCAL_BIN=whisper
+WHISPER_LOCAL_MODEL=base
+WHISPER_LOCAL_LANGUAGE=es
+WHISPER_LOCAL_TIMEOUT_MS=180000
+RECORDING_DOWNLOAD_TIMEOUT_MS=45000
+
+# Jobs y backfill
+SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN=180
+METRICS_BACKFILL_LIMIT=100
+METRICS_BACKFILL_MAX_LIMIT=500
+
+# Enlaces webhook generados por API
+WEBHOOK_BASE_URL=https://tu-api-publica
+```
+
+### Migraciones Prisma
+
 ```bash
 npm -w apps/api exec prisma migrate deploy
 ```
 
-## Ejecutar en local
-API:
+---
+
+## 5) Ejecutar en local
+
+### API
+
 ```bash
 npm run dev
 ```
 
-Lab UI:
+API por defecto: `http://localhost:3000`
+
+### Lab UI
+
 ```bash
 npm run lab
 ```
 
-Por defecto:
-- API: `http://localhost:3000`
-- Lab: `http://localhost:5174`
+Lab por defecto: `http://localhost:5174`
+
+### Dashboard v2
+
+```bash
+npm --prefix dashboard-v2 run dev
+```
+
+Dashboard v2 por defecto: `http://localhost:5173`
+
+Si necesitas apuntar a otra API:
+
+```bash
+VITE_API_URL=http://localhost:3000
+```
 
 ---
 
-## 5) Endpoints relevantes
+## 6) Endpoints principales
 
-## Salud
+### Salud
 - `GET /health`
 
-## Leads / llamadas
+### Leads
 - `POST /lead`
 - `GET /lead/:id`
 - `GET /leads`
+
+### Llamadas
 - `POST /call/test`
 - `POST /call/test/direct`
+- `POST /call/vapi` (produccion, valida horario 7:00-22:00 CST)
 
-## Webhooks
-- `POST /webhooks/twilio/status`
-- `POST /webhooks/twilio/transfer-status`
-- `POST /webhooks/twilio/transfer-recording`
-- `POST /webhooks/twilio/transfer-transcription`
-- `POST /webhooks/vapi/result`
+`POST /call/vapi` soporta round robin opcional (hasta 5 agentes):
+- Request: `round_robin_enabled: true`
+- Request: `round_robin_agents: [{ name?, transfer_number }]` (max 5)
+- O por ENV: `HUMAN_AGENT_NUMBERS` (+ `HUMAN_AGENT_NAMES` opcional, listas separadas por coma)
+- Si `round_robin_enabled` es `true`, selecciona el humano por rotación y devuelve `selected_agent` en la respuesta.
 
-## Métricas (extra)
-- `POST /api/metrics/calls/:callId/transcribe-full` (genera/regen `fullTranscript` desde audio)
-
-## Utilidades lab
+### Lab / debug
 - `GET /lab/history`
-- `POST /lab/sync-attempt/:id` (fallback para traer transcript/estado desde Vapi)
-- `GET /lab/call-status/:id` (estado final por `attemptId`)
-
-## Jobs de sincronización
-- `POST /api/jobs/sync-transfer-metrics`
-  - Query opcionales:
-    - `limit` (default 50, max 200)
-    - `lookback_minutes` (default 180)
-    - `dry_run=true|false`
-
-## Helpers Vapi (solo Lab/debug)
+- `POST /lab/sync-attempt/:id`
+- `GET /lab/call-status/:id`
 - `POST /vapi/validate`
 - `POST /vapi/assistants`
 - `POST /vapi/phone-numbers`
 
----
+### Metricas
+Base: `/api/metrics`
 
-## 6) Configuración Vapi obligatoria
+- `GET /summary`
+- `GET /daily`
+- `GET /recent`
+- `GET /calls/:callId`
+- `POST /calls/:callId/transcribe-full`
+- `POST /calls/:callId/sync`
+- `POST /transcribe-missing`
+- `POST /backfill`
+- `POST /backfill/run`
 
-En el assistant/phone config de Vapi:
-- Server URL:
-  - `https://<tu-api>/webhooks/vapi/result`
-- Server Messages:
-  - activar al menos `end-of-call-report`
+### Jobs
+Base: `/api/jobs`
 
-Sin esto, no llegarán `vapi_result` y no habrá transcript en historial.
+- `POST /sync-transfer-metrics`
+  - Query opcionales: `limit`, `lookback_minutes`, `dry_run`
 
----
+### Webhooks
+Base: `/webhooks`
 
-## 7) Deployment en Railway
+Vapi:
+- `POST /vapi/events` (endpoint unificado recomendado)
+- `POST /vapi/metrics`
+- `POST /vapi/end-of-call`
+- `POST /vapi/transfer`
 
-## Servicios recomendados
-1. `@revenio/api` (Node API)
-2. `honest-beauty` (Lab estático, si lo separan)
-3. `Postgres`
+Twilio:
+- `POST /twilio/recording-status`
+- `POST /twilio/transcription-complete`
+- `POST /twilio/retranscribe/:callId`
 
-## Variables en `@revenio/api`
-- `DATABASE_URL` (apuntando al Postgres correcto del proyecto)
-- `VAPI_API_KEY`
-- `VAPI_ASSISTANT_ID`
-- `VAPI_PHONE_NUMBER_ID`
-- `OPENAI_API_KEY` (opcional, para generar `fullTranscript` desde audio)
-- `OPENAI_AUDIO_MODEL` (opcional, default `whisper-1`)
-- `OPENAI_TRANSCRIBE_TIMEOUT_MS` (opcional, default `45000`)
-- `TRANSCRIPTION_PROVIDER` (opcional: `auto` | `openai` | `local`, default `auto`)
-- `WHISPER_LOCAL_ENABLED` (opcional, `true`/`false`)
-- `WHISPER_LOCAL_BIN` (opcional, default `whisper`)
-- `WHISPER_LOCAL_MODEL` (opcional, default `base`)
-- `WHISPER_LOCAL_LANGUAGE` (opcional, por ejemplo `es`)
-- `WHISPER_LOCAL_TIMEOUT_MS` (opcional, default `180000`)
-- `PORT` (Railway lo inyecta, no forzar salvo caso especial)
-
-## Post deploy checklist
-1. `GET /health` responde `{ ok: true }`
-2. Crear llamada de prueba desde landing
-3. Verificar `vapi_result` en historial o usar `Sincronizar transcript`
+Recordings proxy:
+- `GET /api/recordings/:recordingSid`
 
 ---
 
-## 8) Troubleshooting (runbook)
+## 7) Configuracion Vapi recomendada
 
-## A) `missing_vapi_config`
-Faltan variables de Vapi en `@revenio/api`.
+En Vapi (server messages/webhooks):
+- URL recomendada: `https://<tu-api>/webhooks/vapi/events`
+- Activar al menos `end-of-call-report` y eventos de transfer
 
-## B) `vapi_call_failed`
-Vapi rechazó la llamada. Revisar `status/data` devuelto y `call-status`.
-
-## C) Llamada "enviada" pero no sonó
-Caso típico: Vapi acepta (`queued`) pero luego termina con error de transporte.
-Consultar:
-- `GET /lab/call-status/:attemptId`
-- o Vapi call id directamente.
-
-## D) Twilio Trial bloquea llamadas
-Error común:
-`The number ... is unverified. Trial accounts may only make calls to verified numbers.`
-
-Acciones:
-1. Verificar número destino en Twilio, o
-2. Upgrade de cuenta Twilio.
-
-## E) No aparece transcript
-1. Confirmar webhook Vapi configurado.
-2. Confirmar `vapi_result` en eventos.
-3. Si no llegó webhook, usar botón `Sincronizar transcript` (Lab).
-4. Para transcript post-transfer (humano), configurar en Twilio `TranscriptionCallback` a `/webhooks/twilio/transfer-transcription`.
-
-## G) Falta audio o duración después del transfer
-1. Configurar `StatusCallback` del leg transferido a `/webhooks/twilio/transfer-status` (o `/webhooks/twilio/status`).
-2. Configurar `RecordingStatusCallback` a `/webhooks/twilio/transfer-recording`.
-3. Verificar en `GET /api/metrics/calls/:callId`:
-   - `twilioParentCallSid`
-   - `twilioTransferCallSid`
-   - `transferStatus`
-   - `postTransferDurationSec`
-   - `transferRecordingUrl`
-
-## F) `P1001 Can't reach database`
-- Si sale `localhost`, estás usando `.env` local incorrecto para entorno remoto.
-- En local usa URL pública de DB.
-- En Railway usa `DATABASE_URL` interna del servicio.
+Sin esto, no se consolidan bien transcript, outcome ni metricas de transfer.
 
 ---
 
-## 9) Seguridad y operación
+## 8) Deploy (Railway)
 
-- No exponer API keys en frontend.
-- Rotar keys si se filtran en screenshots/chats.
-- Loggear `attemptId` y `providerId` en soporte/incidentes.
-- Mantener webhook estable y monitorear 4xx/5xx.
+Servicios tipicos:
+1. API (`apps/api`)
+2. Lab (opcional separado)
+3. Postgres
 
----
-
-## 10) Guía rápida por perfil
-
-## Para dev junior
-1. `npm ci`
-2. Configura `.env`
-3. Corre `npm run dev` y `npm run lab`
-4. Prueba desde `/campaign.html`
-5. Revisa historial en `/` (Lab)
-
-## Para dev senior
-- Verificar consistencia `attemptId <-> providerId <-> vapi_result`.
-- Usar `/lab/call-status/:id` para diagnóstico de llamadas fantasma.
-- Usar `/lab/sync-attempt/:id` para backfill sin webhook.
-- Vigilar correlación entre Vapi callbacks y persistencia Prisma.
+Checklist post-deploy:
+1. `GET /health` responde `{ ok: true, service: "revenio-api" }`
+2. Ejecutar llamada de prueba (`/call/test/direct`)
+3. Verificar registros en `/lab/history`
+4. Validar panel en `/api/metrics/summary` y `/api/metrics/recent`
 
 ---
 
-## 11) Comandos útiles
+## 9) Troubleshooting rapido
+
+### `missing_vapi_config`
+Faltan `VAPI_API_KEY`, `VAPI_ASSISTANT_ID` o `VAPI_PHONE_NUMBER_ID`.
+
+### `outside_business_hours`
+`POST /call/vapi` fuera de la ventana permitida (7:00-22:00 CST).
+
+### Llamada enviada pero sin audio/resultado
+1. Revisar estado con `GET /lab/call-status/:attemptId`
+2. Confirmar webhook Vapi a `/webhooks/vapi/events`
+3. Revisar eventos recientes en `/lab/history`
+
+### No hay transcript
+1. Confirmar que llega `end-of-call-report`
+2. Ejecutar `POST /lab/sync-attempt/:id`
+3. Si aplica transfer + grabacion, usar `POST /webhooks/twilio/retranscribe/:callId`
+
+### `P1001 Can't reach database`
+Validar `DATABASE_URL` correcta para el entorno (local vs Railway interna/publica).
+
+---
+
+## 10) Comandos utiles
 
 ```bash
 # Build API
 npm -w apps/api run build
 
-# Correr migraciones
+# Migraciones deploy
 npm -w apps/api exec prisma migrate deploy
 
-# Ver estado de git
+# Lab UI
+npm run lab
+
+# Dashboard v2
+npm --prefix dashboard-v2 run dev
+
+# Estado git
 git status --short
 ```

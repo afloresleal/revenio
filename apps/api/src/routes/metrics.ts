@@ -95,6 +95,10 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function pickTimestamp(rec: Record<string, unknown>, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = asString(rec[key]);
@@ -736,6 +740,43 @@ router.get('/calls/:callId', async (req, res) => {
       return res.status(404).json({ error: 'call_not_found', callId });
     }
 
+    const attempt = await prisma.callAttempt.findFirst({
+      where: { providerId: callId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        createdAt: true,
+        resultJson: true,
+      },
+    });
+
+    const attemptResult = asRecord(attempt?.resultJson);
+    const selectedAgent = asRecord(attemptResult?.selected_agent);
+    const roundRobin = asRecord(attemptResult?.roundRobin);
+    const selectedTransferNumber =
+      asString(selectedAgent?.transfer_number) ??
+      asString(attemptResult?.transferNumber) ??
+      asString(attemptResult?.transfer_number) ??
+      call.transferNumber ??
+      null;
+    const humanAgentName =
+      asString(selectedAgent?.human_agent_name) ??
+      asString(roundRobin?.selectedAgentName) ??
+      asString(attemptResult?.humanAgentName) ??
+      null;
+    const roundRobinEnabled =
+      asBoolean(selectedAgent?.round_robin_enabled) ??
+      asBoolean(roundRobin?.enabled) ??
+      false;
+    const roundRobinIndex =
+      asNumber(selectedAgent?.round_robin_index) ??
+      asNumber(roundRobin?.selectedAgentIndex) ??
+      null;
+    const roundRobinPoolSize =
+      asNumber(selectedAgent?.round_robin_pool_size) ??
+      asNumber(roundRobin?.poolSize) ??
+      null;
+
     const duration = computeDurationSeconds(call.durationSec, call.startedAt, call.endedAt, call.lastEventAt);
     const sellerTalk =
       call.postTransferDurationSec && call.postTransferDurationSec > 0
@@ -766,7 +807,12 @@ router.get('/calls/:callId', async (req, res) => {
       phone: maskPhone(call.phoneNumber),
       phoneRaw: call.phoneNumber,
       assistantId: call.assistantId,
-      transferNumber: call.transferNumber,
+      transferNumber: selectedTransferNumber,
+      humanAgentName,
+      roundRobinEnabled,
+      roundRobinIndex,
+      roundRobinPoolSize,
+      selectionSource: attempt ? 'call_attempt_result_json' : 'call_metric',
       twilioParentCallSid: call.twilioParentCallSid,
       twilioTransferCallSid: call.twilioTransferCallSid,
       transferStatus: call.transferStatus,
@@ -797,6 +843,8 @@ router.get('/calls/:callId', async (req, res) => {
       inProgress: call.inProgress,
       lastEventType: call.lastEventType,
       lastEventAt: call.lastEventAt,
+      attemptId: attempt?.id ?? null,
+      attemptCreatedAt: attempt?.createdAt ?? null,
       createdAt: call.createdAt,
       updatedAt: call.updatedAt,
     });

@@ -10,6 +10,17 @@ const fields = [
   "lead_name",
   "lead_source",
   "lead_id",
+  "round_robin_enabled",
+  "rr_agent_name_1",
+  "rr_agent_number_1",
+  "rr_agent_name_2",
+  "rr_agent_number_2",
+  "rr_agent_name_3",
+  "rr_agent_number_3",
+  "rr_agent_name_4",
+  "rr_agent_number_4",
+  "rr_agent_name_5",
+  "rr_agent_number_5",
   "filter_status",
   "filter_lead",
   "filter_from",
@@ -18,11 +29,27 @@ const fields = [
 
 fields.forEach((k) => {
   const v = localStorage.getItem(k);
-  if (v) $(k).value = v;
+  const el = $(k);
+  if (!el || v == null) return;
+  if (el.type === "checkbox") {
+    el.checked = v === "true";
+    return;
+  }
+  el.value = v;
 });
 
 fields.forEach((k) => {
-  $(k).addEventListener("input", () => localStorage.setItem(k, $(k).value));
+  const el = $(k);
+  if (!el) return;
+  const handler = () => {
+    if (el.type === "checkbox") {
+      localStorage.setItem(k, String(el.checked));
+      return;
+    }
+    localStorage.setItem(k, el.value);
+  };
+  el.addEventListener("input", handler);
+  el.addEventListener("change", handler);
 });
 
 if (!$('api_base').value) {
@@ -172,6 +199,20 @@ async function get(path) {
   return requestWithRetry("GET", path);
 }
 
+function collectRoundRobinAgents() {
+  const agents = [];
+  for (let i = 1; i <= 5; i += 1) {
+    const name = $(`rr_agent_name_${i}`)?.value.trim();
+    const transferNumber = $(`rr_agent_number_${i}`)?.value.trim();
+    if (!transferNumber) continue;
+    agents.push({
+      ...(name ? { name } : {}),
+      transfer_number: transferNumber,
+    });
+  }
+  return agents;
+}
+
 $("btn_validate").addEventListener("click", async () => {
   out.textContent = "Validando IDs...";
   const payload = {
@@ -265,11 +306,15 @@ phoneSelect.addEventListener("change", () => {
 
 $("btn_call").addEventListener("click", async () => {
   out.textContent = "Enviando...";
+  const roundRobinAgents = collectRoundRobinAgents();
+  const roundRobinEnabled = $("round_robin_enabled")?.checked || roundRobinAgents.length > 0;
   const payload = {
     vapi_api_key: $("vapi_api_key").value.trim(),
     vapi_assistant_id: $("vapi_assistant_id").value.trim(),
     vapi_phone_number_id: $("vapi_phone_number_id").value.trim(),
     transfer_number: $("transfer_number").value.trim() || undefined,
+    round_robin_enabled: roundRobinEnabled || undefined,
+    round_robin_agents: roundRobinAgents.length ? roundRobinAgents : undefined,
     to_number: $("to_number").value.trim(),
     lead_name: $("lead_name").value.trim() || undefined,
     lead_source: $("lead_source").value.trim() || undefined,

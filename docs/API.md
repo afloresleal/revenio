@@ -14,9 +14,25 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
   "to_number": "+521234567890",    // required
   "lead_name": "Marina",           // optional - determina flujo
   "lead_id": "uuid",               // optional - usa lead existente
-  "lead_source": "facebook"        // optional - default "vapi-call"
+  "lead_source": "facebook",       // optional - default "vapi-call"
+  "round_robin_enabled": true,     // optional
+  "round_robin_agents": [          // optional - max 5
+    {
+      "name": "Ana",               // optional
+      "transfer_number": "+525512345678" // required
+    }
+  ]
 }
 ```
+
+### Round Robin (hasta 5 agentes)
+- Activar con `round_robin_enabled: true`.
+- Definir agentes humanos en request con `round_robin_agents` (1..5).
+- Si no mandas `round_robin_agents`, el API puede usar ENV:
+  - `HUMAN_AGENT_NUMBERS` (coma-separado)
+  - `HUMAN_AGENT_NAMES` (coma-separado, opcional)
+- Cuando está activo, el API rota por índice y responde `selected_agent`.
+- Si `transfer_number` global viene en el request, se usa como fallback cuando no hay pool de round robin.
 
 ### Flujos
 
@@ -38,6 +54,14 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
   "lead_id": "uuid",
   "flow": "with_name" | "without_name",
   "greeting": "Hola, ¿hablo con Marina?" | "Hola, buenos días.",
+  "selected_agent": {
+    "assistant_id": "assistant-id", // agente VAPI fijo
+    "human_agent_name": "Ana",
+    "transfer_number": "+52...",
+    "round_robin_enabled": true,
+    "round_robin_index": 0,
+    "round_robin_pool_size": 3
+  },
   "vapi": { /* VAPI response */ }
 }
 ```

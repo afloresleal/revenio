@@ -442,6 +442,14 @@ export default function App() {
     return value;
   };
 
+  const asNonEmptyString = (value: unknown): string | null => {
+    return typeof value === 'string' && value.trim() ? value : null;
+  };
+
+  const asBoolean = (value: unknown): boolean | null => {
+    return typeof value === 'boolean' ? value : null;
+  };
+
   const getTotalDurationDisplay = (
     call: RecentCall,
     detail?: Record<string, unknown>
@@ -721,6 +729,21 @@ export default function App() {
     const assistantDisplay = getAssistantDisplay(call.assistantId);
     const quality = getDataQuality(call);
     const totalDurationDisplay = getTotalDurationDisplay(call, detail);
+    const detailTransferNumber = asNonEmptyString(detail?.transferNumber);
+    const detailHumanAgentName = asNonEmptyString(detail?.humanAgentName);
+    const detailRoundRobinEnabled = asBoolean(detail?.roundRobinEnabled);
+    const detailRoundRobinIndex = asFiniteNumber(detail?.roundRobinIndex);
+    const detailRoundRobinPoolSize = asFiniteNumber(detail?.roundRobinPoolSize);
+    const selectionSource = asNonEmptyString(detail?.selectionSource);
+    const transferNumberToShow = detailTransferNumber ?? call.transferNumber ?? '--';
+    const roundRobinSummary =
+      detailRoundRobinEnabled === true
+        ? `Activo • ${detailRoundRobinIndex !== null ? `Turno ${detailRoundRobinIndex + 1}` : 'Turno --'}${
+            detailRoundRobinPoolSize !== null ? ` de ${detailRoundRobinPoolSize}` : ''
+          }`
+        : detailRoundRobinEnabled === false
+          ? 'No activo'
+          : '--';
 
     return (
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
@@ -748,7 +771,17 @@ export default function App() {
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Vendedor (transfer)</div>
-            <div className="font-mono text-slate-300">{call.transferNumber || '--'}</div>
+            <div className="font-mono text-slate-300">{transferNumberToShow}</div>
+            {detailHumanAgentName && (
+              <div className="text-[11px] text-slate-500 mt-1">Agente humano: {detailHumanAgentName}</div>
+            )}
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Round robin (humano)</div>
+            <div className="text-slate-300">{roundRobinSummary}</div>
+            {selectionSource && (
+              <div className="text-[11px] text-slate-500 mt-1">Fuente: {selectionSource}</div>
+            )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Duración total</div>
