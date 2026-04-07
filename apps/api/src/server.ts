@@ -434,6 +434,49 @@ function asFiniteInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
 }
 
+function extractTwilioParentSidFromVapiResponse(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const root = data as Record<string, unknown>;
+  const transport = root.phoneCallTransport && typeof root.phoneCallTransport === "object"
+    ? (root.phoneCallTransport as Record<string, unknown>)
+    : null;
+  const candidates: unknown[] = [
+    root.phoneCallProviderId,
+    root.providerCallSid,
+    root.callSid,
+    transport?.providerCallSid,
+    transport?.callSid,
+    transport?.sid,
+  ];
+  for (const value of candidates) {
+    const sid = asNonEmptyString(value);
+    if (sid && sid.startsWith("CA")) return sid;
+  }
+  return null;
+}
+
+async function linkAttemptWithTwilioParentSid(params: {
+  vapiCallId: string | null;
+  attemptId: string;
+  leadId: string;
+  vapiResponse: unknown;
+}) {
+  if (!params.vapiCallId) return;
+  const parentSid = extractTwilioParentSidFromVapiResponse(params.vapiResponse);
+  if (!parentSid) return;
+  await upsertTwilioLink({
+    parentSid,
+    vapiCallId: params.vapiCallId,
+    attemptId: params.attemptId,
+    leadId: params.leadId,
+  });
+  console.log("twilio_link_seeded", {
+    parentSid,
+    vapiCallId: params.vapiCallId,
+    attemptId: params.attemptId,
+  });
+}
+
 function parseRoundRobinAgentsFromResultJson(resultJson: unknown): Array<{ name: string | null; transferNumber: string }> {
   if (!resultJson || typeof resultJson !== "object") return [];
   const root = resultJson as Record<string, unknown>;
@@ -654,11 +697,27 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
     });
   }
 
-  if (isChildLeg && context.attemptId && context.callSid) {
-    const timerKey = `${context.attemptId}:${context.callSid}`;
+  if (isChildLeg && context.callSid) {
+    const attemptIdForFailover =
+      context.attemptId ??
+      (context.vapiCallId
+        ? (await prisma.callAttempt.findFirst({
+            where: { providerId: context.vapiCallId },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+          }))?.id ?? null
+        : null);
+    if (!attemptIdForFailover) {
+      console.log("transfer_failover_skipped_missing_attempt", {
+        callSid: context.callSid,
+        parentCallSid: context.parentCallSid,
+        vapiCallId: context.vapiCallId,
+      });
+    } else {
+      const timerKey = `${attemptIdForFailover}:${context.callSid}`;
     if (normalizedStatus === "ringing") {
       scheduleRingTimeoutFailover({
-        attemptId: context.attemptId,
+        attemptId: attemptIdForFailover,
         leadId: context.leadId,
         childCallSid: context.callSid,
       });
@@ -669,25 +728,26 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
     if (FAILOVER_FAILURE_STATUSES.has(normalizedStatus)) {
       try {
         const failoverResult = await executeFailoverToNextAgent({
-          attemptId: context.attemptId,
+          attemptId: attemptIdForFailover,
           leadId: context.leadId,
           currentChildCallSid: context.callSid,
           reason: "status-failed",
         });
         console.log("transfer_failover_status_failed", {
-          attemptId: context.attemptId,
+          attemptId: attemptIdForFailover,
           childCallSid: context.callSid,
           status: normalizedStatus,
           failoverResult,
         });
       } catch (error) {
         console.error("transfer_failover_status_failed_error", {
-          attemptId: context.attemptId,
+          attemptId: attemptIdForFailover,
           childCallSid: context.callSid,
           status: normalizedStatus,
           error: String(error),
         });
       }
+    }
     }
   }
 
@@ -1102,6 +1162,12 @@ app.post("/call/test", async (req, res) => {
       controlUrl: data?.monitor?.controlUrl ?? null,
     },
   });
+  await linkAttemptWithTwilioParentSid({
+    vapiCallId: typeof data.id === "string" ? data.id : null,
+    attemptId: attempt.id,
+    leadId: lead.id,
+    vapiResponse: data,
+  });
 
   return res.json({ ok: true, attempt_id: attempt.id, vapi: data });
 });
@@ -1338,6 +1404,12 @@ app.post("/call/test/direct", async (req, res) => {
           : { enabled: false },
       } as any,
     },
+  });
+  await linkAttemptWithTwilioParentSid({
+    vapiCallId: typeof data.id === "string" ? data.id : null,
+    attemptId: attempt.id,
+    leadId: lead.id,
+    vapiResponse: data,
   });
 
   return res.json({ 
@@ -1576,6 +1648,12 @@ app.post("/call/vapi", async (req, res) => {
           : { enabled: false },
       } as any,
     },
+  });
+  await linkAttemptWithTwilioParentSid({
+    vapiCallId: typeof data.id === "string" ? data.id : null,
+    attemptId: attempt.id,
+    leadId: lead.id,
+    vapiResponse: data,
   });
 
   return res.json({ 
