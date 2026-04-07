@@ -788,7 +788,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           select: { callId: true },
         }))?.callId ?? null
       : null;
-  const callIdForMetrics = context.vapiCallId ?? callIdFromParentSid;
+  let callIdForMetrics = context.vapiCallId ?? callIdFromParentSid;
 
   console.log("twilio_status", {
     leadId: context.leadId,
@@ -885,6 +885,54 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           }
         }
       }
+    }
+
+    if (!attemptIdForFailover) {
+      const fallbackCandidates = await prisma.callAttempt.findMany({
+        where: {
+          createdAt: {
+            gte: new Date(Date.now() - 10 * 60 * 1000),
+          },
+          status: {
+            in: ["sent", "auto-transferred", "auto-transferred-failover"],
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, providerId: true, resultJson: true },
+      });
+      for (const candidate of fallbackCandidates) {
+        const result = candidate.resultJson && typeof candidate.resultJson === "object"
+          ? (candidate.resultJson as Record<string, unknown>)
+          : null;
+        const rr = result?.roundRobin && typeof result.roundRobin === "object"
+          ? (result.roundRobin as Record<string, unknown>)
+          : null;
+        if (rr?.enabled === true) {
+          attemptIdForFailover = candidate.id;
+          callIdForMetrics = callIdForMetrics ?? candidate.providerId ?? null;
+          break;
+        }
+      }
+    }
+
+    if (callIdForMetrics == null && attemptIdForFailover) {
+      const attemptForCallId = await prisma.callAttempt.findUnique({
+        where: { id: attemptIdForFailover },
+        select: { providerId: true },
+      });
+      callIdForMetrics = attemptForCallId?.providerId ?? null;
+    }
+
+    if (callIdForMetrics) {
+      await prisma.callMetric.updateMany({
+        where: { callId: callIdForMetrics },
+        data: {
+          twilioParentCallSid: context.parentSid ?? undefined,
+          twilioTransferCallSid: effectiveChildCallSid ?? undefined,
+          transferStatus: effectiveChildStatus ?? undefined,
+        },
+      });
     }
     if (!attemptIdForFailover) {
       console.log("transfer_failover_skipped_missing_attempt", {
