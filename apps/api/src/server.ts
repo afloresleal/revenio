@@ -779,6 +779,16 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
   const dialCallDurationSec = parseInteger(req.body?.DialCallDuration);
   const context = await resolveTwilioContext(req.body, req.query as Record<string, unknown>);
   const isChildLeg = typeof context.parentCallSid === "string" && context.parentCallSid.startsWith("CA");
+  const parentSid = context.parentSid;
+  const callIdFromParentSid =
+    !context.vapiCallId && parentSid
+      ? (await prisma.callMetric.findFirst({
+          where: { twilioParentCallSid: parentSid },
+          orderBy: { updatedAt: "desc" },
+          select: { callId: true },
+        }))?.callId ?? null
+      : null;
+  const callIdForMetrics = context.vapiCallId ?? callIdFromParentSid;
 
   console.log("twilio_status", {
     leadId: context.leadId,
@@ -791,6 +801,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
     dialCallStatus,
     dialCallSid,
     dialCallDurationSec,
+    callIdForMetrics,
   });
 
   if (context.parentSid && context.vapiCallId) {
@@ -807,9 +818,9 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
   const effectiveChildCallSid = (isChildLeg ? context.callSid : null) ?? dialCallSid ?? null;
   const effectiveChildStatus = (isChildLeg ? normalizedStatus : null) ?? dialCallStatus ?? null;
 
-  if (context.vapiCallId) {
+  if (callIdForMetrics) {
     await prisma.callMetric.updateMany({
-      where: { callId: context.vapiCallId },
+      where: { callId: callIdForMetrics },
       data: {
         twilioParentCallSid: context.parentSid ?? undefined,
         twilioTransferCallSid: effectiveChildCallSid ?? undefined,
@@ -820,10 +831,10 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
 
   const isCompleted = normalizedStatus === "completed";
   const hasPositiveDuration = Number.isFinite(callDurationSec) && (callDurationSec ?? 0) > 0;
-  if (context.vapiCallId && isChildLeg && isCompleted && hasPositiveDuration) {
+  if (callIdForMetrics && isChildLeg && isCompleted && hasPositiveDuration) {
     await prisma.callMetric.updateMany({
       where: {
-        callId: context.vapiCallId,
+        callId: callIdForMetrics,
         OR: [
           { postTransferDurationSec: null },
           { postTransferDurationSec: { lt: callDurationSec as number } },
