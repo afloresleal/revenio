@@ -12,6 +12,8 @@ import jobsRouter from "./routes/jobs.js";
 const prisma = new PrismaClient();
 const app = express();
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
+const PUBLIC_API_BASE_URL =
+  (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "https://revenioapi-production.up.railway.app").replace(/\/+$/, "");
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
@@ -771,6 +773,16 @@ function scheduleRingTimeoutFailover(params: {
 }
 
 async function handleTwilioStatusWebhook(req: express.Request, res: express.Response) {
+  console.log("twilio_status_webhook_hit", {
+    path: req.path,
+    hasBody: !!req.body,
+    callSid: asNonEmptyString(req.body?.CallSid) ?? null,
+    parentCallSid: asNonEmptyString(req.body?.ParentCallSid) ?? null,
+    dialCallSid: asNonEmptyString(req.body?.DialCallSid) ?? null,
+    callStatus: asNonEmptyString(req.body?.CallStatus) ?? null,
+    dialCallStatus: asNonEmptyString(req.body?.DialCallStatus) ?? null,
+  });
+
   const status = asNonEmptyString(req.body?.CallStatus) ?? "unknown";
   const callDurationSec = parseInteger(req.body?.CallDuration);
   const normalizedStatus = status.toLowerCase();
@@ -974,7 +986,8 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           if (context.vapiCallId) callbackQs.set("vapi_call_id", context.vapiCallId);
           if (context.leadId) callbackQs.set("lead_id", context.leadId);
           const callbackPath = `/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
-          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackPath}" method="POST"><Number statusCallback="${callbackPath}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${twimlFailoverResult.nextTransferNumber}</Number></Dial></Response>`;
+          const callbackUrl = `${PUBLIC_API_BASE_URL}${callbackPath}`;
+          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${twimlFailoverResult.nextTransferNumber}</Number></Dial></Response>`;
           return res.type("text/xml").send(xml);
         }
         return res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
