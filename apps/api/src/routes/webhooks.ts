@@ -226,6 +226,115 @@ async function fetchVapiTwilioParentSid(callId: string): Promise<string | null> 
   }
 }
 
+function parseRoundRobinAgents(resultJson: Record<string, unknown> | null): Array<{ name: string | null; transferNumber: string }> {
+  if (!resultJson) return [];
+  const rr = asRecord(resultJson.roundRobin);
+  if (!rr || !Array.isArray(rr.agents)) return [];
+  return rr.agents
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => !!item)
+    .map((item) => ({
+      name: asString(item.name) ?? null,
+      transferNumber: asString(item.transferNumber) ?? asString(item.transfer_number) ?? '',
+    }))
+    .filter((a) => !!a.transferNumber);
+}
+
+function asFiniteInt(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
+}
+
+async function triggerRoundRobinFailoverFromCallId(params: { callId: string; reason: string; currentChildCallSid?: string | null }) {
+  const attempt = await prisma.callAttempt.findFirst({
+    where: { providerId: params.callId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, leadId: true, controlUrl: true, resultJson: true },
+  });
+  if (!attempt?.controlUrl) return { ok: false, reason: 'missing_control_url' as const };
+
+  const result = asRecord(attempt.resultJson) ?? {};
+  const rr = asRecord(result.roundRobin);
+  if (!rr || rr.enabled !== true) return { ok: false, reason: 'round_robin_disabled' as const };
+
+  const agents = parseRoundRobinAgents(result);
+  if (agents.length <= 1) return { ok: false, reason: 'insufficient_pool' as const };
+
+  const currentIndex = asFiniteInt(rr.selectedAgentIndex) ?? 0;
+  const nextIndex = currentIndex + 1;
+  if (nextIndex >= agents.length) {
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: 'transfer-failover-exhausted',
+        resultJson: {
+          ...result,
+          roundRobin: {
+            ...rr,
+            exhausted: true,
+            exhaustedAt: new Date().toISOString(),
+            lastFailoverReason: params.reason,
+            lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+          },
+        } as any,
+      },
+    });
+    return { ok: false, reason: 'pool_exhausted' as const };
+  }
+
+  const nextAgent = agents[nextIndex];
+  const transferResp = await fetch(attempt.controlUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'transfer',
+      destination: { type: 'number', number: nextAgent.transferNumber },
+    }),
+  });
+  if (!transferResp.ok) {
+    return { ok: false, reason: 'transfer_command_failed' as const, status: transferResp.status };
+  }
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: {
+      status: 'auto-transferred-failover',
+      resultJson: {
+        ...result,
+        transferNumber: nextAgent.transferNumber,
+        roundRobin: {
+          ...rr,
+          selectedAgentIndex: nextIndex,
+          selectedAgentName: nextAgent.name,
+          selectedTransferNumber: nextAgent.transferNumber,
+          lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+          lastFailoverReason: params.reason,
+          lastEscalatedAt: new Date().toISOString(),
+        },
+      } as any,
+    },
+  });
+
+  if (attempt.leadId) {
+    await prisma.event.create({
+      data: {
+        leadId: attempt.leadId,
+        type: 'transfer_failover',
+        detail: {
+          attemptId: attempt.id,
+          callId: params.callId,
+          reason: params.reason,
+          currentChildCallSid: params.currentChildCallSid ?? null,
+          nextIndex,
+          nextTransferNumber: nextAgent.transferNumber,
+          nextAgentName: nextAgent.name,
+        } as any,
+      },
+    });
+  }
+
+  return { ok: true, nextIndex, nextTransferNumber: nextAgent.transferNumber, nextAgentName: nextAgent.name };
+}
+
 function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
   const root = asRecord(body);
   if (!root) return null;
@@ -887,6 +996,15 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     }
     
     console.log('Could not start recording on child call:', { callId, error });
+    if (error === 'no_in_progress_child_calls' && callId) {
+      const failoverResult = await triggerRoundRobinFailoverFromCallId({
+        callId,
+        reason: 'child-never-answered',
+        currentChildCallSid: null,
+      });
+      console.log('Round robin failover from status-update:', { callId, failoverResult });
+      return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
+    }
     return { ok: true, action: 'recording-failed', callId, error };
   }
   
@@ -951,6 +1069,15 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
   }
   
   console.log('Could not start recording via transfer-update:', { callId, error });
+  if (error === 'no_in_progress_child_calls' && callId) {
+    const failoverResult = await triggerRoundRobinFailoverFromCallId({
+      callId,
+      reason: 'child-never-answered',
+      currentChildCallSid: null,
+    });
+    console.log('Round robin failover from transfer-update:', { callId, failoverResult });
+    return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
+  }
   return { ok: true, action: 'recording-failed', callId, error };
 }
 
