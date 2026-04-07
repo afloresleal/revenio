@@ -11,7 +11,7 @@ import jobsRouter from "./routes/jobs.js";
 
 const prisma = new PrismaClient();
 const app = express();
-const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 5));
+const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
