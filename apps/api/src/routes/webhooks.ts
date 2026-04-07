@@ -746,6 +746,19 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     asString(destination?.number) ||
     asString(message?.destinationNumber) ||
     asString(message?.to);
+  const attempt = await prisma.callAttempt.findFirst({
+    where: { providerId: callId },
+    orderBy: { createdAt: 'desc' },
+    select: { resultJson: true },
+  });
+  const attemptResult = asRecord(attempt?.resultJson);
+  const attemptRoundRobin = asRecord(attemptResult?.roundRobin);
+  const resolvedTransferNumber =
+    asString(attemptResult?.transferNumber) ??
+    asString(attemptResult?.transfer_number) ??
+    asString(attemptRoundRobin?.selectedTransferNumber) ??
+    transferNumber ??
+    DEFAULT_ADVISOR_NUMBER;
   const assistantId = extractAssistantId(call ?? {}, message);
   
   console.log(eventType + ':', { callId, transferNumber });
@@ -753,7 +766,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   // For transfer-destination-request: VAPI expects us to RESPOND with the destination
   // NO POST to controlUrl needed - just return the destination in the response
   if (eventType === 'transfer-destination-request') {
-    console.log('Responding with transfer destination:', DEFAULT_ADVISOR_NUMBER);
+    console.log('Responding with transfer destination:', resolvedTransferNumber);
     
     // Update DB to mark transfer initiated
     await prisma.callMetric.upsert({
@@ -762,7 +775,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
         callId,
         phoneNumber: asString(asRecord(call?.customer)?.number) || 'unknown',
         assistantId,
-        transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
+        transferNumber: resolvedTransferNumber,
         transferredAt: new Date(),
         outcome: 'transfer_success',
         sentiment: 'positive',
@@ -771,7 +784,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       },
       update: {
         assistantId,
-        transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
+        transferNumber: resolvedTransferNumber,
         transferredAt: new Date(),
         outcome: 'transfer_success',
         sentiment: 'positive',
@@ -784,7 +797,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     return {
       destination: {
         type: 'number',
-        number: DEFAULT_ADVISOR_NUMBER,
+        number: resolvedTransferNumber,
       },
     };
   }
@@ -796,7 +809,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       callId,
       phoneNumber: asString(asRecord(call?.customer)?.number) || 'unknown',
       assistantId,
-      transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
+      transferNumber: resolvedTransferNumber,
       transferredAt: new Date(),
       outcome: 'transfer_success',
       sentiment: 'positive',
@@ -805,7 +818,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     },
     update: {
       assistantId,
-      transferNumber: transferNumber ?? DEFAULT_ADVISOR_NUMBER,
+      transferNumber: resolvedTransferNumber,
       transferredAt: new Date(),
       outcome: 'transfer_success',
       sentiment: 'positive',
@@ -814,7 +827,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     },
   });
 
-  return { ok: true, callId, transferred: true, destination: transferNumber, eventType };
+  return { ok: true, callId, transferred: true, destination: resolvedTransferNumber, eventType };
 }
 
 /**

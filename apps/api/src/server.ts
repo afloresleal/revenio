@@ -11,6 +11,17 @@ import jobsRouter from "./routes/jobs.js";
 
 const prisma = new PrismaClient();
 const app = express();
+const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 5));
+const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
+const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
+  "in-progress",
+  "completed",
+  "no-answer",
+  "busy",
+  "failed",
+  "canceled",
+]);
+const failoverTimers = new Map<string, NodeJS.Timeout>();
 
 // CORS configuration for dashboard
 app.use(cors({
@@ -412,6 +423,183 @@ async function upsertTwilioLink(params: {
   });
 }
 
+function clearFailoverTimer(timerKey: string) {
+  const timer = failoverTimers.get(timerKey);
+  if (!timer) return;
+  clearTimeout(timer);
+  failoverTimers.delete(timerKey);
+}
+
+function asFiniteInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
+}
+
+function parseRoundRobinAgentsFromResultJson(resultJson: unknown): Array<{ name: string | null; transferNumber: string }> {
+  if (!resultJson || typeof resultJson !== "object") return [];
+  const root = resultJson as Record<string, unknown>;
+  const rr = root.roundRobin;
+  if (!rr || typeof rr !== "object") return [];
+  const rrObj = rr as Record<string, unknown>;
+  if (!Array.isArray(rrObj.agents)) return [];
+  return rrObj.agents
+    .map((agent) => (agent && typeof agent === "object" ? (agent as Record<string, unknown>) : null))
+    .filter((agent): agent is Record<string, unknown> => !!agent)
+    .map((agent) => ({
+      name: asNonEmptyString(agent.name) ?? null,
+      transferNumber: asNonEmptyString(agent.transferNumber) ?? asNonEmptyString(agent.transfer_number) ?? "",
+    }))
+    .filter((agent) => !!agent.transferNumber);
+}
+
+async function executeFailoverToNextAgent(params: {
+  attemptId: string;
+  leadId?: string | null;
+  currentChildCallSid?: string | null;
+  reason: "ring-timeout" | "status-failed";
+}) {
+  const attempt = await prisma.callAttempt.findUnique({
+    where: { id: params.attemptId },
+    select: {
+      id: true,
+      leadId: true,
+      providerId: true,
+      controlUrl: true,
+      resultJson: true,
+    },
+  });
+  if (!attempt?.controlUrl) return { ok: false, reason: "missing_control_url" as const };
+
+  const result = attempt.resultJson && typeof attempt.resultJson === "object"
+    ? (attempt.resultJson as Record<string, unknown>)
+    : {};
+  const rr = result.roundRobin && typeof result.roundRobin === "object"
+    ? (result.roundRobin as Record<string, unknown>)
+    : null;
+  if (!rr || rr.enabled !== true) return { ok: false, reason: "round_robin_disabled" as const };
+
+  const agents = parseRoundRobinAgentsFromResultJson(result);
+  if (agents.length <= 1) return { ok: false, reason: "insufficient_pool" as const };
+
+  const currentIndex = asFiniteInteger(rr.selectedAgentIndex) ?? 0;
+  const nextIndex = currentIndex + 1;
+  if (nextIndex >= agents.length) {
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: "transfer-failover-exhausted",
+        resultJson: {
+          ...result,
+          roundRobin: {
+            ...rr,
+            exhausted: true,
+            exhaustedAt: new Date().toISOString(),
+            lastFailoverReason: params.reason,
+            lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+          },
+        } as any,
+      },
+    });
+    return { ok: false, reason: "pool_exhausted" as const };
+  }
+
+  const lastEscalatedFromCallSid = asNonEmptyString(rr.lastEscalatedFromCallSid);
+  if (params.currentChildCallSid && lastEscalatedFromCallSid === params.currentChildCallSid) {
+    return { ok: false, reason: "duplicate_escalation" as const };
+  }
+
+  const nextAgent = agents[nextIndex];
+  const transferResp = await fetch(attempt.controlUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: "transfer",
+      destination: { type: "number", number: nextAgent.transferNumber },
+    }),
+  });
+  if (!transferResp.ok) {
+    return { ok: false, reason: "transfer_command_failed" as const, status: transferResp.status };
+  }
+
+  const nextRoundRobin = {
+    ...rr,
+    selectedAgentIndex: nextIndex,
+    selectedAgentName: nextAgent.name,
+    selectedTransferNumber: nextAgent.transferNumber,
+    lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+    lastFailoverReason: params.reason,
+    lastEscalatedAt: new Date().toISOString(),
+  };
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: {
+      status: "auto-transferred-failover",
+      resultJson: {
+        ...result,
+        transferNumber: nextAgent.transferNumber,
+        roundRobin: nextRoundRobin,
+      } as any,
+    },
+  });
+
+  if (params.leadId ?? attempt.leadId) {
+    await prisma.event.create({
+      data: {
+        leadId: (params.leadId ?? attempt.leadId)!,
+        type: "transfer_failover",
+        detail: {
+          attemptId: attempt.id,
+          callId: attempt.providerId,
+          reason: params.reason,
+          currentChildCallSid: params.currentChildCallSid ?? null,
+          nextIndex,
+          nextTransferNumber: nextAgent.transferNumber,
+          nextAgentName: nextAgent.name,
+        } as any,
+      },
+    });
+  }
+
+  return {
+    ok: true,
+    nextIndex,
+    nextTransferNumber: nextAgent.transferNumber,
+    nextAgentName: nextAgent.name,
+  };
+}
+
+function scheduleRingTimeoutFailover(params: {
+  attemptId: string;
+  leadId?: string | null;
+  childCallSid: string;
+}) {
+  const timerKey = `${params.attemptId}:${params.childCallSid}`;
+  if (failoverTimers.has(timerKey)) return;
+  const timer = setTimeout(async () => {
+    failoverTimers.delete(timerKey);
+    try {
+      const result = await executeFailoverToNextAgent({
+        attemptId: params.attemptId,
+        leadId: params.leadId,
+        currentChildCallSid: params.childCallSid,
+        reason: "ring-timeout",
+      });
+      console.log("transfer_failover_ring_timeout", {
+        attemptId: params.attemptId,
+        childCallSid: params.childCallSid,
+        result,
+      });
+    } catch (error) {
+      console.error("transfer_failover_ring_timeout_error", {
+        attemptId: params.attemptId,
+        childCallSid: params.childCallSid,
+        error: String(error),
+      });
+    }
+  }, FAILOVER_RING_TIMEOUT_SEC * 1000);
+  failoverTimers.set(timerKey, timer);
+}
+
 async function handleTwilioStatusWebhook(req: express.Request, res: express.Response) {
   const status = asNonEmptyString(req.body?.CallStatus) ?? "unknown";
   const callDurationSec = parseInteger(req.body?.CallDuration);
@@ -464,6 +652,43 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
       },
       data: { postTransferDurationSec: callDurationSec as number },
     });
+  }
+
+  if (isChildLeg && context.attemptId && context.callSid) {
+    const timerKey = `${context.attemptId}:${context.callSid}`;
+    if (normalizedStatus === "ringing") {
+      scheduleRingTimeoutFailover({
+        attemptId: context.attemptId,
+        leadId: context.leadId,
+        childCallSid: context.callSid,
+      });
+    }
+    if (FAILOVER_CLEAR_TIMER_STATUSES.has(normalizedStatus)) {
+      clearFailoverTimer(timerKey);
+    }
+    if (FAILOVER_FAILURE_STATUSES.has(normalizedStatus)) {
+      try {
+        const failoverResult = await executeFailoverToNextAgent({
+          attemptId: context.attemptId,
+          leadId: context.leadId,
+          currentChildCallSid: context.callSid,
+          reason: "status-failed",
+        });
+        console.log("transfer_failover_status_failed", {
+          attemptId: context.attemptId,
+          childCallSid: context.callSid,
+          status: normalizedStatus,
+          failoverResult,
+        });
+      } catch (error) {
+        console.error("transfer_failover_status_failed_error", {
+          attemptId: context.attemptId,
+          childCallSid: context.callSid,
+          status: normalizedStatus,
+          error: String(error),
+        });
+      }
+    }
   }
 
   if (context.leadId) {
@@ -1079,6 +1304,7 @@ app.post("/call/test/direct", async (req, res) => {
               selectedAgentName,
               selectedTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
+              agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
           : { enabled: false },
       } as any,
@@ -1102,7 +1328,9 @@ app.post("/call/test/direct", async (req, res) => {
               enabled: true,
               selectedAgentIndex,
               selectedAgentName,
+              selectedTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
+              agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
           : { enabled: false },
       } as any,
@@ -1151,6 +1379,13 @@ type RoundRobinHumanAgent = {
 };
 
 const MAX_ROUND_ROBIN_AGENTS = 5;
+
+function buildRoundRobinAgentsSnapshot(agents: RoundRobinHumanAgent[]) {
+  return agents.map((agent) => ({
+    ...(agent.name ? { name: agent.name } : {}),
+    transferNumber: agent.transferNumber,
+  }));
+}
 
 function parseCsvList(value: string | undefined): string[] {
   if (!value) return [];
@@ -1299,6 +1534,7 @@ app.post("/call/vapi", async (req, res) => {
               selectedAgentName,
               selectedTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
+              agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
           : { enabled: false },
       } as any,
@@ -1327,7 +1563,9 @@ app.post("/call/vapi", async (req, res) => {
               enabled: true,
               selectedAgentIndex,
               selectedAgentName,
+              selectedTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
+              agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
           : { enabled: false },
       } as any,
