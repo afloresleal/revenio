@@ -670,6 +670,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
   const status = asNonEmptyString(req.body?.CallStatus) ?? "unknown";
   const callDurationSec = parseInteger(req.body?.CallDuration);
   const normalizedStatus = status.toLowerCase();
+  const dialCallStatus = asNonEmptyString(req.body?.DialCallStatus)?.toLowerCase() ?? null;
   const context = await resolveTwilioContext(req.body, req.query as Record<string, unknown>);
   const isChildLeg = typeof context.parentCallSid === "string" && context.parentCallSid.startsWith("CA");
 
@@ -681,6 +682,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
     parentCallSid: context.parentCallSid,
     vapiCallId: context.vapiCallId,
     callDurationSec,
+    dialCallStatus,
   });
 
   if (context.parentSid && context.vapiCallId) {
@@ -769,6 +771,15 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
       });
     } else {
       const timerKey = `${attemptIdForFailover}:${context.callSid}`;
+      const hasFailureDialStatus = !!dialCallStatus && FAILOVER_FAILURE_STATUSES.has(dialCallStatus);
+      const isCompletedWithoutAnswer =
+        normalizedStatus === "completed" &&
+        (!Number.isFinite(callDurationSec) || (callDurationSec ?? 0) <= 0);
+      const shouldFailoverFromStatus =
+        FAILOVER_FAILURE_STATUSES.has(normalizedStatus) ||
+        hasFailureDialStatus ||
+        isCompletedWithoutAnswer;
+
       if (normalizedStatus === "ringing") {
         scheduleRingTimeoutFailover({
           attemptId: attemptIdForFailover,
@@ -776,10 +787,10 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           childCallSid: context.callSid,
         });
       }
-      if (FAILOVER_CLEAR_TIMER_STATUSES.has(normalizedStatus)) {
+      if (FAILOVER_CLEAR_TIMER_STATUSES.has(normalizedStatus) || shouldFailoverFromStatus) {
         clearFailoverTimer(timerKey);
       }
-      if (FAILOVER_FAILURE_STATUSES.has(normalizedStatus)) {
+      if (shouldFailoverFromStatus) {
         try {
           const failoverResult = await executeFailoverToNextAgent({
             attemptId: attemptIdForFailover,
