@@ -1218,8 +1218,9 @@ app.post("/call/test/direct", async (req, res) => {
   let selectedAgentName: string | null = null;
   let selectedAgentIndex: number | null = null;
   if (shouldUseRoundRobin) {
-    const attemptsCount = await prisma.callAttempt.count();
-    selectedAgentIndex = attemptsCount % configuredRoundRobinAgents.length;
+    // Sequential failover strategy:
+    // every call starts with first agent in pool (index 0) and failover escalates to 1..N.
+    selectedAgentIndex = 0;
     const selectedAgent = configuredRoundRobinAgents[selectedAgentIndex];
     selectedTransferNumber = selectedAgent.transferNumber;
     selectedAgentName = selectedAgent.name ?? null;
@@ -1300,6 +1301,7 @@ app.post("/call/test/direct", async (req, res) => {
         roundRobin: shouldUseRoundRobin
           ? {
               enabled: true,
+              strategy: "sequential_failover",
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
@@ -1326,6 +1328,7 @@ app.post("/call/test/direct", async (req, res) => {
         roundRobin: shouldUseRoundRobin
           ? {
               enabled: true,
+              strategy: "sequential_failover",
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
@@ -1453,8 +1456,9 @@ app.post("/call/vapi", async (req, res) => {
   let selectedAgentName: string | null = null;
   let selectedAgentIndex: number | null = null;
   if (shouldUseRoundRobin) {
-    const attemptsCount = await prisma.callAttempt.count();
-    selectedAgentIndex = attemptsCount % configuredRoundRobinAgents.length;
+    // Sequential failover strategy:
+    // every call starts with first agent in pool (index 0) and failover escalates to 1..N.
+    selectedAgentIndex = 0;
     const selectedAgent = configuredRoundRobinAgents[selectedAgentIndex];
     selectedTransferNumber = selectedAgent.transferNumber;
     selectedAgentName = selectedAgent.name ?? null;
@@ -1530,6 +1534,7 @@ app.post("/call/vapi", async (req, res) => {
         roundRobin: shouldUseRoundRobin
           ? {
               enabled: true,
+              strategy: "sequential_failover",
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
@@ -1561,6 +1566,7 @@ app.post("/call/vapi", async (req, res) => {
         roundRobin: shouldUseRoundRobin
           ? {
               enabled: true,
+              strategy: "sequential_failover",
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
