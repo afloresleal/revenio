@@ -13,6 +13,10 @@ const router = Router();
 
 const DEFAULT_ADVISOR_NUMBER = process.env.TRANSFER_NUMBER ?? '+525527326714';
 const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
+const BRENDA_TRANSFER_TRIGGER_STATUS =
+  (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'started').toLowerCase() === 'started'
+    ? 'started'
+    : 'stopped';
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
@@ -1253,12 +1257,12 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
   console.log('speech-update:', { status, role, turn, assistantId, callId });
   
   // Auto-transfer conditions (ONLY for Brenda):
-  // 1. Assistant finished speaking (status === 'stopped')
+  // 1. Assistant status matches configured trigger (started|stopped)
   // 2. It's the assistant speaking (role === 'assistant')
   // 3. First turn (Vapi may count from 0 or 1)
   // 4. It's Brenda specifically (assistantId check)
   if (
-    status === 'stopped' && 
+    status === BRENDA_TRANSFER_TRIGGER_STATUS &&
     role === 'assistant' && 
     (turn === 0 || turn === 1) && 
     assistantId === BRENDA_ASSISTANT_ID
@@ -1274,6 +1278,9 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
         where: { providerId: callId },
         orderBy: { createdAt: 'desc' }
       });
+      if (attempt?.status === 'auto-transferred' || attempt?.status === 'auto-transferred-failover') {
+        return { ok: true, ignored: true, reason: 'already-transferred', callId };
+      }
       
       controlUrl = attempt?.controlUrl ?? null;
       const attemptResult = asRecord(attempt?.resultJson);
@@ -1306,6 +1313,7 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
       });
 
       console.log('Auto-transfer destination:', transferNumber);
+      console.log('Auto-transfer trigger status:', BRENDA_TRANSFER_TRIGGER_STATUS);
       console.log('Auto-transfer response:', transferResp.status);
       if (!transferResp.ok) {
         const transferBody = await transferResp.text().catch(() => '');
