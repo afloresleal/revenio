@@ -6,6 +6,14 @@
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
 const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL ?? 'https://revenioapi-production.up.railway.app';
+const CHILD_CALL_POLL_INTERVAL_MS = getEnvMs('TRANSFER_CHILD_CALL_POLL_INTERVAL_MS', 1200, 500);
+const CHILD_CALL_MAX_WAIT_MS = getEnvMs('TRANSFER_CHILD_CALL_MAX_WAIT_MS', 9000, 1000);
+
+function getEnvMs(name: string, fallback: number, min: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.floor(value));
+}
 
 function getTwilioAuth(): string {
   return Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
@@ -78,12 +86,10 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
     return { childCallSid: null, recordingSid: null, error: 'missing_credentials_or_callsid' };
   }
 
-  // Retry logic: try up to 8 times with delays
-  // Phone calls to Mexico can take 5-15 seconds to connect
-  const maxRetries = 8;
-  const delays = [2000, 3000, 3000, 4000, 4000, 5000, 5000, 5000]; // ~30s total
+  const maxAttempts = Math.max(1, Math.ceil(CHILD_CALL_MAX_WAIT_MS / CHILD_CALL_POLL_INTERVAL_MS));
+  let sawPendingChildCall = false;
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       // Find child calls - don't filter by status, get all recent child calls
       const listUrl = new URL(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`);
@@ -97,8 +103,8 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
       if (!listResp.ok) {
         const body = await listResp.text().catch(() => '');
         console.warn('Failed to list child calls:', { status: listResp.status, body, attempt });
-        if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        if (attempt < maxAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, CHILD_CALL_POLL_INTERVAL_MS));
           continue;
         }
         return { childCallSid: null, recordingSid: null, error: `list_failed:${listResp.status}` };
@@ -109,7 +115,7 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
 
       // Log all child call statuses for debugging
       const statuses = calls.map(c => ({ sid: c.sid, status: c.status }));
-      console.log(`Child calls for ${parentCallSid} (attempt ${attempt + 1}/${maxRetries}):`, JSON.stringify(statuses));
+      console.log(`Child calls for ${parentCallSid} (attempt ${attempt + 1}/${maxAttempts}):`, JSON.stringify(statuses));
 
       // Only in-progress calls can be recorded (not queued, not ringing)
       const inProgressCalls = calls.filter(c => c.status === 'in-progress');
@@ -118,9 +124,10 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
         // Check if there are calls that might become in-progress soon
         const pendingCalls = calls.filter(c => c.status === 'queued' || c.status === 'ringing');
         if (pendingCalls.length > 0) {
-          if (attempt < maxRetries - 1) {
+          sawPendingChildCall = true;
+          if (attempt < maxAttempts - 1) {
             console.log(`Found ${pendingCalls.length} pending child call(s), waiting for in-progress...`);
-            await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+            await new Promise(resolve => setTimeout(resolve, CHILD_CALL_POLL_INTERVAL_MS));
             continue;
           }
           // Child leg never became in-progress within retry window; avoid treating this as no-answer.
@@ -133,11 +140,15 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
           console.log(`No in-progress child calls (found ${calls.length} with other statuses)`);
         }
         
-        if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        if (attempt < maxAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, CHILD_CALL_POLL_INTERVAL_MS));
           continue;
         }
-        return { childCallSid: null, recordingSid: null, error: 'no_in_progress_child_calls' };
+        return {
+          childCallSid: null,
+          recordingSid: null,
+          error: sawPendingChildCall ? 'child_calls_still_pending' : 'no_in_progress_child_calls',
+        };
       }
 
       // Start recording on the first in-progress child call
@@ -156,24 +167,28 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
       }
       
       // If recording failed, retry
-      if (attempt < maxRetries - 1) {
+      if (attempt < maxAttempts - 1) {
         console.log(`Recording failed for ${childCallSid} (${error}), retrying...`);
-        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        await new Promise(resolve => setTimeout(resolve, CHILD_CALL_POLL_INTERVAL_MS));
         continue;
       }
       
       return { childCallSid, recordingSid, error };
     } catch (error) {
       console.error('Error in startRecordingOnChildCalls:', { parentCallSid, attempt, error: String(error) });
-      if (attempt < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+      if (attempt < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, CHILD_CALL_POLL_INTERVAL_MS));
         continue;
       }
       return { childCallSid: null, recordingSid: null, error: String(error) };
     }
   }
 
-  return { childCallSid: null, recordingSid: null, error: 'max_retries_exceeded' };
+  return {
+    childCallSid: null,
+    recordingSid: null,
+    error: sawPendingChildCall ? 'child_calls_still_pending' : 'max_retries_exceeded',
+  };
 }
 
 /**
