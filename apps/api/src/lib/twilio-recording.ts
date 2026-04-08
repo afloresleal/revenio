@@ -7,7 +7,9 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
 const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL ?? 'https://revenioapi-production.up.railway.app';
 const CHILD_CALL_POLL_INTERVAL_MS = getEnvMs('TRANSFER_CHILD_CALL_POLL_INTERVAL_MS', 1200, 500);
-const CHILD_CALL_MAX_WAIT_MS = getEnvMs('TRANSFER_CHILD_CALL_MAX_WAIT_MS', 9000, 1000);
+const FAILOVER_RING_TIMEOUT_MS = getEnvMs('TRANSFER_FAILOVER_RING_TIMEOUT_SEC', 15, 1) * 1000;
+const DEFAULT_CHILD_CALL_MAX_WAIT_MS = Math.max(FAILOVER_RING_TIMEOUT_MS + 2000, 9000);
+const CHILD_CALL_MAX_WAIT_MS = getEnvMs('TRANSFER_CHILD_CALL_MAX_WAIT_MS', DEFAULT_CHILD_CALL_MAX_WAIT_MS, 1000);
 
 function getEnvMs(name: string, fallback: number, min: number): number {
   const value = Number(process.env[name] ?? fallback);
