@@ -17,6 +17,8 @@ const BRENDA_TRANSFER_TRIGGER_STATUS =
   (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'started').toLowerCase() === 'started'
     ? 'started'
     : 'stopped';
+const TWILIO_FIRST_INITIAL_TRANSFER =
+  (process.env.TWILIO_FIRST_INITIAL_TRANSFER ?? 'false').toLowerCase() === 'true';
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
@@ -1055,17 +1057,19 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   
   console.log(eventType + ':', { callId, transferNumber });
 
-  // Twilio-first: on transfer-destination-request we start transfer on parent Twilio call.
-  // We intentionally avoid returning a destination payload to prevent Vapi-originated transfer legs.
+  // For transfer-destination-request, default behavior keeps Vapi happy by returning destination.
+  // Twilio-first initial transfer can be enabled explicitly via env toggle.
   if (eventType === 'transfer-destination-request') {
-    const twilioStart = await triggerInitialTwilioTransferFromCallId({
-      callId,
-      reason: 'vapi-transfer-destination-request',
-      parentCallSid: extractTwilioCallSid(call ?? {}, message) ?? null,
-    });
-    if (!asRecord(twilioStart)?.ok) {
-      console.error('Initial Twilio transfer failed:', { callId, twilioStart });
-      return { ok: false, error: 'initial_twilio_transfer_failed', callId, details: twilioStart };
+    if (TWILIO_FIRST_INITIAL_TRANSFER) {
+      const twilioStart = await triggerInitialTwilioTransferFromCallId({
+        callId,
+        reason: 'vapi-transfer-destination-request',
+        parentCallSid: extractTwilioCallSid(call ?? {}, message) ?? null,
+      });
+      if (!asRecord(twilioStart)?.ok) {
+        console.error('Initial Twilio transfer failed:', { callId, twilioStart });
+        return { ok: false, error: 'initial_twilio_transfer_failed', callId, details: twilioStart };
+      }
     }
     
     // Update DB to mark transfer initiated
@@ -1092,12 +1096,15 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
         lastEventAt: new Date(),
       },
     });
-    return {
-      ok: true,
-      action: 'twilio-transfer-started',
+    console.log('Responding with transfer destination:', resolvedTransferNumber, {
       callId,
-      transferNumber: asString(asRecord(twilioStart)?.transferNumber) ?? resolvedTransferNumber,
-      twilioParentCallSid: asString(asRecord(twilioStart)?.parentSid) ?? null,
+      twilioFirstInitialTransfer: TWILIO_FIRST_INITIAL_TRANSFER,
+    });
+    return {
+      destination: {
+        type: 'number',
+        number: resolvedTransferNumber,
+      },
     };
   }
 
