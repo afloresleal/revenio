@@ -13,10 +13,8 @@ const router = Router();
 
 const DEFAULT_ADVISOR_NUMBER = process.env.TRANSFER_NUMBER ?? '+525527326714';
 const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
-const BRENDA_TRANSFER_TRIGGER_STATUS =
-  (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'started').toLowerCase() === 'started'
-    ? 'started'
-    : 'stopped';
+// Transfer after assistant finishes speaking (not when it starts).
+const BRENDA_TRANSFER_TRIGGER_STATUS = 'stopped';
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
@@ -1257,7 +1255,7 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
   console.log('speech-update:', { status, role, turn, assistantId, callId });
   
   // Auto-transfer conditions (ONLY for Brenda):
-  // 1. Assistant status matches configured trigger (started|stopped)
+  // 1. Assistant speech finished (status === 'stopped')
   // 2. It's the assistant speaking (role === 'assistant')
   // 3. First turn (Vapi may count from 0 or 1)
   // 4. It's Brenda specifically (assistantId check)
@@ -1426,15 +1424,8 @@ router.post('/vapi/events', async (req, res) => {
       // If ignored, continue processing other event types
     }
 
-    // Auto-transfer for Brenda (speech-update handler)
-    const speechUpdate = await processSpeechUpdate(req.body);
-    if (speechUpdate) {
-      if (speechUpdate.ok === false) return res.status(400).json(speechUpdate);
-      if (asRecord(speechUpdate)?.action === 'auto-transfer') {
-        return res.json({ ...speechUpdate, via: 'speech-update-auto-transfer' });
-      }
-      // If ignored, continue processing other event types
-    }
+    // Auto-transfer via speech-update is intentionally disabled.
+    // Transfer is handled by Vapi transfer events (transfer-destination-request / transfer-update).
 
     const endOfCall = await processEndOfCallReport(req.body);
     if (endOfCall) {
