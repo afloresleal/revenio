@@ -549,6 +549,7 @@ async function executeFailoverToNextAgent(params: {
   if (agents.length <= 1) return { ok: false, reason: "insufficient_pool" as const };
 
   const currentIndex = asFiniteInteger(rr.selectedAgentIndex) ?? 0;
+  const currentAgent = agents[currentIndex] ?? null;
   const nextIndex = currentIndex + 1;
   if (nextIndex >= agents.length) {
     await prisma.callAttempt.update({
@@ -563,6 +564,9 @@ async function executeFailoverToNextAgent(params: {
             exhaustedAt: new Date().toISOString(),
             lastFailoverReason: params.reason,
             lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+            lastFailedAgentIndex: currentIndex,
+            lastFailedAgentName: currentAgent?.name ?? null,
+            lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
           },
         } as any,
       },
@@ -596,6 +600,9 @@ async function executeFailoverToNextAgent(params: {
     lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
     lastFailoverReason: params.reason,
     lastEscalatedAt: new Date().toISOString(),
+    lastFailedAgentIndex: currentIndex,
+    lastFailedAgentName: currentAgent?.name ?? null,
+    lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
   };
 
   await prisma.callAttempt.update({
@@ -620,6 +627,9 @@ async function executeFailoverToNextAgent(params: {
           callId: attempt.providerId,
           reason: params.reason,
           currentChildCallSid: params.currentChildCallSid ?? null,
+          failedAgentIndex: currentIndex,
+          failedAgentName: currentAgent?.name ?? null,
+          failedAgentNumber: currentAgent?.transferNumber ?? null,
           nextIndex,
           nextTransferNumber: nextAgent.transferNumber,
           nextAgentName: nextAgent.name,
@@ -630,6 +640,9 @@ async function executeFailoverToNextAgent(params: {
 
   return {
     ok: true,
+    failedAgentIndex: currentIndex,
+    failedAgentName: currentAgent?.name ?? null,
+    failedAgentNumber: currentAgent?.transferNumber ?? null,
     nextIndex,
     nextTransferNumber: nextAgent.transferNumber,
     nextAgentName: nextAgent.name,
@@ -665,6 +678,7 @@ async function selectNextRoundRobinAgent(params: {
   if (agents.length <= 1) return { ok: false, reason: "insufficient_pool" as const };
 
   const currentIndex = asFiniteInteger(rr.selectedAgentIndex) ?? 0;
+  const currentAgent = agents[currentIndex] ?? null;
   const nextIndex = currentIndex + 1;
   if (nextIndex >= agents.length) {
     await prisma.callAttempt.update({
@@ -679,6 +693,9 @@ async function selectNextRoundRobinAgent(params: {
             exhaustedAt: new Date().toISOString(),
             lastFailoverReason: params.reason,
             lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+            lastFailedAgentIndex: currentIndex,
+            lastFailedAgentName: currentAgent?.name ?? null,
+            lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
           },
         } as any,
       },
@@ -700,6 +717,9 @@ async function selectNextRoundRobinAgent(params: {
     lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
     lastFailoverReason: params.reason,
     lastEscalatedAt: new Date().toISOString(),
+    lastFailedAgentIndex: currentIndex,
+    lastFailedAgentName: currentAgent?.name ?? null,
+    lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
   };
 
   await prisma.callAttempt.update({
@@ -724,6 +744,9 @@ async function selectNextRoundRobinAgent(params: {
           callId: attempt.providerId,
           reason: params.reason,
           currentChildCallSid: params.currentChildCallSid ?? null,
+          failedAgentIndex: currentIndex,
+          failedAgentName: currentAgent?.name ?? null,
+          failedAgentNumber: currentAgent?.transferNumber ?? null,
           nextIndex,
           nextTransferNumber: nextAgent.transferNumber,
           nextAgentName: nextAgent.name,
@@ -734,6 +757,9 @@ async function selectNextRoundRobinAgent(params: {
 
   return {
     ok: true,
+    failedAgentIndex: currentIndex,
+    failedAgentName: currentAgent?.name ?? null,
+    failedAgentNumber: currentAgent?.transferNumber ?? null,
     nextIndex,
     nextTransferNumber: nextAgent.transferNumber,
     nextAgentName: nextAgent.name,
@@ -953,6 +979,55 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
         vapiCallId: context.vapiCallId,
       });
     } else {
+      const isAnsweredStatus =
+        normalizedStatus === "in-progress" ||
+        normalizedStatus === "answered" ||
+        dialCallStatus === "in-progress" ||
+        dialCallStatus === "answered";
+      if (isAnsweredStatus) {
+        try {
+          const attemptForAnswered = await prisma.callAttempt.findUnique({
+            where: { id: attemptIdForFailover },
+            select: { id: true, resultJson: true },
+          });
+          const resultForAnswered =
+            attemptForAnswered?.resultJson && typeof attemptForAnswered.resultJson === "object"
+              ? (attemptForAnswered.resultJson as Record<string, unknown>)
+              : {};
+          const rrForAnswered =
+            resultForAnswered.roundRobin && typeof resultForAnswered.roundRobin === "object"
+              ? (resultForAnswered.roundRobin as Record<string, unknown>)
+              : null;
+          if (rrForAnswered?.enabled === true) {
+            const selectedIndex = asFiniteInteger(rrForAnswered.selectedAgentIndex) ?? 0;
+            const agents = parseRoundRobinAgentsFromResultJson(resultForAnswered);
+            const answeredAgent = agents[selectedIndex] ?? null;
+            await prisma.callAttempt.update({
+              where: { id: attemptIdForFailover },
+              data: {
+                resultJson: {
+                  ...resultForAnswered,
+                  roundRobin: {
+                    ...rrForAnswered,
+                    answeredAt: new Date().toISOString(),
+                    answeredChildCallSid: effectiveChildCallSid,
+                    answeredAgentIndex: selectedIndex,
+                    answeredAgentName: answeredAgent?.name ?? null,
+                    answeredAgentNumber: answeredAgent?.transferNumber ?? null,
+                  },
+                } as any,
+              },
+            });
+          }
+        } catch (error) {
+          console.warn("round_robin_answered_agent_update_failed", {
+            attemptId: attemptIdForFailover,
+            callSid: effectiveChildCallSid,
+            error: String(error),
+          });
+        }
+      }
+
       const timerKey = `${attemptIdForFailover}:${effectiveChildCallSid}`;
       const hasFailureDialStatus = !!dialCallStatus && FAILOVER_FAILURE_STATUSES.has(dialCallStatus);
       const isCompletedWithoutAnswer =

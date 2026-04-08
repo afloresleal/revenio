@@ -15,6 +15,7 @@ const DEFAULT_ADVISOR_NUMBER = process.env.TRANSFER_NUMBER ?? '+525527326714';
 const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
 // Transfer after assistant finishes speaking (not when it starts).
 const BRENDA_TRANSFER_TRIGGER_STATUS = 'stopped';
+const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
@@ -276,6 +277,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   if (agents.length <= 1) return { ok: false, reason: 'insufficient_pool' as const };
 
   const currentIndex = asFiniteInt(rr.selectedAgentIndex) ?? 0;
+  const currentAgent = agents[currentIndex] ?? null;
   const nextIndex = currentIndex + 1;
   if (nextIndex >= agents.length) {
     await prisma.callAttempt.update({
@@ -290,6 +292,9 @@ async function triggerRoundRobinFailoverFromCallId(params: {
             exhaustedAt: new Date().toISOString(),
             lastFailoverReason: params.reason,
             lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+            lastFailedAgentIndex: currentIndex,
+            lastFailedAgentName: currentAgent?.name ?? null,
+            lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
           },
         } as any,
       },
@@ -332,7 +337,12 @@ async function triggerRoundRobinFailoverFromCallId(params: {
       const parentSid = asString(params.parentCallSid) ?? asString(metric?.twilioParentCallSid);
       if (parentSid) {
         const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
-        const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="15">${nextAgent.transferNumber}</Dial></Response>`;
+        const callbackQs = new URLSearchParams();
+        callbackQs.set('attempt_id', attempt.id);
+        callbackQs.set('vapi_call_id', params.callId);
+        if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
+        const callbackUrl = `${process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'https://revenioapi-production.up.railway.app'}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${nextAgent.transferNumber}</Number></Dial></Response>`;
         const twilioResp = await fetch(
           `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
           {
@@ -417,6 +427,9 @@ async function triggerRoundRobinFailoverFromCallId(params: {
           lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
           lastFailoverReason: params.reason,
           lastEscalatedAt: new Date().toISOString(),
+          lastFailedAgentIndex: currentIndex,
+          lastFailedAgentName: currentAgent?.name ?? null,
+          lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
         },
       } as any,
     },
@@ -432,6 +445,9 @@ async function triggerRoundRobinFailoverFromCallId(params: {
           callId: params.callId,
           reason: params.reason,
           currentChildCallSid: params.currentChildCallSid ?? null,
+          failedAgentIndex: currentIndex,
+          failedAgentName: currentAgent?.name ?? null,
+          failedAgentNumber: currentAgent?.transferNumber ?? null,
           nextIndex,
           nextTransferNumber: nextAgent.transferNumber,
           nextAgentName: nextAgent.name,
@@ -440,7 +456,15 @@ async function triggerRoundRobinFailoverFromCallId(params: {
     });
   }
 
-  return { ok: true, nextIndex, nextTransferNumber: nextAgent.transferNumber, nextAgentName: nextAgent.name };
+  return {
+    ok: true,
+    failedAgentIndex: currentIndex,
+    failedAgentName: currentAgent?.name ?? null,
+    failedAgentNumber: currentAgent?.transferNumber ?? null,
+    nextIndex,
+    nextTransferNumber: nextAgent.transferNumber,
+    nextAgentName: nextAgent.name,
+  };
 }
 
 function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
@@ -1129,24 +1153,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
       };
     }
     
-    console.log('Could not start recording on child call:', { callId, error });
-    if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
-      try {
-        const failoverResult = await triggerRoundRobinFailoverFromCallId({
-          callId,
-          reason: 'child-never-answered',
-          currentChildCallSid: null,
-          parentCallSid: twilioCallSid ?? null,
-        });
-        console.log('Round robin failover from status-update:', { callId, failoverResult });
-        return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
-      } catch (err) {
-        console.error('Round robin failover from status-update failed:', {
-          callId,
-          error: String(err),
-        });
-      }
-    }
+    console.log('Could not start recording on child call (no failover from recording path):', { callId, error });
     return { ok: true, action: 'recording-failed', callId, error };
   }
   
@@ -1210,24 +1217,7 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
     };
   }
   
-  console.log('Could not start recording via transfer-update:', { callId, error });
-  if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
-    try {
-      const failoverResult = await triggerRoundRobinFailoverFromCallId({
-        callId,
-        reason: 'child-never-answered',
-        currentChildCallSid: null,
-        parentCallSid: twilioCallSid ?? null,
-      });
-      console.log('Round robin failover from transfer-update:', { callId, failoverResult });
-      return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
-    } catch (err) {
-      console.error('Round robin failover from transfer-update failed:', {
-        callId,
-        error: String(err),
-      });
-    }
-  }
+  console.log('Could not start recording via transfer-update (no failover from recording path):', { callId, error });
   return { ok: true, action: 'recording-failed', callId, error };
 }
 
