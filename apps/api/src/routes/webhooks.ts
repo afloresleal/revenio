@@ -955,6 +955,25 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
   const twilioCallSid = extractTwilioCallSid(call ?? {}, message);
   
   console.log('status-update received:', { status, callId, twilioCallSid, eventType });
+
+  if (status === 'ended' && callId) {
+    try {
+      const failoverResult = await triggerRoundRobinFailoverFromCallId({
+        callId,
+        reason: 'child-ended-status-update',
+        currentChildCallSid: null,
+      });
+      console.log('Round robin failover from ended status-update:', { callId, failoverResult });
+      if (asRecord(failoverResult)?.ok === true) {
+        return { ok: true, action: 'failover-from-ended-status', callId, failoverResult };
+      }
+    } catch (err) {
+      console.error('Round robin failover from ended status-update failed:', {
+        callId,
+        error: String(err),
+      });
+    }
+  }
   
   // When call is forwarding, try to start recording on the child call
   if (status === 'forwarding' && twilioCallSid) {
@@ -997,13 +1016,20 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     
     console.log('Could not start recording on child call:', { callId, error });
     if (error === 'no_in_progress_child_calls' && callId) {
-      const failoverResult = await triggerRoundRobinFailoverFromCallId({
-        callId,
-        reason: 'child-never-answered',
-        currentChildCallSid: null,
-      });
-      console.log('Round robin failover from status-update:', { callId, failoverResult });
-      return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
+      try {
+        const failoverResult = await triggerRoundRobinFailoverFromCallId({
+          callId,
+          reason: 'child-never-answered',
+          currentChildCallSid: null,
+        });
+        console.log('Round robin failover from status-update:', { callId, failoverResult });
+        return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
+      } catch (err) {
+        console.error('Round robin failover from status-update failed:', {
+          callId,
+          error: String(err),
+        });
+      }
     }
     return { ok: true, action: 'recording-failed', callId, error };
   }
@@ -1070,13 +1096,20 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
   
   console.log('Could not start recording via transfer-update:', { callId, error });
   if (error === 'no_in_progress_child_calls' && callId) {
-    const failoverResult = await triggerRoundRobinFailoverFromCallId({
-      callId,
-      reason: 'child-never-answered',
-      currentChildCallSid: null,
-    });
-    console.log('Round robin failover from transfer-update:', { callId, failoverResult });
-    return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
+    try {
+      const failoverResult = await triggerRoundRobinFailoverFromCallId({
+        callId,
+        reason: 'child-never-answered',
+        currentChildCallSid: null,
+      });
+      console.log('Round robin failover from transfer-update:', { callId, failoverResult });
+      return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
+    } catch (err) {
+      console.error('Round robin failover from transfer-update failed:', {
+        callId,
+        error: String(err),
+      });
+    }
   }
   return { ok: true, action: 'recording-failed', callId, error };
 }
