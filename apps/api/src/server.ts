@@ -15,6 +15,8 @@ const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOV
 const PUBLIC_API_BASE_URL =
   (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "https://revenioapi-production.up.railway.app").replace(/\/+$/, "");
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
+const FAILOVER_ANSWERED_STATUSES = new Set(["in-progress", "answered"]);
+const FAILOVER_MACHINE_ANSWER_PREFIXES = ["machine", "fax"];
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
   "completed",
@@ -24,6 +26,8 @@ const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "canceled",
 ]);
 const failoverTimers = new Map<string, NodeJS.Timeout>();
+
+type AgentFailoverReason = "ring-timeout" | "no-answer" | "busy" | "failed" | "voicemail";
 
 // CORS configuration for dashboard
 app.use(cors({
@@ -436,6 +440,19 @@ function asFiniteInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
 }
 
+function isMachineAnswered(answeredBy: string | null): boolean {
+  if (!answeredBy) return false;
+  return FAILOVER_MACHINE_ANSWER_PREFIXES.some((prefix) => answeredBy.startsWith(prefix));
+}
+
+function mapStatusToFailoverReason(status: string | null): Exclude<AgentFailoverReason, "ring-timeout" | "voicemail"> | null {
+  if (!status) return null;
+  if (status === "no-answer") return "no-answer";
+  if (status === "busy") return "busy";
+  if (status === "failed" || status === "canceled") return "failed";
+  return null;
+}
+
 function extractTwilioParentSidFromVapiResponse(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const root = data as Record<string, unknown>;
@@ -523,7 +540,7 @@ async function executeFailoverToNextAgent(params: {
   attemptId: string;
   leadId?: string | null;
   currentChildCallSid?: string | null;
-  reason: "ring-timeout" | "status-failed";
+  reason: AgentFailoverReason;
 }) {
   const attempt = await prisma.callAttempt.findUnique({
     where: { id: params.attemptId },
@@ -567,6 +584,7 @@ async function executeFailoverToNextAgent(params: {
             lastFailedAgentIndex: currentIndex,
             lastFailedAgentName: currentAgent?.name ?? null,
             lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+            lastFailedAgentResult: params.reason,
           },
         } as any,
       },
@@ -603,6 +621,7 @@ async function executeFailoverToNextAgent(params: {
     lastFailedAgentIndex: currentIndex,
     lastFailedAgentName: currentAgent?.name ?? null,
     lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+    lastFailedAgentResult: params.reason,
   };
 
   await prisma.callAttempt.update({
@@ -630,6 +649,7 @@ async function executeFailoverToNextAgent(params: {
           failedAgentIndex: currentIndex,
           failedAgentName: currentAgent?.name ?? null,
           failedAgentNumber: currentAgent?.transferNumber ?? null,
+          failedAgentResult: params.reason,
           nextIndex,
           nextTransferNumber: nextAgent.transferNumber,
           nextAgentName: nextAgent.name,
@@ -643,6 +663,7 @@ async function executeFailoverToNextAgent(params: {
     failedAgentIndex: currentIndex,
     failedAgentName: currentAgent?.name ?? null,
     failedAgentNumber: currentAgent?.transferNumber ?? null,
+    failedAgentResult: params.reason,
     nextIndex,
     nextTransferNumber: nextAgent.transferNumber,
     nextAgentName: nextAgent.name,
@@ -653,7 +674,7 @@ async function selectNextRoundRobinAgent(params: {
   attemptId: string;
   leadId?: string | null;
   currentChildCallSid?: string | null;
-  reason: "ring-timeout" | "status-failed";
+  reason: AgentFailoverReason;
 }) {
   const attempt = await prisma.callAttempt.findUnique({
     where: { id: params.attemptId },
@@ -696,6 +717,7 @@ async function selectNextRoundRobinAgent(params: {
             lastFailedAgentIndex: currentIndex,
             lastFailedAgentName: currentAgent?.name ?? null,
             lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+            lastFailedAgentResult: params.reason,
           },
         } as any,
       },
@@ -720,6 +742,7 @@ async function selectNextRoundRobinAgent(params: {
     lastFailedAgentIndex: currentIndex,
     lastFailedAgentName: currentAgent?.name ?? null,
     lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+    lastFailedAgentResult: params.reason,
   };
 
   await prisma.callAttempt.update({
@@ -747,6 +770,7 @@ async function selectNextRoundRobinAgent(params: {
           failedAgentIndex: currentIndex,
           failedAgentName: currentAgent?.name ?? null,
           failedAgentNumber: currentAgent?.transferNumber ?? null,
+          failedAgentResult: params.reason,
           nextIndex,
           nextTransferNumber: nextAgent.transferNumber,
           nextAgentName: nextAgent.name,
@@ -760,6 +784,7 @@ async function selectNextRoundRobinAgent(params: {
     failedAgentIndex: currentIndex,
     failedAgentName: currentAgent?.name ?? null,
     failedAgentNumber: currentAgent?.transferNumber ?? null,
+    failedAgentResult: params.reason,
     nextIndex,
     nextTransferNumber: nextAgent.transferNumber,
     nextAgentName: nextAgent.name,
@@ -807,12 +832,14 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
     dialCallSid: asNonEmptyString(req.body?.DialCallSid) ?? null,
     callStatus: asNonEmptyString(req.body?.CallStatus) ?? null,
     dialCallStatus: asNonEmptyString(req.body?.DialCallStatus) ?? null,
+    answeredBy: asNonEmptyString(req.body?.AnsweredBy) ?? null,
   });
 
   const status = asNonEmptyString(req.body?.CallStatus) ?? "unknown";
   const callDurationSec = parseInteger(req.body?.CallDuration);
   const normalizedStatus = status.toLowerCase();
   const dialCallStatus = asNonEmptyString(req.body?.DialCallStatus)?.toLowerCase() ?? null;
+  const answeredBy = asNonEmptyString(req.body?.AnsweredBy)?.toLowerCase() ?? null;
   const dialCallSid = asNonEmptyString(req.body?.DialCallSid);
   const dialCallDurationSec = parseInteger(req.body?.DialCallDuration);
   const context = await resolveTwilioContext(req.body, req.query as Record<string, unknown>);
@@ -839,6 +866,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
     dialCallStatus,
     dialCallSid,
     dialCallDurationSec,
+    answeredBy,
     callIdForMetrics,
   });
 
@@ -979,12 +1007,22 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
         vapiCallId: context.vapiCallId,
       });
     } else {
+      const effectiveStatusForReason = dialCallStatus ?? normalizedStatus;
+      const machineAnswered = isMachineAnswered(answeredBy);
       const isAnsweredStatus =
-        normalizedStatus === "in-progress" ||
-        normalizedStatus === "answered" ||
-        dialCallStatus === "in-progress" ||
-        dialCallStatus === "answered";
-      if (isAnsweredStatus) {
+        FAILOVER_ANSWERED_STATUSES.has(normalizedStatus) ||
+        FAILOVER_ANSWERED_STATUSES.has(dialCallStatus ?? "");
+      const isHumanAnswered = isAnsweredStatus && !machineAnswered;
+      const statusFailoverReason = mapStatusToFailoverReason(effectiveStatusForReason);
+      const isCompletedWithoutAnswer =
+        (normalizedStatus === "completed" || dialCallStatus === "completed") &&
+        (!Number.isFinite(dialCallDurationSec ?? callDurationSec) || ((dialCallDurationSec ?? callDurationSec) ?? 0) <= 0);
+      const failoverReason: AgentFailoverReason | null =
+        machineAnswered
+          ? "voicemail"
+          : statusFailoverReason ??
+            (isCompletedWithoutAnswer ? "no-answer" : null);
+      if (isHumanAnswered) {
         try {
           const attemptForAnswered = await prisma.callAttempt.findUnique({
             where: { id: attemptIdForFailover },
@@ -1014,6 +1052,8 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
                     answeredAgentIndex: selectedIndex,
                     answeredAgentName: answeredAgent?.name ?? null,
                     answeredAgentNumber: answeredAgent?.transferNumber ?? null,
+                    answeredBy: "human",
+                    answeredOutcome: "human-answered",
                   },
                 } as any,
               },
@@ -1030,13 +1070,10 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
 
       const timerKey = `${attemptIdForFailover}:${effectiveChildCallSid}`;
       const hasFailureDialStatus = !!dialCallStatus && FAILOVER_FAILURE_STATUSES.has(dialCallStatus);
-      const isCompletedWithoutAnswer =
-        (normalizedStatus === "completed" || dialCallStatus === "completed") &&
-        (!Number.isFinite(dialCallDurationSec ?? callDurationSec) || ((dialCallDurationSec ?? callDurationSec) ?? 0) <= 0);
       const shouldFailoverFromStatus =
+        !!failoverReason ||
         FAILOVER_FAILURE_STATUSES.has(normalizedStatus) ||
-        hasFailureDialStatus ||
-        isCompletedWithoutAnswer;
+        hasFailureDialStatus;
 
       if (normalizedStatus === "ringing") {
         scheduleRingTimeoutFailover({
@@ -1048,12 +1085,12 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
       if (FAILOVER_CLEAR_TIMER_STATUSES.has(normalizedStatus) || shouldFailoverFromStatus) {
         clearFailoverTimer(timerKey);
       }
-      if (dialCallStatus && shouldFailoverFromStatus) {
+      if (dialCallStatus && shouldFailoverFromStatus && failoverReason) {
         const twimlFailoverResult = await selectNextRoundRobinAgent({
           attemptId: attemptIdForFailover,
           leadId: context.leadId,
           currentChildCallSid: effectiveChildCallSid,
-          reason: "status-failed",
+          reason: failoverReason,
         });
         if (twimlFailoverResult.ok && twimlFailoverResult.nextTransferNumber) {
           const callbackQs = new URLSearchParams();
@@ -1062,7 +1099,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           if (context.leadId) callbackQs.set("lead_id", context.leadId);
           const callbackPath = `/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
           const callbackUrl = `${PUBLIC_API_BASE_URL}${callbackPath}`;
-          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${twimlFailoverResult.nextTransferNumber}</Number></Dial></Response>`;
+          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrl}" amdStatusCallbackMethod="POST">${twimlFailoverResult.nextTransferNumber}</Number></Dial></Response>`;
           return res.type("text/xml").send(xml);
         }
         return res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
@@ -1073,12 +1110,15 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
             attemptId: attemptIdForFailover,
             leadId: context.leadId,
             currentChildCallSid: effectiveChildCallSid,
-            reason: "status-failed",
+            reason: failoverReason ?? "failed",
           });
           console.log("transfer_failover_status_failed", {
             attemptId: attemptIdForFailover,
             childCallSid: effectiveChildCallSid,
             status: normalizedStatus,
+            dialCallStatus,
+            answeredBy,
+            failoverReason,
             failoverResult,
           });
         } catch (error) {
@@ -1105,6 +1145,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           attemptId: context.attemptId,
           vapiCallId: context.vapiCallId,
           callDurationSec: Number.isFinite(callDurationSec) ? callDurationSec : null,
+          answeredBy,
           isChildLeg,
           raw: req.body,
         },

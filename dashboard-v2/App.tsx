@@ -734,8 +734,35 @@ export default function App() {
     const detailRoundRobinEnabled = asBoolean(detail?.roundRobinEnabled);
     const detailRoundRobinIndex = asFiniteNumber(detail?.roundRobinIndex);
     const detailRoundRobinPoolSize = asFiniteNumber(detail?.roundRobinPoolSize);
+    const detailAnsweredAgentName = asNonEmptyString(detail?.roundRobinAnsweredAgentName);
+    const detailAnsweredAgentNumber = asNonEmptyString(detail?.roundRobinAnsweredAgentNumber);
+    const detailFailedAgents = Array.isArray(detail?.roundRobinFailedAgents)
+      ? detail.roundRobinFailedAgents
+          .map((agent) => {
+            if (!agent || typeof agent !== 'object') return null;
+            const row = agent as Record<string, unknown>;
+            const name = asNonEmptyString(row.name);
+            const number = asNonEmptyString(row.number);
+            const result = asNonEmptyString(row.result);
+            if (!name && !number) return null;
+            return { name, number, result };
+          })
+          .filter((agent): agent is { name: string | null; number: string | null; result: string | null } => !!agent)
+      : [];
     const selectionSource = asNonEmptyString(detail?.selectionSource);
     const transferNumberToShow = detailTransferNumber ?? call.transferNumber ?? '--';
+    const answeredAgentLabel = detailAnsweredAgentName ?? detailHumanAgentName ?? null;
+    const answeredAgentSubLabel = detailAnsweredAgentNumber && detailAnsweredAgentNumber !== transferNumberToShow
+      ? detailAnsweredAgentNumber
+      : null;
+    const failedAgentsLabel = detailFailedAgents.length
+      ? detailFailedAgents
+          .map((agent) => {
+            const identity = agent.name ?? agent.number ?? '--';
+            return agent.result ? `${identity} (${agent.result})` : identity;
+          })
+          .join(', ')
+      : null;
     const roundRobinSummary =
       detailRoundRobinEnabled === true
         ? `Activo • ${detailRoundRobinIndex !== null ? `Turno ${detailRoundRobinIndex + 1}` : 'Turno --'}${
@@ -772,8 +799,14 @@ export default function App() {
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Vendedor (transfer)</div>
             <div className="font-mono text-slate-300">{transferNumberToShow}</div>
-            {detailHumanAgentName && (
-              <div className="text-[11px] text-slate-500 mt-1">Agente humano: {detailHumanAgentName}</div>
+            {answeredAgentLabel && (
+              <div className="text-[11px] text-slate-500 mt-1">Agente que respondió: {answeredAgentLabel}</div>
+            )}
+            {answeredAgentSubLabel && (
+              <div className="text-[11px] text-slate-500 mt-1">Número: {answeredAgentSubLabel}</div>
+            )}
+            {failedAgentsLabel && (
+              <div className="text-[11px] text-slate-500 mt-1">No respondieron: {failedAgentsLabel}</div>
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">

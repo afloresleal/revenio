@@ -328,7 +328,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   callbackQs.set('vapi_call_id', params.callId);
   if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
   const callbackUrl = `${process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'https://revenioapi-production.up.railway.app'}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${nextAgent.transferNumber}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrl}" amdStatusCallbackMethod="POST">${nextAgent.transferNumber}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
@@ -382,6 +382,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
           lastFailedAgentIndex: currentIndex,
           lastFailedAgentName: currentAgent?.name ?? null,
           lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+          lastFailedAgentResult: params.reason,
         },
       } as any,
     },
@@ -400,6 +401,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
           failedAgentIndex: currentIndex,
           failedAgentName: currentAgent?.name ?? null,
           failedAgentNumber: currentAgent?.transferNumber ?? null,
+          failedAgentResult: params.reason,
           nextIndex,
           nextTransferNumber: nextAgent.transferNumber,
           nextAgentName: nextAgent.name,
@@ -413,6 +415,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
     failedAgentIndex: currentIndex,
     failedAgentName: currentAgent?.name ?? null,
     failedAgentNumber: currentAgent?.transferNumber ?? null,
+    failedAgentResult: params.reason,
     nextIndex,
     nextTransferNumber: nextAgent.transferNumber,
     nextAgentName: nextAgent.name,
@@ -462,7 +465,7 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   callbackQs.set('vapi_call_id', params.callId);
   if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
   const callbackUrl = `${process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'https://revenioapi-production.up.railway.app'}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${currentAgent.transferNumber}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrl}" amdStatusCallbackMethod="POST">${currentAgent.transferNumber}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {

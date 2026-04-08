@@ -693,6 +693,7 @@ router.get('/recent', async (req, res) => {
         failedAgentIndex: number | null;
         failedAgentName: string | null;
         failedAgentNumber: string | null;
+        failedAgentResult: string | null;
         nextIndex: number | null;
         nextAgentName: string | null;
         nextTransferNumber: string | null;
@@ -709,6 +710,7 @@ router.get('/recent', async (req, res) => {
         failedAgentIndex: asNumber(detail?.failedAgentIndex) ?? null,
         failedAgentName: asString(detail?.failedAgentName) ?? null,
         failedAgentNumber: asString(detail?.failedAgentNumber) ?? null,
+        failedAgentResult: asString(detail?.failedAgentResult) ?? asString(detail?.reason) ?? null,
         nextIndex: asNumber(detail?.nextIndex) ?? null,
         nextAgentName: asString(detail?.nextAgentName) ?? null,
         nextTransferNumber: asString(detail?.nextTransferNumber) ?? null,
@@ -747,11 +749,12 @@ router.get('/recent', async (req, res) => {
           index: step.failedAgentIndex,
           name: step.failedAgentName,
           number: step.failedAgentNumber,
+          result: step.failedAgentResult,
         }))
         .filter((agent) => agent.name || agent.number);
       const uniqueFailedAgents = failedAgents.filter((agent, index, arr) => {
-        const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}`;
-        return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}` === key) === index;
+        const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}|${agent.result ?? ''}`;
+        return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}|${item.result ?? ''}` === key) === index;
       });
       const agentsTriedCount = roundRobinEnabled
         ? Math.max(
@@ -936,6 +939,7 @@ router.get('/calls/:callId', async (req, res) => {
           failedAgentIndex: asNumber(detail.failedAgentIndex) ?? null,
           failedAgentName: asString(detail.failedAgentName) ?? null,
           failedAgentNumber: asString(detail.failedAgentNumber) ?? null,
+          failedAgentResult: asString(detail.failedAgentResult) ?? asString(detail.reason) ?? null,
           nextIndex: asNumber(detail.nextIndex) ?? null,
           nextAgentName: asString(detail.nextAgentName) ?? null,
           nextTransferNumber: asString(detail.nextTransferNumber) ?? null,
@@ -947,6 +951,7 @@ router.get('/calls/:callId', async (req, res) => {
         failedAgentIndex: number | null;
         failedAgentName: string | null;
         failedAgentNumber: string | null;
+        failedAgentResult: string | null;
         nextIndex: number | null;
         nextAgentName: string | null;
         nextTransferNumber: string | null;
@@ -957,11 +962,12 @@ router.get('/calls/:callId', async (req, res) => {
         index: step.failedAgentIndex,
         name: step.failedAgentName,
         number: step.failedAgentNumber,
+        result: step.failedAgentResult,
       }))
       .filter((agent) => agent.name || agent.number);
     const uniqueFailedAgents = failedAgents.filter((agent, index, arr) => {
-      const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}`;
-      return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}` === key) === index;
+      const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}|${agent.result ?? ''}`;
+      return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}|${item.result ?? ''}` === key) === index;
     });
 
     const agentsTriedCount = Math.max(

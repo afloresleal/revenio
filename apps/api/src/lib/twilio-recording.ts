@@ -10,11 +10,18 @@ const CHILD_CALL_POLL_INTERVAL_MS = getEnvMs('TRANSFER_CHILD_CALL_POLL_INTERVAL_
 const FAILOVER_RING_TIMEOUT_MS = getEnvMs('TRANSFER_FAILOVER_RING_TIMEOUT_SEC', 15, 1) * 1000;
 const DEFAULT_CHILD_CALL_MAX_WAIT_MS = Math.max(FAILOVER_RING_TIMEOUT_MS + 2000, 9000);
 const CHILD_CALL_MAX_WAIT_MS = getEnvMs('TRANSFER_CHILD_CALL_MAX_WAIT_MS', DEFAULT_CHILD_CALL_MAX_WAIT_MS, 1000);
+const CHILD_CALL_MAX_ATTEMPTS = getEnvInt('TRANSFER_CHILD_CALL_MAX_ATTEMPTS', 4, 1);
 
 function getEnvMs(name: string, fallback: number, min: number): number {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(min, Math.floor(value));
+}
+
+function getEnvInt(name: string, fallback: number, min: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.trunc(value));
 }
 
 function getTwilioAuth(): string {
@@ -88,7 +95,9 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
     return { childCallSid: null, recordingSid: null, error: 'missing_credentials_or_callsid' };
   }
 
-  const maxAttempts = Math.max(1, Math.ceil(CHILD_CALL_MAX_WAIT_MS / CHILD_CALL_POLL_INTERVAL_MS));
+  // Keep retries intentionally short to fail over quickly when no child leg appears.
+  const computedAttempts = Math.max(1, Math.ceil(CHILD_CALL_MAX_WAIT_MS / CHILD_CALL_POLL_INTERVAL_MS));
+  const maxAttempts = Math.max(1, Math.min(computedAttempts, CHILD_CALL_MAX_ATTEMPTS));
   let sawPendingChildCall = false;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
