@@ -291,7 +291,71 @@ async function triggerRoundRobinFailoverFromCallId(params: { callId: string; rea
     }),
   });
   if (!transferResp.ok) {
-    return { ok: false, reason: 'transfer_command_failed' as const, status: transferResp.status };
+    const transferBody = await transferResp.text().catch(() => '');
+    console.warn('RR failover controlUrl transfer failed:', {
+      callId: params.callId,
+      attemptId: attempt.id,
+      status: transferResp.status,
+      body: transferBody,
+    });
+
+    // Fallback: if VAPI control rejects transfer, try redirecting parent Twilio call directly.
+    if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
+      const metric = await prisma.callMetric.findUnique({
+        where: { callId: params.callId },
+        select: { twilioParentCallSid: true },
+      });
+      const parentSid = asString(metric?.twilioParentCallSid);
+      if (parentSid) {
+        const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="15">${nextAgent.transferNumber}</Dial></Response>`;
+        const twilioResp = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Basic ${auth}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ Twiml: twiml }).toString(),
+          },
+        );
+        if (!twilioResp.ok) {
+          const twilioBody = await twilioResp.text().catch(() => '');
+          return {
+            ok: false,
+            reason: 'transfer_command_failed' as const,
+            status: transferResp.status,
+            fallback: {
+              attempted: true,
+              ok: false,
+              status: twilioResp.status,
+              body: twilioBody,
+            },
+          };
+        }
+        console.log('RR failover fallback via Twilio redirect succeeded:', {
+          callId: params.callId,
+          attemptId: attempt.id,
+          parentSid,
+          nextTransferNumber: nextAgent.transferNumber,
+        });
+      } else {
+        return {
+          ok: false,
+          reason: 'transfer_command_failed' as const,
+          status: transferResp.status,
+          fallback: { attempted: true, ok: false, reason: 'missing_parent_sid' },
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        reason: 'transfer_command_failed' as const,
+        status: transferResp.status,
+        fallback: { attempted: false, reason: 'missing_twilio_credentials' },
+      };
+    }
   }
 
   await prisma.callAttempt.update({
