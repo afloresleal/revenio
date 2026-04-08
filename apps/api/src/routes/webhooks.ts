@@ -244,6 +244,15 @@ function asFiniteInt(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
 }
 
+function looksLikeInactiveCallError(body: string): boolean {
+  const normalized = body.toLowerCase();
+  return (
+    normalized.includes('not active') ||
+    normalized.includes('not in-progress') ||
+    normalized.includes('cannot redirect')
+  );
+}
+
 async function triggerRoundRobinFailoverFromCallId(params: {
   callId: string;
   reason: string;
@@ -304,6 +313,14 @@ async function triggerRoundRobinFailoverFromCallId(params: {
       body: transferBody,
     });
 
+    if (looksLikeInactiveCallError(transferBody)) {
+      return {
+        ok: false,
+        reason: 'parent_not_active' as const,
+        status: transferResp.status,
+      };
+    }
+
     // Fallback: if VAPI control rejects transfer, try redirecting parent Twilio call directly.
     if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
       const metric = await prisma.callMetric.findUnique({
@@ -327,6 +344,19 @@ async function triggerRoundRobinFailoverFromCallId(params: {
         );
         if (!twilioResp.ok) {
           const twilioBody = await twilioResp.text().catch(() => '');
+          if (looksLikeInactiveCallError(twilioBody)) {
+            return {
+              ok: false,
+              reason: 'parent_not_active' as const,
+              status: twilioResp.status,
+              fallback: {
+                attempted: true,
+                ok: false,
+                status: twilioResp.status,
+                body: twilioBody,
+              },
+            };
+          }
           console.warn('RR failover Twilio redirect failed:', {
             callId: params.callId,
             attemptId: attempt.id,
