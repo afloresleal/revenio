@@ -1132,7 +1132,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     }
     
     console.log('Could not start recording on child call:', { callId, error });
-    if (error === 'no_in_progress_child_calls' && callId) {
+    if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
       try {
         const failoverResult = await triggerRoundRobinFailoverFromCallId({
           callId,
@@ -1213,7 +1213,7 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
   }
   
   console.log('Could not start recording via transfer-update:', { callId, error });
-  if (error === 'no_in_progress_child_calls' && callId) {
+  if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
     try {
       const failoverResult = await triggerRoundRobinFailoverFromCallId({
         callId,
