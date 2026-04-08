@@ -244,7 +244,12 @@ function asFiniteInt(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
 }
 
-async function triggerRoundRobinFailoverFromCallId(params: { callId: string; reason: string; currentChildCallSid?: string | null }) {
+async function triggerRoundRobinFailoverFromCallId(params: {
+  callId: string;
+  reason: string;
+  currentChildCallSid?: string | null;
+  parentCallSid?: string | null;
+}) {
   const attempt = await prisma.callAttempt.findFirst({
     where: { providerId: params.callId },
     orderBy: { createdAt: 'desc' },
@@ -305,7 +310,7 @@ async function triggerRoundRobinFailoverFromCallId(params: { callId: string; rea
         where: { callId: params.callId },
         select: { twilioParentCallSid: true },
       });
-      const parentSid = asString(metric?.twilioParentCallSid);
+      const parentSid = asString(params.parentCallSid) ?? asString(metric?.twilioParentCallSid);
       if (parentSid) {
         const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
         const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="15">${nextAgent.transferNumber}</Dial></Response>`;
@@ -322,6 +327,13 @@ async function triggerRoundRobinFailoverFromCallId(params: { callId: string; rea
         );
         if (!twilioResp.ok) {
           const twilioBody = await twilioResp.text().catch(() => '');
+          console.warn('RR failover Twilio redirect failed:', {
+            callId: params.callId,
+            attemptId: attempt.id,
+            parentSid,
+            status: twilioResp.status,
+            body: twilioBody,
+          });
           return {
             ok: false,
             reason: 'transfer_command_failed' as const,
@@ -1026,6 +1038,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
         callId,
         reason: 'child-ended-status-update',
         currentChildCallSid: null,
+        parentCallSid: twilioCallSid ?? null,
       });
       console.log('Round robin failover from ended status-update:', { callId, failoverResult });
       if (asRecord(failoverResult)?.ok === true) {
@@ -1085,6 +1098,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
           callId,
           reason: 'child-never-answered',
           currentChildCallSid: null,
+          parentCallSid: twilioCallSid ?? null,
         });
         console.log('Round robin failover from status-update:', { callId, failoverResult });
         return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
@@ -1165,6 +1179,7 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
         callId,
         reason: 'child-never-answered',
         currentChildCallSid: null,
+        parentCallSid: twilioCallSid ?? null,
       });
       console.log('Round robin failover from transfer-update:', { callId, failoverResult });
       return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
