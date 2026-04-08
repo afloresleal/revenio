@@ -1062,7 +1062,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
   
   console.log('status-update received:', { status, callId, twilioCallSid, eventType });
 
-  if (status === 'ended' && callId) {
+  if (status === 'ended' && callId && !twilioCallSid) {
     try {
       const failoverResult = await triggerRoundRobinFailoverFromCallId({
         callId,
@@ -1080,6 +1080,12 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
         error: String(err),
       });
     }
+  }
+  if (status === 'ended' && callId && twilioCallSid) {
+    console.log('Skipping ended-status failover because parent Twilio SID is present:', {
+      callId,
+      twilioCallSid,
+    });
   }
   
   // When call is forwarding, try to start recording on the child call

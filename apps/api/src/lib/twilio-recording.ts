@@ -117,10 +117,14 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
       if (inProgressCalls.length === 0) {
         // Check if there are calls that might become in-progress soon
         const pendingCalls = calls.filter(c => c.status === 'queued' || c.status === 'ringing');
-        if (pendingCalls.length > 0 && attempt < maxRetries - 1) {
-          console.log(`Found ${pendingCalls.length} pending child call(s), waiting for in-progress...`);
-          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-          continue;
+        if (pendingCalls.length > 0) {
+          if (attempt < maxRetries - 1) {
+            console.log(`Found ${pendingCalls.length} pending child call(s), waiting for in-progress...`);
+            await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+            continue;
+          }
+          // Child leg never became in-progress within retry window; avoid treating this as no-answer.
+          return { childCallSid: null, recordingSid: null, error: 'child_calls_still_pending' };
         }
         
         if (calls.length === 0) {
