@@ -638,8 +638,129 @@ router.get('/recent', async (req, res) => {
         inProgress: true,
       },
     });
-    
+
+    const callIds = calls.map((c) => c.callId);
+    const attempts = callIds.length
+      ? await prisma.callAttempt.findMany({
+          where: { providerId: { in: callIds } },
+          orderBy: [{ providerId: 'asc' }, { createdAt: 'desc' }],
+          select: {
+            id: true,
+            leadId: true,
+            providerId: true,
+            resultJson: true,
+            createdAt: true,
+          },
+        })
+      : [];
+
+    const latestAttemptByCallId = new Map<string, (typeof attempts)[number]>();
+    for (const attempt of attempts) {
+      if (!attempt.providerId) continue;
+      if (!latestAttemptByCallId.has(attempt.providerId)) {
+        latestAttemptByCallId.set(attempt.providerId, attempt);
+      }
+    }
+
+    const leadIds = Array.from(
+      new Set(
+        Array.from(latestAttemptByCallId.values())
+          .map((a) => a.leadId)
+          .filter((leadId): leadId is string => !!leadId),
+      ),
+    );
+
+    const transferFailoverEvents = leadIds.length
+      ? await prisma.event.findMany({
+          where: {
+            leadId: { in: leadIds },
+            type: 'transfer_failover',
+          },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            leadId: true,
+            createdAt: true,
+            detail: true,
+          },
+        })
+      : [];
+
+    const failoverEventsByCallId = new Map<
+      string,
+      Array<{
+        at: Date;
+        reason: string | null;
+        failedAgentIndex: number | null;
+        failedAgentName: string | null;
+        failedAgentNumber: string | null;
+        nextIndex: number | null;
+        nextAgentName: string | null;
+        nextTransferNumber: string | null;
+      }>
+    >();
+    for (const event of transferFailoverEvents) {
+      const detail = asRecord(event.detail);
+      const eventCallId = asString(detail?.callId);
+      if (!eventCallId) continue;
+      const list = failoverEventsByCallId.get(eventCallId) ?? [];
+      list.push({
+        at: event.createdAt,
+        reason: asString(detail?.reason) ?? null,
+        failedAgentIndex: asNumber(detail?.failedAgentIndex) ?? null,
+        failedAgentName: asString(detail?.failedAgentName) ?? null,
+        failedAgentNumber: asString(detail?.failedAgentNumber) ?? null,
+        nextIndex: asNumber(detail?.nextIndex) ?? null,
+        nextAgentName: asString(detail?.nextAgentName) ?? null,
+        nextTransferNumber: asString(detail?.nextTransferNumber) ?? null,
+      });
+      failoverEventsByCallId.set(eventCallId, list);
+    }
+
     res.json(calls.map((c: any) => {
+      const attempt = latestAttemptByCallId.get(c.callId);
+      const attemptResult = asRecord(attempt?.resultJson);
+      const selectedAgent = asRecord(attemptResult?.selected_agent);
+      const roundRobin = asRecord(attemptResult?.roundRobin);
+      const humanAgentName =
+        asString(selectedAgent?.human_agent_name) ??
+        asString(roundRobin?.selectedAgentName) ??
+        asString(attemptResult?.humanAgentName) ??
+        null;
+      const roundRobinEnabled =
+        asBoolean(selectedAgent?.round_robin_enabled) ??
+        asBoolean(roundRobin?.enabled) ??
+        false;
+      const roundRobinIndex =
+        asNumber(selectedAgent?.round_robin_index) ??
+        asNumber(roundRobin?.selectedAgentIndex) ??
+        null;
+      const roundRobinPoolSize =
+        asNumber(selectedAgent?.round_robin_pool_size) ??
+        asNumber(roundRobin?.poolSize) ??
+        null;
+      const answeredAgentName = asString(roundRobin?.answeredAgentName) ?? null;
+      const answeredAgentNumber = asString(roundRobin?.answeredAgentNumber) ?? null;
+      const answeredAgentIndex = asNumber(roundRobin?.answeredAgentIndex) ?? null;
+      const failoverSteps = failoverEventsByCallId.get(c.callId) ?? [];
+      const failedAgents = failoverSteps
+        .map((step) => ({
+          index: step.failedAgentIndex,
+          name: step.failedAgentName,
+          number: step.failedAgentNumber,
+        }))
+        .filter((agent) => agent.name || agent.number);
+      const uniqueFailedAgents = failedAgents.filter((agent, index, arr) => {
+        const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}`;
+        return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}` === key) === index;
+      });
+      const agentsTriedCount = roundRobinEnabled
+        ? Math.max(
+            1,
+            uniqueFailedAgents.length + (answeredAgentName || answeredAgentNumber ? 1 : 0),
+            failoverSteps.length + 1,
+          )
+        : null;
+
       const duration = computeDurationSeconds(c.durationSec, c.startedAt, c.endedAt, c.lastEventAt);
       const sellerTalk =
         c.postTransferDurationSec && c.postTransferDurationSec > 0
@@ -668,6 +789,15 @@ router.get('/recent', async (req, res) => {
         phone: maskPhone(c.phoneNumber),
         assistantId: c.assistantId,
         transferNumber: c.transferNumber,
+        humanAgentName,
+        roundRobinEnabled,
+        roundRobinIndex,
+        roundRobinPoolSize,
+        roundRobinAnsweredAgentName: answeredAgentName,
+        roundRobinAnsweredAgentNumber: answeredAgentNumber,
+        roundRobinAnsweredAgentIndex: answeredAgentIndex,
+        roundRobinAgentsTriedCount: agentsTriedCount,
+        roundRobinFailedAgents: roundRobinEnabled ? uniqueFailedAgents : [],
         twilioTransferCallSid: c.twilioTransferCallSid,
         transferStatus: c.transferStatus,
         outcome: c.outcome,
@@ -745,6 +875,7 @@ router.get('/calls/:callId', async (req, res) => {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        leadId: true,
         createdAt: true,
         resultJson: true,
       },
@@ -776,6 +907,68 @@ router.get('/calls/:callId', async (req, res) => {
       asNumber(selectedAgent?.round_robin_pool_size) ??
       asNumber(roundRobin?.poolSize) ??
       null;
+    const answeredAgentName = asString(roundRobin?.answeredAgentName) ?? null;
+    const answeredAgentNumber = asString(roundRobin?.answeredAgentNumber) ?? null;
+    const answeredAgentIndex = asNumber(roundRobin?.answeredAgentIndex) ?? null;
+
+    const transferFailoverEvents = attempt?.leadId
+      ? await prisma.event.findMany({
+          where: {
+            leadId: attempt.leadId,
+            type: 'transfer_failover',
+          },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            createdAt: true,
+            detail: true,
+          },
+        })
+      : [];
+
+    const failoverSteps = transferFailoverEvents
+      .map((event) => {
+        const detail = asRecord(event.detail);
+        if (!detail) return null;
+        if (asString(detail.callId) !== callId) return null;
+        return {
+          at: event.createdAt,
+          reason: asString(detail.reason) ?? null,
+          failedAgentIndex: asNumber(detail.failedAgentIndex) ?? null,
+          failedAgentName: asString(detail.failedAgentName) ?? null,
+          failedAgentNumber: asString(detail.failedAgentNumber) ?? null,
+          nextIndex: asNumber(detail.nextIndex) ?? null,
+          nextAgentName: asString(detail.nextAgentName) ?? null,
+          nextTransferNumber: asString(detail.nextTransferNumber) ?? null,
+        };
+      })
+      .filter((x): x is {
+        at: Date;
+        reason: string | null;
+        failedAgentIndex: number | null;
+        failedAgentName: string | null;
+        failedAgentNumber: string | null;
+        nextIndex: number | null;
+        nextAgentName: string | null;
+        nextTransferNumber: string | null;
+      } => !!x);
+
+    const failedAgents = failoverSteps
+      .map((step) => ({
+        index: step.failedAgentIndex,
+        name: step.failedAgentName,
+        number: step.failedAgentNumber,
+      }))
+      .filter((agent) => agent.name || agent.number);
+    const uniqueFailedAgents = failedAgents.filter((agent, index, arr) => {
+      const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}`;
+      return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}` === key) === index;
+    });
+
+    const agentsTriedCount = Math.max(
+      1,
+      uniqueFailedAgents.length + (answeredAgentName || answeredAgentNumber ? 1 : 0),
+      failoverSteps.length + 1,
+    );
 
     const duration = computeDurationSeconds(call.durationSec, call.startedAt, call.endedAt, call.lastEventAt);
     const sellerTalk =
@@ -812,6 +1005,12 @@ router.get('/calls/:callId', async (req, res) => {
       roundRobinEnabled,
       roundRobinIndex,
       roundRobinPoolSize,
+      roundRobinAnsweredAgentName: answeredAgentName,
+      roundRobinAnsweredAgentNumber: answeredAgentNumber,
+      roundRobinAnsweredAgentIndex: answeredAgentIndex,
+      roundRobinAgentsTriedCount: roundRobinEnabled ? agentsTriedCount : null,
+      roundRobinFailedAgents: roundRobinEnabled ? uniqueFailedAgents : [],
+      roundRobinFailoverSteps: roundRobinEnabled ? failoverSteps : [],
       selectionSource: attempt ? 'call_attempt_result_json' : 'call_metric',
       twilioParentCallSid: call.twilioParentCallSid,
       twilioTransferCallSid: call.twilioTransferCallSid,

@@ -267,9 +267,9 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   const attempt = await prisma.callAttempt.findFirst({
     where: { providerId: params.callId },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, leadId: true, controlUrl: true, resultJson: true },
+    select: { id: true, leadId: true, resultJson: true },
   });
-  if (!attempt?.controlUrl) return { ok: false, reason: 'missing_control_url' as const };
+  if (!attempt) return { ok: false, reason: 'missing_attempt' as const };
 
   const result = asRecord(attempt.resultJson) ?? {};
   const rr = asRecord(result.roundRobin);
@@ -309,109 +309,58 @@ async function triggerRoundRobinFailoverFromCallId(params: {
     where: { callId: params.callId },
     select: { twilioParentCallSid: true },
   });
-  const parentSid = asString(params.parentCallSid) ?? asString(metric?.twilioParentCallSid);
-  let transferApplied = false;
-
-  // Twilio-first: keep the round robin anchored on parent PSTN call.
-  if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && parentSid) {
-    const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
-    const callbackQs = new URLSearchParams();
-    callbackQs.set('attempt_id', attempt.id);
-    callbackQs.set('vapi_call_id', params.callId);
-    if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
-    const callbackUrl = `${process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'https://revenioapi-production.up.railway.app'}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${nextAgent.transferNumber}</Number></Dial></Response>`;
-    const twilioResp = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ Twiml: twiml }).toString(),
-      },
-    );
-
-    if (twilioResp.ok) {
-      transferApplied = true;
-      console.log('RR failover Twilio redirect succeeded:', {
-        callId: params.callId,
-        attemptId: attempt.id,
-        parentSid,
-        nextTransferNumber: nextAgent.transferNumber,
-      });
-    } else {
-      const twilioBody = await twilioResp.text().catch(() => '');
-      if (looksLikeInactiveCallError(twilioBody)) {
-        return {
-          ok: false,
-          reason: 'parent_not_active' as const,
-          status: twilioResp.status,
-          fallback: {
-            attempted: true,
-            ok: false,
-            status: twilioResp.status,
-            body: twilioBody,
-          },
-        };
-      }
-      console.warn('RR failover Twilio redirect failed:', {
-        callId: params.callId,
-        attemptId: attempt.id,
-        parentSid,
-        status: twilioResp.status,
-        body: twilioBody,
-      });
-    }
+  const parentSid =
+    asString(params.parentCallSid) ??
+    asString(metric?.twilioParentCallSid) ??
+    (await fetchVapiTwilioParentSid(params.callId));
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    return { ok: false, reason: 'missing_twilio_credentials' as const };
+  }
+  if (!parentSid) {
+    return { ok: false, reason: 'missing_parent_sid' as const };
   }
 
-  // Fallback to Vapi controlUrl if Twilio redirect wasn't available/successful.
-  if (!transferApplied) {
-    const transferResp = await fetch(attempt.controlUrl, {
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+  const callbackQs = new URLSearchParams();
+  callbackQs.set('attempt_id', attempt.id);
+  callbackQs.set('vapi_call_id', params.callId);
+  if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
+  const callbackUrl = `${process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'https://revenioapi-production.up.railway.app'}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${nextAgent.transferNumber}</Number></Dial></Response>`;
+  const twilioResp = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
+    {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'transfer',
-        destination: { type: 'number', number: nextAgent.transferNumber },
-      }),
-    });
-    if (!transferResp.ok) {
-      const transferBody = await transferResp.text().catch(() => '');
-      console.warn('RR failover controlUrl transfer failed:', {
-        callId: params.callId,
-        attemptId: attempt.id,
-        status: transferResp.status,
-        body: transferBody,
-      });
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ Twiml: twiml }).toString(),
+    },
+  );
 
-      if (looksLikeInactiveCallError(transferBody)) {
-        return {
-          ok: false,
-          reason: 'parent_not_active' as const,
-          status: transferResp.status,
-        };
-      }
-
+  if (!twilioResp.ok) {
+    const twilioBody = await twilioResp.text().catch(() => '');
+    if (looksLikeInactiveCallError(twilioBody)) {
       return {
         ok: false,
-        reason: 'transfer_command_failed' as const,
-        status: transferResp.status,
-        fallback: {
-          attempted: true,
-          ok: false,
-          reason: 'vapi_control_url_failed',
-          body: transferBody,
-        },
+        reason: 'parent_not_active' as const,
+        status: twilioResp.status,
       };
     }
-    transferApplied = true;
-    console.log('RR failover fallback via controlUrl succeeded:', {
-      callId: params.callId,
-      attemptId: attempt.id,
-      nextTransferNumber: nextAgent.transferNumber,
-    });
+    return {
+      ok: false,
+      reason: 'transfer_command_failed' as const,
+      status: twilioResp.status,
+      body: twilioBody,
+    };
   }
+  console.log('RR failover Twilio redirect succeeded:', {
+    callId: params.callId,
+    attemptId: attempt.id,
+    parentSid,
+    nextTransferNumber: nextAgent.transferNumber,
+  });
 
   await prisma.callAttempt.update({
     where: { id: attempt.id },
@@ -465,6 +414,107 @@ async function triggerRoundRobinFailoverFromCallId(params: {
     nextIndex,
     nextTransferNumber: nextAgent.transferNumber,
     nextAgentName: nextAgent.name,
+  };
+}
+
+async function triggerInitialTwilioTransferFromCallId(params: {
+  callId: string;
+  reason: string;
+  parentCallSid?: string | null;
+}) {
+  const attempt = await prisma.callAttempt.findFirst({
+    where: { providerId: params.callId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, leadId: true, resultJson: true },
+  });
+  if (!attempt) return { ok: false, reason: 'missing_attempt' as const };
+
+  const result = asRecord(attempt.resultJson) ?? {};
+  const rr = asRecord(result.roundRobin);
+  const agents = parseRoundRobinAgents(result);
+  if (!rr || rr.enabled !== true || agents.length === 0) {
+    return { ok: false, reason: 'round_robin_disabled' as const };
+  }
+
+  const currentIndex = Math.max(0, asFiniteInt(rr.selectedAgentIndex) ?? 0);
+  const currentAgent = agents[currentIndex] ?? agents[0];
+  if (!currentAgent) return { ok: false, reason: 'insufficient_pool' as const };
+
+  const metric = await prisma.callMetric.findUnique({
+    where: { callId: params.callId },
+    select: { twilioParentCallSid: true },
+  });
+  const parentSid =
+    asString(params.parentCallSid) ??
+    asString(metric?.twilioParentCallSid) ??
+    (await fetchVapiTwilioParentSid(params.callId));
+
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    return { ok: false, reason: 'missing_twilio_credentials' as const };
+  }
+  if (!parentSid) return { ok: false, reason: 'missing_parent_sid' as const };
+
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+  const callbackQs = new URLSearchParams();
+  callbackQs.set('attempt_id', attempt.id);
+  callbackQs.set('vapi_call_id', params.callId);
+  if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
+  const callbackUrl = `${process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'https://revenioapi-production.up.railway.app'}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled">${currentAgent.transferNumber}</Number></Dial></Response>`;
+  const twilioResp = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ Twiml: twiml }).toString(),
+    },
+  );
+  if (!twilioResp.ok) {
+    const body = await twilioResp.text().catch(() => '');
+    if (looksLikeInactiveCallError(body)) {
+      return { ok: false, reason: 'parent_not_active' as const, status: twilioResp.status };
+    }
+    return { ok: false, reason: 'transfer_command_failed' as const, status: twilioResp.status, body };
+  }
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: {
+      status: 'auto-transferred',
+      resultJson: {
+        ...result,
+        transferNumber: currentAgent.transferNumber,
+        roundRobin: {
+          ...rr,
+          selectedAgentIndex: currentIndex,
+          selectedAgentName: currentAgent.name,
+          selectedTransferNumber: currentAgent.transferNumber,
+          lastFailoverReason: params.reason,
+          lastEscalatedAt: new Date().toISOString(),
+        },
+      } as any,
+    },
+  });
+
+  console.log('Initial Twilio transfer redirect succeeded:', {
+    callId: params.callId,
+    attemptId: attempt.id,
+    parentSid,
+    transferNumber: currentAgent.transferNumber,
+    selectedAgentIndex: currentIndex,
+  });
+
+  return {
+    ok: true,
+    callId: params.callId,
+    attemptId: attempt.id,
+    parentSid,
+    transferNumber: currentAgent.transferNumber,
+    selectedAgentIndex: currentIndex,
+    selectedAgentName: currentAgent.name,
   };
 }
 
@@ -1005,10 +1055,18 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   
   console.log(eventType + ':', { callId, transferNumber });
 
-  // For transfer-destination-request: VAPI expects us to RESPOND with the destination
-  // NO POST to controlUrl needed - just return the destination in the response
+  // Twilio-first: on transfer-destination-request we start transfer on parent Twilio call.
+  // We intentionally avoid returning a destination payload to prevent Vapi-originated transfer legs.
   if (eventType === 'transfer-destination-request') {
-    console.log('Responding with transfer destination:', resolvedTransferNumber);
+    const twilioStart = await triggerInitialTwilioTransferFromCallId({
+      callId,
+      reason: 'vapi-transfer-destination-request',
+      parentCallSid: extractTwilioCallSid(call ?? {}, message) ?? null,
+    });
+    if (!asRecord(twilioStart)?.ok) {
+      console.error('Initial Twilio transfer failed:', { callId, twilioStart });
+      return { ok: false, error: 'initial_twilio_transfer_failed', callId, details: twilioStart };
+    }
     
     // Update DB to mark transfer initiated
     await prisma.callMetric.upsert({
@@ -1034,13 +1092,12 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
         lastEventAt: new Date(),
       },
     });
-
-    // Return the destination - this tells VAPI where to transfer
     return {
-      destination: {
-        type: 'number',
-        number: resolvedTransferNumber,
-      },
+      ok: true,
+      action: 'twilio-transfer-started',
+      callId,
+      transferNumber: asString(asRecord(twilioStart)?.transferNumber) ?? resolvedTransferNumber,
+      twilioParentCallSid: asString(asRecord(twilioStart)?.parentSid) ?? null,
     };
   }
 
