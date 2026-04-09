@@ -1,5 +1,7 @@
 # VAPI Config Producción — Revenio Voice Agent
 
+> Nota de handoff técnico (2026-04-08): ver [CALL-TRANSFER-HANDOFF-2026-04-08.md](./CALL-TRANSFER-HANDOFF-2026-04-08.md) para reglas de no-regresión del flujo Vapi+Twilio.
+
 > **Última actualización:** 2026-03-04
 > **Optimizado por:** Julia + Marina (canal #revenio-mvp-voice-agent)
 > **Brand:** Caribbean Luxury Homes (Riviera Maya)

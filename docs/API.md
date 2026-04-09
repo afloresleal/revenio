@@ -1,5 +1,7 @@
 # API Reference
 
+> Contexto operativo actual de transfer/failover: ver [CALL-TRANSFER-HANDOFF-2026-04-08.md](./CALL-TRANSFER-HANDOFF-2026-04-08.md)
+
 ## POST /call/vapi (Production Endpoint)
 
 Inicia una llamada VAPI con validación de horario y flujo dinámico.
