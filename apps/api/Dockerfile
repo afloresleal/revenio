@@ -2,17 +2,19 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-# Dependencies required for local Whisper transcription
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  python3 python3-pip python3-venv ffmpeg \
-  && rm -rf /var/lib/apt/lists/*
-
-# Install whisper CLI inside a virtual environment (PEP 668-safe)
+# Optional: install local Whisper runtime only when explicitly requested.
+# Keeps Railway image smaller/stabler by default.
+ARG INSTALL_LOCAL_WHISPER=false
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
-RUN python3 -m venv "${VIRTUAL_ENV}" \
-  && "${VIRTUAL_ENV}/bin/pip" install --no-cache-dir --upgrade pip \
-  && "${VIRTUAL_ENV}/bin/pip" install --no-cache-dir openai-whisper
+RUN if [ "${INSTALL_LOCAL_WHISPER}" = "true" ]; then \
+    apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-pip python3-venv ffmpeg && \
+    python3 -m venv "${VIRTUAL_ENV}" && \
+    "${VIRTUAL_ENV}/bin/pip" install --no-cache-dir --upgrade pip && \
+    "${VIRTUAL_ENV}/bin/pip" install --no-cache-dir openai-whisper && \
+    rm -rf /var/lib/apt/lists/*; \
+  fi
 
 # Install workspace dependencies
 COPY package.json package-lock.json ./
