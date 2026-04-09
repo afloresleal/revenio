@@ -17,8 +17,6 @@ const BRENDA_TRANSFER_TRIGGER_STATUS =
   (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'started').toLowerCase() === 'started'
     ? 'started'
     : 'stopped';
-const TWILIO_FIRST_INITIAL_TRANSFER =
-  (process.env.TWILIO_FIRST_INITIAL_TRANSFER ?? 'false').toLowerCase() === 'true';
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
@@ -1061,20 +1059,9 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
   console.log(eventType + ':', { callId, transferNumber });
 
   // For transfer-destination-request, default behavior keeps Vapi happy by returning destination.
-  // Twilio-first initial transfer can be enabled explicitly via env toggle.
+  // IMPORTANT: always return destination directly to Vapi for initial transfer.
+  // Do not trigger Twilio-first here; it can cause app-level transfer errors.
   if (eventType === 'transfer-destination-request') {
-    if (TWILIO_FIRST_INITIAL_TRANSFER) {
-      const twilioStart = await triggerInitialTwilioTransferFromCallId({
-        callId,
-        reason: 'vapi-transfer-destination-request',
-        parentCallSid: extractTwilioCallSid(call ?? {}, message) ?? null,
-      });
-      if (!asRecord(twilioStart)?.ok) {
-        console.error('Initial Twilio transfer failed:', { callId, twilioStart });
-        return { ok: false, error: 'initial_twilio_transfer_failed', callId, details: twilioStart };
-      }
-    }
-    
     // Update DB to mark transfer initiated
     await prisma.callMetric.upsert({
       where: { callId },
@@ -1099,10 +1086,7 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
         lastEventAt: new Date(),
       },
     });
-    console.log('Responding with transfer destination:', resolvedTransferNumber, {
-      callId,
-      twilioFirstInitialTransfer: TWILIO_FIRST_INITIAL_TRANSFER,
-    });
+    console.log('Responding with transfer destination:', resolvedTransferNumber, { callId });
     return {
       destination: {
         type: 'number',
@@ -1516,8 +1500,15 @@ router.post('/vapi/events', async (req, res) => {
       // If ignored, continue processing other event types
     }
 
-    // Auto-transfer via speech-update is intentionally disabled.
-    // Transfer is handled by Vapi transfer events (transfer-destination-request / transfer-update).
+    // Auto-transfer via speech-update (Brenda) to avoid confirmation loops in assistant prompt.
+    const speechUpdate = await processSpeechUpdate(req.body);
+    if (speechUpdate) {
+      const action = asRecord(speechUpdate)?.action;
+      if (action === 'auto-transfer' || asRecord(speechUpdate)?.ok === false) {
+        return res.json({ ...speechUpdate, via: 'speech-update' });
+      }
+      // If ignored, continue with normal transfer/metrics handlers.
+    }
 
     const endOfCall = await processEndOfCallReport(req.body);
     if (endOfCall) {
