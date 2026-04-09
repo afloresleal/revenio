@@ -26,8 +26,15 @@
 ## Decisiones Críticas (NO romper)
 1. `transfer-destination-request` debe responder `destination` a Vapi (no iniciar Twilio-first inicial aquí).
 2. Mantener auto-transfer por `speech-update` para Brenda, para evitar bucles de confirmación.
+   - Default recomendado: `BRENDA_TRANSFER_TRIGGER_STATUS=stopped`.
+   - No cambiar a `started` sin prueba real end-to-end.
 3. No depender solo de polling de child calls; usar callbacks Twilio para razón real de fallo.
 4. Child-call polling debe ser corto (no 15 intentos).
+5. Cuando Twilio llama al endpoint configurado en `<Dial action=...>`, responder SIEMPRE TwiML válido.
+   - Si se responde texto plano (`ok`) puede sonar: `"we are sorry an application error has occurred, goodbye"`.
+   - Respuesta segura: `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`.
+6. No marcar `transfer_success` solo porque existe transfer intent o `assistant-forwarded-call`.
+   - Confirmar con evidencia de conexión humana (`transferStatus` conectado y/o duración post-transfer confiable).
 
 ## Configuración Recomendada
 
@@ -36,6 +43,7 @@
 - `TRANSFER_CHILD_CALL_MAX_ATTEMPTS=4`
 - `TRANSFER_CHILD_CALL_POLL_INTERVAL_MS=1200`
 - `TRANSFER_CHILD_CALL_MAX_WAIT_MS` opcional (si se usa, no exceder lo necesario)
+- `BRENDA_TRANSFER_TRIGGER_STATUS=stopped`
 
 ### Twilio `<Dial><Number>`
 Debe incluir:
@@ -63,8 +71,12 @@ Debe incluir:
    - validar que auto-transfer por `speech-update` siga habilitado
 2. "Se escucha error de app después de tonos":
    - validar que `transfer-destination-request` no esté forzando ruta Twilio-first inicial
+   - validar que `/webhooks/twilio/transfer-status` responda TwiML en callbacks `DialCallStatus`
 3. "No hay child calls / no recording":
    - revisar callbacks Twilio y que `statusCallback` llegue a `/webhooks/twilio/transfer-status`
+4. "Dashboard muestra transfer conectada pero agente nunca contestó":
+   - revisar que `transfer_success` no se derive solo de `endedReason`
+   - validar `transferStatus`, `postTransferDurationSec` y evidencia de leg conectada
 
 ## Checklist Antes de Cerrar un Cambio
 - [ ] Build API OK (`npm -w apps/api run build`)
@@ -79,4 +91,3 @@ Debe incluir:
 ## Commits de Referencia
 - `935728d` Improve RR failover visibility, AMD voicemail handling, and faster child-call timeout
 - `ac7ebe1` Restore Brenda auto-transfer and force Vapi destination flow
-

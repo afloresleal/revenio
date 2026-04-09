@@ -215,6 +215,15 @@ Recibe status de llamada Twilio.
 }
 ```
 
+### POST /webhooks/twilio/transfer-status
+
+Callback de `<Dial action=...>` / `statusCallback` para transfer leg.
+
+Notas críticas:
+- Cuando Twilio invoca este callback como `Dial action`, el endpoint debe responder TwiML válido.
+- Responder texto plano/JSON puede causar el audio: `"we are sorry an application error has occurred, goodbye"`.
+- `transfer_success` no debe inferirse solo por `assistant-forwarded-call`; debe requerir evidencia de conexión humana.
+
 ---
 
 ## Errores
