@@ -996,7 +996,7 @@ export default function App() {
           {renderMetricCard(
             "Tasa de Transfer (Conectada)",
             `${((data?.summary.transferConnectedRate || 0) * 100).toFixed(0)}%`,
-            `${data?.summary.transfersConnected || 0} de ${data?.summary.totalCalls || 0} llamadas`,
+            `${data?.summary.transfersConnected || 0} llamadas transferidas de ${data?.summary.totalCalls || 0} realizadas`,
             data?.summary.deltas.transferConnectedRate || 0,
             <PhoneForwarded size={20} />,
             "emerald"
