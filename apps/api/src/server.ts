@@ -1399,18 +1399,6 @@ function getLanguageForAssistant(assistantId: string): 'es' | 'en' {
   return ASSISTANT_LANGUAGES[assistantId] || 'es';
 }
 
-/** Transfer messages by language */
-const TRANSFER_MESSAGES: Record<'es' | 'en', string> = {
-  es: "Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.",
-  en: "This is a virtual assistant with Caribbean Luxury Homes. We received your request about Riviera Maya properties. Please hold while I connect you with a property specialist."
-};
-
-/** System prompts by language - Default prompts (specific agent prompts configured in VAPI dashboard) */
-const SYSTEM_PROMPTS: Record<'es' | 'en', string> = {
-  es: "Eres Marina de Casalba. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool.",
-  en: "You are a virtual assistant from Caribbean Luxury Homes. When the user responds affirmatively, execute transferCall immediately. Do not generate any additional message after initiating the transfer."
-};
-
 // ============ BUSINESS HOURS HELPERS ============
 
 /** Get current hour in CST (America/Mexico_City) */
@@ -1424,46 +1412,6 @@ function getCSTHour(): number {
 function isWithinBusinessHours(): boolean {
   const hour = getCSTHour();
   return hour >= 7 && hour < 22; // 7:00 AM - 9:59 PM
-}
-
-/** Get dynamic greeting based on time of day (Spanish only - legacy) */
-function getGreeting(): string {
-  const hour = getCSTHour();
-  if (hour >= 7 && hour < 12) return "Hola, buenos días.";
-  if (hour >= 12 && hour < 18) return "Hola, buenas tardes.";
-  return "Hola, linda noche.";
-}
-
-/** Get dynamic greeting based on time of day and language */
-function getGreetingByLanguage(language: 'es' | 'en'): string {
-  const hour = getCSTHour();
-  
-  if (language === 'en') {
-    if (hour >= 5 && hour < 12) return "Hello, good morning.";
-    if (hour >= 12 && hour < 18) return "Hello, good afternoon.";
-    return "Hello, good evening.";
-  }
-  
-  // Spanish (default)
-  if (hour >= 7 && hour < 12) return "Hola, buenos días.";
-  if (hour >= 12 && hour < 18) return "Hola, buenas tardes.";
-  return "Hola, linda noche.";
-}
-
-/** Get first message based on name and language
- * Note: Specific agent first messages (Brenda/Bella) are configured directly in VAPI dashboard.
- * This function provides fallback/default messages when assistantOverrides are used.
- */
-function getFirstMessage(name: string | null | undefined, language: 'es' | 'en'): string {
-  const safeName = name?.trim();
-  
-  if (safeName && safeName.length > 0) {
-    return language === 'en' 
-      ? `Hi ${safeName} — we just received your request for information about Riviera Maya properties. This is a virtual assistant with Caribbean Luxury Homes.`
-      : `Hola, ¿hablo con ${safeName}?`;
-  }
-  
-  return getGreetingByLanguage(language);
 }
 
 const callSchema = z.object({
@@ -1590,54 +1538,24 @@ function sanitizeName(name: string): string {
     .slice(0, 80);                   // Enforce max length
 }
 
-/** Build assistantOverrides for VAPI call based on whether we have a name and language
- * 
- * IMPORTANT (2026-03-04): Do NOT send firstMessage in overrides when we have a name.
- * The assistant's firstMessage in VAPI dashboard uses {{name}} interpolation.
- * Sending firstMessage here would override the assistant's configured script.
- * See: MB-FIX-01 in #julia-codigo
+/** Build assistantOverrides for VAPI calls.
+ *
+ * IMPORTANT: Keep behavior 100% VAPI-configured.
+ * Do not send firstMessage/model/tools overrides from backend.
  */
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
-  attemptId: string,
-  transferNumber: string,
-  language: 'es' | 'en' = 'es'
+  attemptId: string
 ): Record<string, unknown> {
+  const metadata = { lead_id: leadId, attempt_id: attemptId };
   if (safeName) {
-    // WITH name: pass variableValues for {{name}} interpolation
-    // firstMessage comes from the assistant config in VAPI dashboard
     return {
       variableValues: { name: safeName },
-      metadata: { lead_id: leadId, attempt_id: attemptId },
-    };
-  } else {
-    // WITHOUT name: dynamic greeting based on time, override model for immediate transfer
-    return {
-      firstMessage: getGreetingByLanguage(language),
-      metadata: { lead_id: leadId, attempt_id: attemptId },
-      model: {
-        provider: "openai",
-        model: "gpt-4o-mini",
-        messages: [{
-          role: "system",
-          content: SYSTEM_PROMPTS[language]
-        }],
-        tools: [{
-          type: "transferCall",
-          messages: [{
-            type: "request-start",
-            content: TRANSFER_MESSAGES[language],
-            blocking: true
-          }],
-          destinations: [{
-            type: "number",
-            number: transferNumber
-          }]
-        }]
-      }
+      metadata,
     };
   }
+  return { metadata };
 }
 
 app.post("/call/test/direct", async (req, res) => {
@@ -1711,7 +1629,7 @@ app.post("/call/test/direct", async (req, res) => {
 
   // Build payload with assistantOverrides for personalized greeting (language-aware)
   const language = getLanguageForAssistant(resolvedVapiAssistantId);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, selectedTransferNumber, language);
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id);
   const payload = {
     phoneNumberId: resolvedVapiPhoneNumberId,
     assistantId: resolvedVapiAssistantId,
@@ -1751,7 +1669,6 @@ app.post("/call/test/direct", async (req, res) => {
         response: data, 
         status: resp.status,
         flow: safeName ? "with_name" : "without_name",
-        greeting: getFirstMessage(safeName, language),
         language,
         roundRobin: shouldUseRoundRobin
           ? {
@@ -1806,7 +1723,6 @@ app.post("/call/test/direct", async (req, res) => {
     attempt_id: attempt.id,
     lead_id: lead.id,
     flow: safeName ? "with_name" : "without_name",
-    greeting: getFirstMessage(safeName, language),
     language,
     selected_agent: {
       assistant_id: resolvedVapiAssistantId,
@@ -1950,7 +1866,7 @@ app.post("/call/vapi", async (req, res) => {
 
   // Build VAPI payload using shared helper (language-aware)
   const language = getLanguageForAssistant(selectedAssistantId);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id, selectedTransferNumber, language);
+  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id);
   const payload = {
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     assistantId: selectedAssistantId,
@@ -1990,7 +1906,6 @@ app.post("/call/vapi", async (req, res) => {
         response: data, 
         status: resp.status,
         flow: safeName ? "with_name" : "without_name",
-        greeting: getFirstMessage(safeName, language),
         language,
         roundRobin: shouldUseRoundRobin
           ? {
@@ -2050,7 +1965,6 @@ app.post("/call/vapi", async (req, res) => {
     attempt_id: attempt.id, 
     lead_id: lead.id,
     flow: safeName ? "with_name" : "without_name",
-    greeting: getFirstMessage(safeName, language),
     language,
     selected_agent: {
       assistant_id: selectedAssistantId,
