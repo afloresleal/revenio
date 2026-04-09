@@ -14,7 +14,7 @@ const router = Router();
 const DEFAULT_ADVISOR_NUMBER = process.env.TRANSFER_NUMBER ?? '+525527326714';
 const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
 const BRENDA_TRANSFER_TRIGGER_STATUS =
-  (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'started').toLowerCase() === 'started'
+  (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'stopped').toLowerCase() === 'started'
     ? 'started'
     : 'stopped';
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
@@ -135,9 +135,9 @@ function normalizePhone(value: string | null | undefined): string | null {
 async function fetchTwilioPostTransferDuration(
   parentCallSid: string,
   transferNumber: string | null | undefined,
-): Promise<{ durationSec: number | null; childCallSid: string | null; transferNumber: string | null; startedAt: Date | null }> {
+): Promise<{ durationSec: number | null; childCallSid: string | null; childStatus: string | null; transferNumber: string | null; startedAt: Date | null }> {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-    return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
+    return { durationSec: null, childCallSid: null, childStatus: null, transferNumber: null, startedAt: null };
   }
 
   const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
@@ -151,12 +151,12 @@ async function fetchTwilioPostTransferDuration(
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
     console.warn('Twilio child call lookup failed:', { status: resp.status, body });
-    return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
+    return { durationSec: null, childCallSid: null, childStatus: null, transferNumber: null, startedAt: null };
   }
 
   const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
   const calls = Array.isArray(data.calls) ? (data.calls as Array<Record<string, unknown>>) : [];
-  if (calls.length === 0) return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
+  if (calls.length === 0) return { durationSec: null, childCallSid: null, childStatus: null, transferNumber: null, startedAt: null };
 
   const normalizedTransfer = normalizePhone(transferNumber);
   const candidates = calls
@@ -167,12 +167,14 @@ async function fetchTwilioPostTransferDuration(
       const durationSec = durationRaw ? Number.parseInt(durationRaw, 10) : NaN;
       const startTime = asString(c.start_time) ?? '';
       const sid = asString(c.sid) ?? '';
+      const status = asString(c.status) ?? '';
       const score = (normalizedTransfer && normalizedTo && normalizedTo === normalizedTransfer ? 10 : 0)
         + (Number.isFinite(durationSec) && durationSec >= 0 ? 3 : 0)
-        + (asString(c.status) === 'completed' ? 1 : 0);
+        + (status === 'completed' ? 1 : 0);
       const startedAt = startTime ? new Date(startTime) : null;
       return {
         sid,
+        status,
         score,
         durationSec: Number.isFinite(durationSec) ? durationSec : null,
         startTime,
@@ -186,10 +188,11 @@ async function fetchTwilioPostTransferDuration(
     });
 
   const best = candidates[0];
-  if (!best) return { durationSec: null, childCallSid: null, transferNumber: null, startedAt: null };
+  if (!best) return { durationSec: null, childCallSid: null, childStatus: null, transferNumber: null, startedAt: null };
   return {
     durationSec: best.durationSec,
     childCallSid: best.sid || null,
+    childStatus: best.status || null,
     transferNumber: best.transferNumber,
     startedAt: best.startedAt,
   };
@@ -878,6 +881,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   });
   let postTransferDurationSec: number | null = null;
   let twilioTransferCallSidFromLookup: string | null = null;
+  let transferStatusFromLookup: string | null = null;
   let transferNumberFromTwilio: string | null = null;
   let transferredAtFromTwilio: Date | null = null;
   let twilioTotalDurationSec: number | null = null;
@@ -913,6 +917,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
         postTransferDurationSec = transferLookup.durationSec;
       }
       twilioTransferCallSidFromLookup = transferLookup.childCallSid;
+      transferStatusFromLookup = transferLookup.childStatus;
       transferNumberFromTwilio = transferLookup.transferNumber;
       transferredAtFromTwilio = transferLookup.startedAt;
     } catch (error) {
@@ -976,10 +981,9 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     postTransferDurationSec ??
     existing?.postTransferDurationSec ??
     transferDurationFromTimestamps;
+  const effectiveTransferStatus = transferStatusFromLookup ?? existing?.transferStatus ?? null;
   const hasTwilioTransferEvidence = Boolean(
-    twilioTransferCallSidFromLookup ||
-    existing?.twilioTransferCallSid ||
-    (existing?.transferStatus && TRANSFER_CONNECTED_STATUSES.has(existing.transferStatus)),
+    effectiveTransferStatus && TRANSFER_CONNECTED_STATUSES.has(effectiveTransferStatus),
   );
   const hasDurationEvidence = (effectivePostTransferDurationSec ?? 0) >= TRANSFER_CONNECTED_MIN_SEC;
   const confirmedTransfer = hasTwilioTransferEvidence || hasDurationEvidence;
@@ -999,6 +1003,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       transferNumber: resolvedTransferNumber,
       twilioParentCallSid: twilioParentCallSid ?? undefined,
       twilioTransferCallSid: twilioTransferCallSidFromLookup ?? existing?.twilioTransferCallSid ?? undefined,
+      transferStatus: transferStatusFromLookup ?? existing?.transferStatus ?? undefined,
       transferredAt: resolvedTransferredAt ?? undefined,
       startedAt: startedAtDate ?? undefined,
       endedAt: endedAtDate,
@@ -1022,6 +1027,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       transferNumber: resolvedTransferNumber,
       twilioParentCallSid: twilioParentCallSid ?? existing?.twilioParentCallSid ?? undefined,
       twilioTransferCallSid: twilioTransferCallSidFromLookup ?? existing?.twilioTransferCallSid ?? undefined,
+      transferStatus: transferStatusFromLookup ?? existing?.transferStatus ?? undefined,
       transferredAt: resolvedTransferredAt ?? undefined,
       durationSec: finalDuration ?? existing?.durationSec ?? null,
       endedReason,
