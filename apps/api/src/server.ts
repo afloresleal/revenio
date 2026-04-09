@@ -1152,6 +1152,12 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
       },
     });
   }
+  // Twilio <Dial action="..."> callbacks include DialCallStatus and expect TwiML.
+  // Returning plain text can trigger: "application error has occurred".
+  if (dialCallStatus) {
+    return res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+
   res.status(200).send("ok");
 }
 
