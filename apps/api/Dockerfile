@@ -2,6 +2,11 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
+# Prisma schema engine needs OpenSSL at runtime (migrations/startup).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # Optional: install local Whisper runtime only when explicitly requested.
 # Keeps Railway image smaller/stabler by default.
 ARG INSTALL_LOCAL_WHISPER=false
