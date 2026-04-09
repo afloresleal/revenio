@@ -18,6 +18,8 @@ const BRENDA_TRANSFER_TRIGGER_STATUS =
     ? 'started'
     : 'stopped';
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
+const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
+const TRANSFER_CONNECTED_STATUSES = new Set(['in-progress', 'answered', 'completed']);
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
@@ -658,8 +660,9 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
         assistantId: call.assistantId,
         transferNumber: call.transferNumber,
         transferredAt: eventAt,
-        outcome: 'transfer_success',
-        sentiment: 'positive',
+        inProgress: true,
+        outcome: 'in_progress',
+        sentiment: 'neutral',
         lastEventType: type,
         lastEventAt: eventAt,
       },
@@ -667,8 +670,9 @@ async function processMetricsEvent(normalized: NormalizedMetricEvent): Promise<H
         assistantId: call.assistantId,
         transferNumber: call.transferNumber,
         transferredAt: eventAt,
-        outcome: 'transfer_success',
-        sentiment: 'positive',
+        inProgress: true,
+        outcome: 'in_progress',
+        sentiment: 'neutral',
         lastEventType: type,
         lastEventAt: eventAt,
       },
@@ -855,8 +859,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   
   const hadTransferredAt = existing?.transferredAt != null;
   const endedReasonHasTransfer = looksLikeTransferEndedReason(endedReason ?? null);
-  const wasTransferred = hadTransferredAt || endedReasonHasTransfer;
-  const outcome = determineOutcome(wasTransferred, endedReason ?? null);
+  const transferAttempted = hadTransferredAt || endedReasonHasTransfer;
+  let outcome = determineOutcome(transferAttempted, endedReason ?? null);
   
   console.log('end-of-call-report outcome decision:', {
     callId,
@@ -864,15 +868,16 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     existingTransferredAt: existing?.transferredAt,
     endedReason,
     endedReasonHasTransfer,
-    wasTransferred,
+    transferAttempted,
     outcome,
   });
-  const sentiment = deriveSentiment({
+  let sentiment = deriveSentiment({
     outcome,
     durationSec: duration ?? null,
     endedReason: endedReason ?? null,
   });
   let postTransferDurationSec: number | null = null;
+  let twilioTransferCallSidFromLookup: string | null = null;
   let transferNumberFromTwilio: string | null = null;
   let transferredAtFromTwilio: Date | null = null;
   let twilioTotalDurationSec: number | null = null;
@@ -900,13 +905,14 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       },
     });
   }
-  if (wasTransferred && twilioParentCallSid) {
+  if (transferAttempted && twilioParentCallSid) {
     try {
       twilioTotalDurationSec = await fetchTwilioCallDuration(twilioParentCallSid);
       const transferLookup = await fetchTwilioPostTransferDuration(twilioParentCallSid, forwardedPhoneNumber);
       if (transferLookup.durationSec !== null && transferLookup.durationSec >= 0) {
         postTransferDurationSec = transferLookup.durationSec;
       }
+      twilioTransferCallSidFromLookup = transferLookup.childCallSid;
       transferNumberFromTwilio = transferLookup.transferNumber;
       transferredAtFromTwilio = transferLookup.startedAt;
     } catch (error) {
@@ -962,6 +968,27 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     const candidateEnd = new Date(startedAtDate.getTime() + finalDuration * 1000);
     if (candidateEnd.getTime() > endedAtDate.getTime()) endedAtDate = candidateEnd;
   }
+  const transferDurationFromTimestamps =
+    resolvedTransferredAt && endedAtDate
+      ? Math.max(0, Math.round((endedAtDate.getTime() - resolvedTransferredAt.getTime()) / 1000))
+      : null;
+  const effectivePostTransferDurationSec =
+    postTransferDurationSec ??
+    existing?.postTransferDurationSec ??
+    transferDurationFromTimestamps;
+  const hasTwilioTransferEvidence = Boolean(
+    twilioTransferCallSidFromLookup ||
+    existing?.twilioTransferCallSid ||
+    (existing?.transferStatus && TRANSFER_CONNECTED_STATUSES.has(existing.transferStatus)),
+  );
+  const hasDurationEvidence = (effectivePostTransferDurationSec ?? 0) >= TRANSFER_CONNECTED_MIN_SEC;
+  const confirmedTransfer = hasTwilioTransferEvidence || hasDurationEvidence;
+  outcome = determineOutcome(confirmedTransfer, endedReason ?? null);
+  sentiment = deriveSentiment({
+    outcome,
+    durationSec: finalDuration ?? null,
+    endedReason: endedReason ?? null,
+  });
 
   await prisma.callMetric.upsert({
     where: { callId },
@@ -971,6 +998,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       assistantId,
       transferNumber: resolvedTransferNumber,
       twilioParentCallSid: twilioParentCallSid ?? undefined,
+      twilioTransferCallSid: twilioTransferCallSidFromLookup ?? existing?.twilioTransferCallSid ?? undefined,
       transferredAt: resolvedTransferredAt ?? undefined,
       startedAt: startedAtDate ?? undefined,
       endedAt: endedAtDate,
@@ -993,6 +1021,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       assistantId,
       transferNumber: resolvedTransferNumber,
       twilioParentCallSid: twilioParentCallSid ?? existing?.twilioParentCallSid ?? undefined,
+      twilioTransferCallSid: twilioTransferCallSidFromLookup ?? existing?.twilioTransferCallSid ?? undefined,
       transferredAt: resolvedTransferredAt ?? undefined,
       durationSec: finalDuration ?? existing?.durationSec ?? null,
       endedReason,
@@ -1071,8 +1100,9 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
         assistantId,
         transferNumber: resolvedTransferNumber,
         transferredAt: new Date(),
-        outcome: 'transfer_success',
-        sentiment: 'positive',
+        inProgress: true,
+        outcome: 'in_progress',
+        sentiment: 'neutral',
         lastEventType: eventType,
         lastEventAt: new Date(),
       },
@@ -1080,8 +1110,9 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
         assistantId,
         transferNumber: resolvedTransferNumber,
         transferredAt: new Date(),
-        outcome: 'transfer_success',
-        sentiment: 'positive',
+        inProgress: true,
+        outcome: 'in_progress',
+        sentiment: 'neutral',
         lastEventType: eventType,
         lastEventAt: new Date(),
       },
@@ -1104,8 +1135,9 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       assistantId,
       transferNumber: resolvedTransferNumber,
       transferredAt: new Date(),
-      outcome: 'transfer_success',
-      sentiment: 'positive',
+      inProgress: true,
+      outcome: 'in_progress',
+      sentiment: 'neutral',
       lastEventType: eventType,
       lastEventAt: new Date(),
     },
@@ -1113,8 +1145,9 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
       assistantId,
       transferNumber: resolvedTransferNumber,
       transferredAt: new Date(),
-      outcome: 'transfer_success',
-      sentiment: 'positive',
+      inProgress: true,
+      outcome: 'in_progress',
+      sentiment: 'neutral',
       lastEventType: eventType,
       lastEventAt: new Date(),
     },
