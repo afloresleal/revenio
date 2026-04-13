@@ -1360,14 +1360,13 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
   console.log('speech-update:', { status, role, turn, assistantId, callId });
   
   // Auto-transfer conditions (ONLY for Brenda):
-  // 1. Assistant speech finished (status === 'stopped')
-  // 2. It's the assistant speaking (role === 'assistant')
-  // 3. First turn (Vapi may count from 0 or 1)
-  // 4. It's Brenda specifically (assistantId check)
+  // 1. Assistant speech reached configured trigger status.
+  // 2. It's the assistant speaking.
+  // 3. It's Brenda specifically (assistantId check).
+  // NOTE: do not gate by "turn" because Vapi turn numbering can vary by transport/config.
   if (
     status === BRENDA_TRANSFER_TRIGGER_STATUS &&
     role === 'assistant' && 
-    (turn === 0 || turn === 1) && 
     assistantId === BRENDA_ASSISTANT_ID
   ) {
     console.log('Auto-transfer triggered for Brenda:', callId);
