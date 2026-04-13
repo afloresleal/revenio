@@ -5,7 +5,15 @@
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
-const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL ?? 'https://revenioapi-production.up.railway.app';
+function resolvePublicWebhookBaseUrl(): string {
+  const explicit =
+    (process.env.WEBHOOK_BASE_URL || process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || '').trim();
+  if (explicit) return explicit.replace(/\/+$/, '');
+  const railwayDomain = (process.env.RAILWAY_PUBLIC_DOMAIN || '').trim();
+  if (railwayDomain) return `https://${railwayDomain}`.replace(/\/+$/, '');
+  return 'https://revenioapi-production.up.railway.app';
+}
+const WEBHOOK_BASE_URL = resolvePublicWebhookBaseUrl();
 const CHILD_CALL_POLL_INTERVAL_MS = getEnvMs('TRANSFER_CHILD_CALL_POLL_INTERVAL_MS', 1200, 500);
 const FAILOVER_RING_TIMEOUT_MS = getEnvMs('TRANSFER_FAILOVER_RING_TIMEOUT_SEC', 15, 1) * 1000;
 const DEFAULT_CHILD_CALL_MAX_WAIT_MS = Math.max(FAILOVER_RING_TIMEOUT_MS + 2000, 9000);
@@ -43,6 +51,8 @@ export async function startRecordingOnCall(callSid: string): Promise<{ recording
 
   const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${callSid}/Recordings.json`;
 
+  const recordingStatusCallback = `${WEBHOOK_BASE_URL}/webhooks/twilio/recording-status`;
+
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -51,7 +61,7 @@ export async function startRecordingOnCall(callSid: string): Promise<{ recording
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({
-        'RecordingStatusCallback': `${WEBHOOK_BASE_URL}/webhooks/twilio/recording-status`,
+        'RecordingStatusCallback': recordingStatusCallback,
         'RecordingStatusCallbackEvent': 'completed',
         'RecordingChannels': 'dual',
       }).toString(),
@@ -74,7 +84,7 @@ export async function startRecordingOnCall(callSid: string): Promise<{ recording
 
     const data = await resp.json() as Record<string, unknown>;
     const recordingSid = typeof data.sid === 'string' ? data.sid : null;
-    console.log('Recording started:', { callSid, recordingSid });
+    console.log('Recording started:', { callSid, recordingSid, recordingStatusCallback });
     return { recordingSid, error: null };
   } catch (error) {
     console.error('Error starting recording:', { callSid, error: String(error) });
