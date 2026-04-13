@@ -453,6 +453,23 @@ function mapStatusToFailoverReason(status: string | null): Exclude<AgentFailover
   return null;
 }
 
+function buildFirstAgentOutcomePatch(params: {
+  rr: Record<string, unknown>;
+  currentIndex: number;
+  currentAgent: { name: string | null; transferNumber: string } | null;
+  result: string;
+}) {
+  if (params.currentIndex !== 0) return {};
+  if (asNonEmptyString(params.rr.firstAgentResult)) return {};
+  return {
+    firstAgentIndex: 0,
+    firstAgentName: params.currentAgent?.name ?? null,
+    firstAgentNumber: params.currentAgent?.transferNumber ?? null,
+    firstAgentResult: params.result,
+    firstAgentOutcomeAt: new Date().toISOString(),
+  };
+}
+
 function extractTwilioParentSidFromVapiResponse(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const root = data as Record<string, unknown>;
@@ -585,6 +602,12 @@ async function executeFailoverToNextAgent(params: {
             lastFailedAgentName: currentAgent?.name ?? null,
             lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
             lastFailedAgentResult: params.reason,
+            ...buildFirstAgentOutcomePatch({
+              rr,
+              currentIndex,
+              currentAgent,
+              result: params.reason,
+            }),
           },
         } as any,
       },
@@ -622,6 +645,12 @@ async function executeFailoverToNextAgent(params: {
     lastFailedAgentName: currentAgent?.name ?? null,
     lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
     lastFailedAgentResult: params.reason,
+    ...buildFirstAgentOutcomePatch({
+      rr,
+      currentIndex,
+      currentAgent,
+      result: params.reason,
+    }),
   };
 
   await prisma.callAttempt.update({
@@ -718,6 +747,12 @@ async function selectNextRoundRobinAgent(params: {
             lastFailedAgentName: currentAgent?.name ?? null,
             lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
             lastFailedAgentResult: params.reason,
+            ...buildFirstAgentOutcomePatch({
+              rr,
+              currentIndex,
+              currentAgent,
+              result: params.reason,
+            }),
           },
         } as any,
       },
@@ -743,6 +778,12 @@ async function selectNextRoundRobinAgent(params: {
     lastFailedAgentName: currentAgent?.name ?? null,
     lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
     lastFailedAgentResult: params.reason,
+    ...buildFirstAgentOutcomePatch({
+      rr,
+      currentIndex,
+      currentAgent,
+      result: params.reason,
+    }),
   };
 
   await prisma.callAttempt.update({
@@ -1054,6 +1095,12 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
                     answeredAgentNumber: answeredAgent?.transferNumber ?? null,
                     answeredBy: "human",
                     answeredOutcome: "human-answered",
+                    ...buildFirstAgentOutcomePatch({
+                      rr: rrForAnswered,
+                      currentIndex: selectedIndex,
+                      currentAgent: answeredAgent,
+                      result: "human-answered",
+                    }),
                   },
                 } as any,
               },

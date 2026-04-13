@@ -736,6 +736,9 @@ export default function App() {
     const detailRoundRobinPoolSize = asFiniteNumber(detail?.roundRobinPoolSize);
     const detailAnsweredAgentName = asNonEmptyString(detail?.roundRobinAnsweredAgentName);
     const detailAnsweredAgentNumber = asNonEmptyString(detail?.roundRobinAnsweredAgentNumber);
+    const detailFirstAgentResultRaw = asNonEmptyString(detail?.roundRobinFirstAgentResult);
+    const detailFirstAgentName = asNonEmptyString(detail?.roundRobinFirstAgentName);
+    const detailFirstAgentNumber = asNonEmptyString(detail?.roundRobinFirstAgentNumber);
     const detailFailedAgents = Array.isArray(detail?.roundRobinFailedAgents)
       ? detail.roundRobinFailedAgents
           .map((agent) => {
@@ -771,6 +774,17 @@ export default function App() {
         : detailRoundRobinEnabled === false
           ? 'No activo'
           : '--';
+    const firstAgentResultLabel = detailFirstAgentResultRaw
+      ? ({
+          voicemail: 'Buzón de voz',
+          'no-answer': 'No respondió',
+          busy: 'Ocupado',
+          failed: 'Falló',
+          'ring-timeout': 'Timeout de timbrado',
+          'human-answered': 'Respondió humano',
+        } as Record<string, string>)[detailFirstAgentResultRaw] ?? detailFirstAgentResultRaw
+      : null;
+    const firstAgentIdentity = detailFirstAgentName ?? detailFirstAgentNumber ?? null;
 
     return (
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
@@ -812,6 +826,11 @@ export default function App() {
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Round robin (humano)</div>
             <div className="text-slate-300">{roundRobinSummary}</div>
+            {firstAgentResultLabel && (
+              <div className="text-[11px] text-slate-500 mt-1">
+                Primer agente: {firstAgentIdentity ? `${firstAgentIdentity} • ` : ''}{firstAgentResultLabel}
+              </div>
+            )}
             {selectionSource && (
               <div className="text-[11px] text-slate-500 mt-1">Fuente: {selectionSource}</div>
             )}

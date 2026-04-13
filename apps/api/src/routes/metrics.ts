@@ -744,6 +744,7 @@ router.get('/recent', async (req, res) => {
       const answeredAgentNumber = asString(roundRobin?.answeredAgentNumber) ?? null;
       const answeredAgentIndex = asNumber(roundRobin?.answeredAgentIndex) ?? null;
       const failoverSteps = failoverEventsByCallId.get(c.callId) ?? [];
+      const firstFailoverStep = failoverSteps.find((step) => step.failedAgentIndex === 0) ?? null;
       const failedAgents = failoverSteps
         .map((step) => ({
           index: step.failedAgentIndex,
@@ -756,6 +757,18 @@ router.get('/recent', async (req, res) => {
         const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}|${agent.result ?? ''}`;
         return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}|${item.result ?? ''}` === key) === index;
       });
+      const firstAgentResult =
+        asString(roundRobin?.firstAgentResult) ??
+        firstFailoverStep?.failedAgentResult ??
+        (answeredAgentIndex === 0 ? 'human-answered' : null);
+      const firstAgentName =
+        asString(roundRobin?.firstAgentName) ??
+        firstFailoverStep?.failedAgentName ??
+        (answeredAgentIndex === 0 ? answeredAgentName : null);
+      const firstAgentNumber =
+        asString(roundRobin?.firstAgentNumber) ??
+        firstFailoverStep?.failedAgentNumber ??
+        (answeredAgentIndex === 0 ? answeredAgentNumber : null);
       const agentsTriedCount = roundRobinEnabled
         ? Math.max(
             1,
@@ -799,6 +812,9 @@ router.get('/recent', async (req, res) => {
         roundRobinAnsweredAgentName: answeredAgentName,
         roundRobinAnsweredAgentNumber: answeredAgentNumber,
         roundRobinAnsweredAgentIndex: answeredAgentIndex,
+        roundRobinFirstAgentResult: roundRobinEnabled ? firstAgentResult : null,
+        roundRobinFirstAgentName: roundRobinEnabled ? firstAgentName : null,
+        roundRobinFirstAgentNumber: roundRobinEnabled ? firstAgentNumber : null,
         roundRobinAgentsTriedCount: agentsTriedCount,
         roundRobinFailedAgents: roundRobinEnabled ? uniqueFailedAgents : [],
         twilioTransferCallSid: c.twilioTransferCallSid,
@@ -956,6 +972,7 @@ router.get('/calls/:callId', async (req, res) => {
         nextAgentName: string | null;
         nextTransferNumber: string | null;
       } => !!x);
+    const firstFailoverStep = failoverSteps.find((step) => step.failedAgentIndex === 0) ?? null;
 
     const failedAgents = failoverSteps
       .map((step) => ({
@@ -969,6 +986,18 @@ router.get('/calls/:callId', async (req, res) => {
       const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}|${agent.result ?? ''}`;
       return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}|${item.result ?? ''}` === key) === index;
     });
+    const firstAgentResult =
+      asString(roundRobin?.firstAgentResult) ??
+      firstFailoverStep?.failedAgentResult ??
+      (answeredAgentIndex === 0 ? 'human-answered' : null);
+    const firstAgentName =
+      asString(roundRobin?.firstAgentName) ??
+      firstFailoverStep?.failedAgentName ??
+      (answeredAgentIndex === 0 ? answeredAgentName : null);
+    const firstAgentNumber =
+      asString(roundRobin?.firstAgentNumber) ??
+      firstFailoverStep?.failedAgentNumber ??
+      (answeredAgentIndex === 0 ? answeredAgentNumber : null);
 
     const agentsTriedCount = Math.max(
       1,
@@ -1014,6 +1043,9 @@ router.get('/calls/:callId', async (req, res) => {
       roundRobinAnsweredAgentName: answeredAgentName,
       roundRobinAnsweredAgentNumber: answeredAgentNumber,
       roundRobinAnsweredAgentIndex: answeredAgentIndex,
+      roundRobinFirstAgentResult: roundRobinEnabled ? firstAgentResult : null,
+      roundRobinFirstAgentName: roundRobinEnabled ? firstAgentName : null,
+      roundRobinFirstAgentNumber: roundRobinEnabled ? firstAgentNumber : null,
       roundRobinAgentsTriedCount: roundRobinEnabled ? agentsTriedCount : null,
       roundRobinFailedAgents: roundRobinEnabled ? uniqueFailedAgents : [],
       roundRobinFailoverSteps: roundRobinEnabled ? failoverSteps : [],

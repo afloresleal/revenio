@@ -263,6 +263,23 @@ function looksLikeInactiveCallError(body: string): boolean {
   );
 }
 
+function buildFirstAgentOutcomePatch(params: {
+  rr: Record<string, unknown>;
+  currentIndex: number;
+  currentAgent: { name: string | null; transferNumber: string } | null;
+  result: string;
+}) {
+  if (params.currentIndex !== 0) return {};
+  if (asString(params.rr.firstAgentResult)) return {};
+  return {
+    firstAgentIndex: 0,
+    firstAgentName: params.currentAgent?.name ?? null,
+    firstAgentNumber: params.currentAgent?.transferNumber ?? null,
+    firstAgentResult: params.result,
+    firstAgentOutcomeAt: new Date().toISOString(),
+  };
+}
+
 async function triggerRoundRobinFailoverFromCallId(params: {
   callId: string;
   reason: string;
@@ -302,6 +319,12 @@ async function triggerRoundRobinFailoverFromCallId(params: {
             lastFailedAgentIndex: currentIndex,
             lastFailedAgentName: currentAgent?.name ?? null,
             lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+            ...buildFirstAgentOutcomePatch({
+              rr,
+              currentIndex,
+              currentAgent,
+              result: params.reason,
+            }),
           },
         } as any,
       },
@@ -386,6 +409,12 @@ async function triggerRoundRobinFailoverFromCallId(params: {
           lastFailedAgentName: currentAgent?.name ?? null,
           lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
           lastFailedAgentResult: params.reason,
+          ...buildFirstAgentOutcomePatch({
+            rr,
+            currentIndex,
+            currentAgent,
+            result: params.reason,
+          }),
         },
       } as any,
     },
