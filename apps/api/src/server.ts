@@ -12,8 +12,14 @@ import jobsRouter from "./routes/jobs.js";
 const prisma = new PrismaClient();
 const app = express();
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
-const PUBLIC_API_BASE_URL =
-  (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "https://revenioapi-production.up.railway.app").replace(/\/+$/, "");
+function resolvePublicApiBaseUrl(): string {
+  const explicit = (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+  const railwayDomain = (process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+  if (railwayDomain) return `https://${railwayDomain}`.replace(/\/+$/, "");
+  return "https://revenioapi-production.up.railway.app";
+}
+const PUBLIC_API_BASE_URL = resolvePublicApiBaseUrl();
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
 const FAILOVER_ANSWERED_STATUSES = new Set(["in-progress", "answered"]);
 const FAILOVER_MACHINE_ANSWER_PREFIXES = ["machine", "fax"];
