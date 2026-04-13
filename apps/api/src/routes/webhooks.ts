@@ -1275,7 +1275,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     }
     
     console.log('Could not start recording on child call:', { callId, error });
-    if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
+    if (error === 'no_in_progress_child_calls' && callId) {
       try {
         const failoverResult = await triggerRoundRobinFailoverFromCallId({
           callId,
@@ -1298,6 +1298,13 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
           failoverError: String(err),
         });
       }
+    }
+    if (error === 'child_calls_still_pending') {
+      console.log('Deferring RR fallback failover while child leg is still ringing/queued', {
+        callId,
+        twilioCallSid,
+        error,
+      });
     }
     return { ok: true, action: 'recording-failed', callId, error };
   }
@@ -1363,7 +1370,7 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
   }
   
   console.log('Could not start recording via transfer-update:', { callId, error });
-  if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
+  if (error === 'no_in_progress_child_calls' && callId) {
     try {
       const failoverResult = await triggerRoundRobinFailoverFromCallId({
         callId,
@@ -1379,6 +1386,13 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
         error: String(err),
       });
     }
+  }
+  if (error === 'child_calls_still_pending') {
+    console.log('Deferring RR failover from transfer-update while child leg is still ringing/queued', {
+      callId,
+      twilioCallSid,
+      error,
+    });
   }
   return { ok: true, action: 'recording-failed', callId, error };
 }
