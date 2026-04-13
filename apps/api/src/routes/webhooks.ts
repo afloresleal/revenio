@@ -1274,12 +1274,29 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     }
     
     console.log('Could not start recording on child call:', { callId, error });
-    if (error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') {
-      console.log('Skipping RR failover from status-update; waiting for Twilio DialCallStatus callback', {
-        callId,
-        twilioCallSid,
-        error,
-      });
+    if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
+      try {
+        const failoverResult = await triggerRoundRobinFailoverFromCallId({
+          callId,
+          reason: 'child-never-answered-no-callback',
+          currentChildCallSid: null,
+          parentCallSid: twilioCallSid ?? null,
+        });
+        console.log('RR fallback failover from status-update (missing DialCallStatus):', {
+          callId,
+          twilioCallSid,
+          error,
+          failoverResult,
+        });
+        return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
+      } catch (err) {
+        console.error('RR fallback failover from status-update failed:', {
+          callId,
+          twilioCallSid,
+          error,
+          failoverError: String(err),
+        });
+      }
     }
     return { ok: true, action: 'recording-failed', callId, error };
   }
