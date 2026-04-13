@@ -141,8 +141,9 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
             await new Promise(resolve => setTimeout(resolve, CHILD_CALL_POLL_INTERVAL_MS));
             continue;
           }
-          // Child leg never became in-progress within retry window; avoid treating this as no-answer.
-          return { childCallSid: null, recordingSid: null, error: 'child_calls_still_pending' };
+          // Child leg never became in-progress within retry window.
+          // Signal timeout so caller can trigger controlled RR failover.
+          return { childCallSid: null, recordingSid: null, error: 'child_calls_still_pending_timeout' };
         }
         
         if (calls.length === 0) {
@@ -158,7 +159,7 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
         return {
           childCallSid: null,
           recordingSid: null,
-          error: sawPendingChildCall ? 'child_calls_still_pending' : 'no_in_progress_child_calls',
+          error: sawPendingChildCall ? 'child_calls_still_pending_timeout' : 'no_in_progress_child_calls',
         };
       }
 
@@ -198,7 +199,7 @@ export async function startRecordingOnChildCalls(parentCallSid: string): Promise
   return {
     childCallSid: null,
     recordingSid: null,
-    error: sawPendingChildCall ? 'child_calls_still_pending' : 'max_retries_exceeded',
+    error: sawPendingChildCall ? 'child_calls_still_pending_timeout' : 'max_retries_exceeded',
   };
 }
 

@@ -1291,7 +1291,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     }
     
     console.log('Could not start recording on child call:', { callId, error });
-    if (error === 'no_in_progress_child_calls' && callId) {
+    if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending_timeout') && callId) {
       try {
         const failoverResult = await triggerRoundRobinFailoverFromCallId({
           callId,
@@ -1299,7 +1299,7 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
           currentChildCallSid: null,
           parentCallSid: twilioCallSid ?? null,
         });
-        console.log('RR fallback failover from status-update (missing DialCallStatus):', {
+        console.log('RR fallback failover from status-update (missing DialCallStatus or child pending timeout):', {
           callId,
           twilioCallSid,
           error,
@@ -1386,7 +1386,7 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
   }
   
   console.log('Could not start recording via transfer-update:', { callId, error });
-  if (error === 'no_in_progress_child_calls' && callId) {
+  if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending_timeout') && callId) {
     try {
       const failoverResult = await triggerRoundRobinFailoverFromCallId({
         callId,
@@ -1394,7 +1394,7 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
         currentChildCallSid: null,
         parentCallSid: twilioCallSid ?? null,
       });
-      console.log('Round robin failover from transfer-update:', { callId, failoverResult });
+      console.log('Round robin failover from transfer-update:', { callId, error, failoverResult });
       return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
     } catch (err) {
       console.error('Round robin failover from transfer-update failed:', {
