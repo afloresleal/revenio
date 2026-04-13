@@ -864,6 +864,54 @@ function scheduleRingTimeoutFailover(params: {
   failoverTimers.set(timerKey, timer);
 }
 
+function sendTwimlResponse(
+  res: express.Response,
+  xml: string,
+  context: {
+    branch: string;
+    callSid?: string | null;
+    parentCallSid?: string | null;
+    dialCallSid?: string | null;
+    dialCallStatus?: string | null;
+    callStatus?: string | null;
+    attemptId?: string | null;
+    vapiCallId?: string | null;
+  },
+) {
+  console.log("twilio_transfer_status_response", {
+    ...context,
+    contentType: "text/xml",
+    bodyType: "twiml",
+    bodyBytes: Buffer.byteLength(xml, "utf8"),
+  });
+  return res.type("text/xml").send(xml);
+}
+
+function sendPlainStatusResponse(
+  res: express.Response,
+  statusCode: number,
+  body: string,
+  context: {
+    branch: string;
+    callSid?: string | null;
+    parentCallSid?: string | null;
+    dialCallSid?: string | null;
+    dialCallStatus?: string | null;
+    callStatus?: string | null;
+    attemptId?: string | null;
+    vapiCallId?: string | null;
+  },
+) {
+  console.log("twilio_transfer_status_response", {
+    ...context,
+    contentType: "text/plain",
+    bodyType: "plain",
+    statusCode,
+    body,
+  });
+  return res.status(statusCode).send(body);
+}
+
 async function handleTwilioStatusWebhook(req: express.Request, res: express.Response) {
   console.log("twilio_status_webhook_hit", {
     path: req.path,
@@ -874,6 +922,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
     callStatus: asNonEmptyString(req.body?.CallStatus) ?? null,
     dialCallStatus: asNonEmptyString(req.body?.DialCallStatus) ?? null,
     answeredBy: asNonEmptyString(req.body?.AnsweredBy) ?? null,
+    query: req.query,
   });
 
   const status = asNonEmptyString(req.body?.CallStatus) ?? "unknown";
@@ -1147,9 +1196,27 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           const callbackPath = `/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
           const callbackUrl = `${PUBLIC_API_BASE_URL}${callbackPath}`;
           const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrl}" amdStatusCallbackMethod="POST">${twimlFailoverResult.nextTransferNumber}</Number></Dial></Response>`;
-          return res.type("text/xml").send(xml);
+          return sendTwimlResponse(res, xml, {
+            branch: "dial-callback-failover-next-agent",
+            callSid: context.callSid,
+            parentCallSid: context.parentCallSid,
+            dialCallSid,
+            dialCallStatus,
+            callStatus: normalizedStatus,
+            attemptId: attemptIdForFailover,
+            vapiCallId: context.vapiCallId,
+          });
         }
-        return res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        return sendTwimlResponse(res, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+          branch: "dial-callback-failover-empty",
+          callSid: context.callSid,
+          parentCallSid: context.parentCallSid,
+          dialCallSid,
+          dialCallStatus,
+          callStatus: normalizedStatus,
+          attemptId: attemptIdForFailover,
+          vapiCallId: context.vapiCallId,
+        });
       }
       if (shouldFailoverFromStatus) {
         try {
@@ -1202,10 +1269,28 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
   // Twilio <Dial action="..."> callbacks include DialCallStatus and expect TwiML.
   // Returning plain text can trigger: "application error has occurred".
   if (dialCallStatus) {
-    return res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    return sendTwimlResponse(res, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+      branch: "dial-callback-default-empty",
+      callSid: context.callSid,
+      parentCallSid: context.parentCallSid,
+      dialCallSid,
+      dialCallStatus,
+      callStatus: normalizedStatus,
+      attemptId: context.attemptId,
+      vapiCallId: context.vapiCallId,
+    });
   }
 
-  res.status(200).send("ok");
+  return sendPlainStatusResponse(res, 200, "ok", {
+    branch: "non-dial-status-default-ok",
+    callSid: context.callSid,
+    parentCallSid: context.parentCallSid,
+    dialCallSid,
+    dialCallStatus,
+    callStatus: normalizedStatus,
+    attemptId: context.attemptId,
+    vapiCallId: context.vapiCallId,
+  });
 }
 
 async function handleTwilioTransferRecordingWebhook(req: express.Request, res: express.Response) {
