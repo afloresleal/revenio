@@ -15,6 +15,7 @@ const DASHBOARD_TIMEZONE = 'America/Mexico_City';
 const DEFAULT_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_LIMIT ?? 100);
 const MAX_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_MAX_LIMIT ?? 500);
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const CONNECTED_TRANSFER_STATUSES = new Set(['in-progress', 'answered', 'completed']);
 
 type TzDateParts = {
   year: number;
@@ -407,52 +408,35 @@ router.get('/summary', async (req, res) => {
       }),
     ]);
     
-    const connectedTransferWhereCurrent = {
-      startedAt: { gte: startDate, lt: endDate },
-      outcome: 'transfer_success',
-      OR: [
-        { transferredAt: { not: null } },
-        { durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC } },
-        { endedReason: { contains: 'forward', mode: 'insensitive' as const } },
-        { endedReason: { contains: 'transfer', mode: 'insensitive' as const } },
-      ],
-    };
-    const connectedTransferWherePrevious = {
-      startedAt: { gte: prevStartDate, lt: prevEndDate },
-      outcome: 'transfer_success',
-      OR: [
-        { transferredAt: { not: null } },
-        { durationSec: { gte: TRANSFER_CONNECTED_MIN_SEC } },
-        { endedReason: { contains: 'forward', mode: 'insensitive' as const } },
-        { endedReason: { contains: 'transfer', mode: 'insensitive' as const } },
-      ],
-    };
-
-    // Group by outcome and sentiment
-    const [outcomes, sentiments, inProgress, connectedTransfers, prevConnectedTransfers, prevOutcomes] = await Promise.all([
-      prisma.callMetric.groupBy({
-        by: ['outcome'],
+    const [currentRows, previousRows, inProgress] = await Promise.all([
+      prisma.callMetric.findMany({
         where: { startedAt: { gte: startDate, lt: endDate } },
-        _count: { _all: true },
+        select: {
+          outcome: true,
+          sentiment: true,
+          endedReason: true,
+          transferredAt: true,
+          endedAt: true,
+          twilioTransferCallSid: true,
+          transferStatus: true,
+          postTransferDurationSec: true,
+        },
       }),
-      prisma.callMetric.groupBy({
-        by: ['sentiment'],
-        where: { startedAt: { gte: startDate, lt: endDate } },
-        _count: { _all: true },
+      prisma.callMetric.findMany({
+        where: { startedAt: { gte: prevStartDate, lt: prevEndDate } },
+        select: {
+          outcome: true,
+          sentiment: true,
+          endedReason: true,
+          transferredAt: true,
+          endedAt: true,
+          twilioTransferCallSid: true,
+          transferStatus: true,
+          postTransferDurationSec: true,
+        },
       }),
       prisma.callMetric.count({
         where: { inProgress: true },
-      }),
-      prisma.callMetric.count({
-        where: connectedTransferWhereCurrent,
-      }),
-      prisma.callMetric.count({
-        where: connectedTransferWherePrevious,
-      }),
-      prisma.callMetric.groupBy({
-        by: ['outcome'],
-        where: { startedAt: { gte: prevStartDate, lt: prevEndDate } },
-        _count: { _all: true },
       }),
     ]);
     
@@ -474,10 +458,42 @@ router.get('/summary', async (req, res) => {
         }, 0) / transferCalls.length
       : 0;
     
-    // Aggregate outcomes
-    const outcomeMap = Object.fromEntries(outcomes.map((o: any) => [o.outcome, o._count._all])) as Record<string, number>;
-    const prevOutcomeMap = Object.fromEntries(prevOutcomes.map((o: any) => [o.outcome, o._count._all])) as Record<string, number>;
-    const sentimentMap = Object.fromEntries(sentiments.map((s: any) => [s.sentiment, s._count._all])) as Record<string, number>;
+    const outcomeMap: Record<string, number> = {};
+    const prevOutcomeMap: Record<string, number> = {};
+    const sentimentMap: Record<string, number> = {};
+    let connectedTransfers = 0;
+    let prevConnectedTransfers = 0;
+
+    for (const row of currentRows) {
+      const normalized = normalizeMetricClassification({
+        outcome: row.outcome,
+        sentiment: row.sentiment,
+        endedReason: row.endedReason,
+        transferredAt: row.transferredAt,
+        endedAt: row.endedAt,
+        twilioTransferCallSid: row.twilioTransferCallSid,
+        transferStatus: row.transferStatus,
+        postTransferDurationSec: row.postTransferDurationSec,
+      });
+      outcomeMap[normalized.outcome] = (outcomeMap[normalized.outcome] || 0) + 1;
+      sentimentMap[normalized.sentiment] = (sentimentMap[normalized.sentiment] || 0) + 1;
+      if (normalized.hasConnectedTransfer) connectedTransfers++;
+    }
+
+    for (const row of previousRows) {
+      const normalized = normalizeMetricClassification({
+        outcome: row.outcome,
+        sentiment: row.sentiment,
+        endedReason: row.endedReason,
+        transferredAt: row.transferredAt,
+        endedAt: row.endedAt,
+        twilioTransferCallSid: row.twilioTransferCallSid,
+        transferStatus: row.transferStatus,
+        postTransferDurationSec: row.postTransferDurationSec,
+      });
+      prevOutcomeMap[normalized.outcome] = (prevOutcomeMap[normalized.outcome] || 0) + 1;
+      if (normalized.hasConnectedTransfer) prevConnectedTransfers++;
+    }
     
     const totalCalls = current._count._all;
     const transfersInitiated = outcomeMap['transfer_success'] || 0;
@@ -536,7 +552,17 @@ router.get('/daily', async (req, res) => {
     
     const calls = await prisma.callMetric.findMany({
       where: { startedAt: { gte: startDate } },
-      select: { startedAt: true, outcome: true },
+      select: {
+        startedAt: true,
+        outcome: true,
+        sentiment: true,
+        endedReason: true,
+        transferredAt: true,
+        endedAt: true,
+        twilioTransferCallSid: true,
+        transferStatus: true,
+        postTransferDurationSec: true,
+      },
     });
     
     // Group by day
@@ -547,10 +573,20 @@ router.get('/daily', async (req, res) => {
       
       const dateKey = getDateKeyInTimezone(call.startedAt);
       const entry = dayMap.get(dateKey) || { calls: 0, transfers: 0, abandoned: 0 };
+      const normalized = normalizeMetricClassification({
+        outcome: call.outcome,
+        sentiment: call.sentiment,
+        endedReason: call.endedReason,
+        transferredAt: call.transferredAt,
+        endedAt: call.endedAt,
+        twilioTransferCallSid: call.twilioTransferCallSid,
+        transferStatus: call.transferStatus,
+        postTransferDurationSec: call.postTransferDurationSec,
+      });
       
       entry.calls++;
-      if (call.outcome === 'transfer_success') entry.transfers++;
-      if (call.outcome === 'abandoned') entry.abandoned++;
+      if (normalized.outcome === 'transfer_success') entry.transfers++;
+      if (normalized.outcome === 'abandoned') entry.abandoned++;
       
       dayMap.set(dateKey, entry);
     }
@@ -624,6 +660,7 @@ router.get('/recent', async (req, res) => {
         twilioParentCallSid: true,
         twilioTransferCallSid: true,
         transferStatus: true,
+        endedReason: true,
         outcome: true,
         sentiment: true,
         durationSec: true,
@@ -800,6 +837,16 @@ router.get('/recent', async (req, res) => {
         transcript: null, // Not fetched in recent for performance
         twilioTransferCallSid: c.twilioTransferCallSid,
       });
+      const normalized = normalizeMetricClassification({
+        outcome: c.outcome,
+        sentiment: c.sentiment,
+        endedReason: c.endedReason,
+        transferredAt: c.transferredAt,
+        endedAt: c.endedAt,
+        twilioTransferCallSid: c.twilioTransferCallSid,
+        transferStatus: c.transferStatus,
+        postTransferDurationSec: c.postTransferDurationSec,
+      });
       return {
         callId: c.callId,
         phone: maskPhone(c.phoneNumber),
@@ -819,8 +866,8 @@ router.get('/recent', async (req, res) => {
         roundRobinFailedAgents: roundRobinEnabled ? uniqueFailedAgents : [],
         twilioTransferCallSid: c.twilioTransferCallSid,
         transferStatus: c.transferStatus,
-        outcome: c.outcome,
-        sentiment: c.sentiment,
+        outcome: normalized.outcome,
+        sentiment: normalized.sentiment,
         duration,
         durationSource: durationSource(c.durationSec, c.startedAt, c.endedAt, c.lastEventAt),
         startedAt: c.startedAt,
@@ -1029,6 +1076,16 @@ router.get('/calls/:callId', async (req, res) => {
       transcript: call.transcript,
       twilioTransferCallSid: call.twilioTransferCallSid,
     });
+    const normalized = normalizeMetricClassification({
+      outcome: call.outcome,
+      sentiment: call.sentiment,
+      endedReason: call.endedReason,
+      transferredAt: call.transferredAt,
+      endedAt: call.endedAt,
+      twilioTransferCallSid: call.twilioTransferCallSid,
+      transferStatus: call.transferStatus,
+      postTransferDurationSec: call.postTransferDurationSec,
+    });
 
     return res.json({
       callId: call.callId,
@@ -1064,8 +1121,8 @@ router.get('/calls/:callId', async (req, res) => {
       sellerTalkSource: sellerTalkSource(call.postTransferDurationSec, call.transferredAt, call.endedAt),
       postTransferDurationSec: call.postTransferDurationSec,
       endedReason: call.endedReason,
-      outcome: call.outcome,
-      sentiment: call.sentiment,
+      outcome: normalized.outcome,
+      sentiment: normalized.sentiment,
       transcript: call.transcript,
       transferTranscript: call.transferTranscript,
       fullTranscript: call.fullTranscript,
@@ -1524,6 +1581,56 @@ function sellerTalkSource(postTransferDurationSec: number | null, transferredAt:
   const fallback = diffSeconds(transferredAt, endedAt);
   if (fallback !== null && fallback > 0) return 'timestamp_fallback';
   return 'missing';
+}
+
+function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  const normalized = reason.toLowerCase();
+  return normalized.includes('forward') || normalized.includes('transfer');
+}
+
+function normalizeMetricClassification(input: {
+  outcome: string | null;
+  sentiment: string | null;
+  endedReason: string | null;
+  transferredAt: Date | null;
+  endedAt: Date | null;
+  twilioTransferCallSid: string | null;
+  transferStatus: string | null;
+  postTransferDurationSec: number | null;
+}) {
+  const transferStatus = (input.transferStatus || '').toLowerCase();
+  const timeAfterTransferSec = diffSeconds(input.transferredAt, input.endedAt) ?? 0;
+  const hasConnectedTransfer =
+    (input.postTransferDurationSec ?? 0) > 0 ||
+    CONNECTED_TRANSFER_STATUSES.has(transferStatus) ||
+    (!!input.transferredAt && timeAfterTransferSec > 0);
+  const transferAttempted =
+    hasConnectedTransfer ||
+    !!input.twilioTransferCallSid ||
+    !!input.transferredAt ||
+    !!input.transferStatus ||
+    looksLikeTransferEndedReason(input.endedReason) ||
+    input.outcome === 'transfer_success';
+
+  let outcome = input.outcome ?? 'completed';
+  if (hasConnectedTransfer) {
+    outcome = 'transfer_success';
+  } else if (outcome === 'transfer_success' && !transferAttempted) {
+    outcome = 'completed';
+  }
+
+  let sentiment = input.sentiment ?? 'neutral';
+  if (outcome === 'transfer_success') sentiment = 'positive';
+  else if (outcome === 'abandoned' || outcome === 'failed') sentiment = 'negative';
+  else if (!sentiment || sentiment === 'negative') sentiment = 'neutral';
+
+  return {
+    outcome,
+    sentiment,
+    hasConnectedTransfer,
+    transferAttempted,
+  };
 }
 
 type DataSource = 'twilio' | 'vapi' | 'missing';
