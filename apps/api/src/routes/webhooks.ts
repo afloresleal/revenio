@@ -268,6 +268,15 @@ function asFiniteInt(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function looksLikeInactiveCallError(body: string): boolean {
   const normalized = body.toLowerCase();
   return (
@@ -368,7 +377,9 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   callbackQs.set('vapi_call_id', params.callId);
   if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
   const callbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrl}" amdStatusCallbackMethod="POST">${nextAgent.transferNumber}</Number></Dial></Response>`;
+  const callbackUrlXml = escapeXml(callbackUrl);
+  const nextTransferNumberXml = escapeXml(nextAgent.transferNumber);
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
@@ -512,7 +523,9 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   callbackQs.set('vapi_call_id', params.callId);
   if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
   const callbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrl}" amdStatusCallbackMethod="POST">${currentAgent.transferNumber}</Number></Dial></Response>`;
+  const callbackUrlXml = escapeXml(callbackUrl);
+  const currentTransferNumberXml = escapeXml(currentAgent.transferNumber);
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {

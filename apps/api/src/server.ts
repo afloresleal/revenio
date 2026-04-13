@@ -918,6 +918,15 @@ function sendPlainStatusResponse(
   return res.status(statusCode).send(body);
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 async function handleTwilioStatusWebhook(req: express.Request, res: express.Response) {
   console.log("twilio_status_webhook_hit", {
     path: req.path,
@@ -1201,7 +1210,9 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           if (context.leadId) callbackQs.set("lead_id", context.leadId);
           const callbackPath = `/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
           const callbackUrl = `${PUBLIC_API_BASE_URL}${callbackPath}`;
-          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrl}" method="POST"><Number statusCallback="${callbackUrl}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrl}" amdStatusCallbackMethod="POST">${twimlFailoverResult.nextTransferNumber}</Number></Dial></Response>`;
+          const callbackUrlXml = escapeXml(callbackUrl);
+          const nextTransferNumberXml = escapeXml(twimlFailoverResult.nextTransferNumber);
+          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
           return sendTwimlResponse(res, xml, {
             branch: "dial-callback-failover-next-agent",
             callSid: context.callSid,
