@@ -377,9 +377,11 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   callbackQs.set('vapi_call_id', params.callId);
   if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
   const callbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
+  const recordingCallbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/recording-status?${callbackQs.toString()}`;
   const callbackUrlXml = escapeXml(callbackUrl);
+  const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const nextTransferNumberXml = escapeXml(nextAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
@@ -414,6 +416,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
     parentSid,
     nextTransferNumber: nextAgent.transferNumber,
     callbackUrl,
+    recordingCallbackUrl,
   });
 
   await prisma.callAttempt.update({
@@ -523,9 +526,11 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   callbackQs.set('vapi_call_id', params.callId);
   if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
   const callbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
+  const recordingCallbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/recording-status?${callbackQs.toString()}`;
   const callbackUrlXml = escapeXml(callbackUrl);
+  const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const currentTransferNumberXml = escapeXml(currentAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
@@ -571,6 +576,7 @@ async function triggerInitialTwilioTransferFromCallId(params: {
     transferNumber: currentAgent.transferNumber,
     selectedAgentIndex: currentIndex,
     callbackUrl,
+    recordingCallbackUrl,
   });
 
   return {
