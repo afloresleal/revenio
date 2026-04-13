@@ -40,13 +40,13 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
 
 | Campo | Comportamiento |
 |-------|----------------|
-| `lead_name` presente | `firstMessage: "Hola, ¿hablo con {{name}}?"` (VAPI default) |
-| `lead_name` vacío/null | Saludo dinámico por hora + override completo |
+| `lead_name` presente | Se envía `variableValues.name` para interpolación en VAPI |
+| `lead_name` vacío/null | No se inyecta prompt/mensaje; VAPI usa su configuración del assistant |
 
-### Saludos Dinámicos (sin nombre)
-- **7am-12pm:** "Hola, buenos días."
-- **12pm-6pm:** "Hola, buenas tardes."
-- **6pm-10pm:** "Hola, linda noche."
+### Fuente de verdad del prompt (VAPI)
+- El backend **no** debe inyectar `firstMessage`, `model` ni `tools` para asistentes VAPI.
+- `assistantOverrides` se limita a `metadata` y, cuando aplica, `variableValues`.
+- Esto evita comportamientos inconsistentes entre deploys y mantiene el script 100% en VAPI dashboard.
 
 ### Response (200)
 ```json
@@ -55,7 +55,6 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
   "attempt_id": "uuid",
   "lead_id": "uuid",
   "flow": "with_name" | "without_name",
-  "greeting": "Hola, ¿hablo con Marina?" | "Hola, buenos días.",
   "selected_agent": {
     "assistant_id": "assistant-id", // agente VAPI fijo
     "human_agent_name": "Ana",
@@ -223,6 +222,10 @@ Notas críticas:
 - Cuando Twilio invoca este callback como `Dial action`, el endpoint debe responder TwiML válido.
 - Responder texto plano/JSON puede causar el audio: `"we are sorry an application error has occurred, goodbye"`.
 - `transfer_success` no debe inferirse solo por `assistant-forwarded-call`; debe requerir evidencia de conexión humana.
+- RR robusto:
+  - si falta `DialCallStatus`, backend aplica fallback desde `status-update`.
+  - `status-update: ended` también puede disparar failover.
+  - se aplica protección anti-duplicado para evitar doble escalamiento por eventos fuera de orden.
 
 ---
 

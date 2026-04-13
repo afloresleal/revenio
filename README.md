@@ -235,6 +235,9 @@ Recordings proxy:
 - `BRENDA_TRANSFER_TRIGGER_STATUS=stopped` recomendado para auto-transfer estable.
 - En callbacks de Twilio `Dial action` (`/webhooks/twilio/transfer-status`), la respuesta debe ser TwiML válido.
   - Si se responde texto plano, Twilio puede cortar con mensaje de error de aplicación.
+- RR debe escalar también en `status-update: ended` (no esperar solo `DialCallStatus`).
+- Si Twilio no envía `DialCallStatus`, usar fallback desde `status-update` para evitar llamadas trabadas.
+- Proteger contra doble failover por eventos fuera de orden (cooldown anti-duplicado).
 - `transfer_success` debe representar conexión humana real, no solo intento de transfer.
 - Runbook operativo: [docs/CALL-TRANSFER-HANDOFF-2026-04-08.md](docs/CALL-TRANSFER-HANDOFF-2026-04-08.md)
 - Setup Twilio detallado: [docs/TWILIO-TRANSFER-FAILOVER-SETUP.md](docs/TWILIO-TRANSFER-FAILOVER-SETUP.md)

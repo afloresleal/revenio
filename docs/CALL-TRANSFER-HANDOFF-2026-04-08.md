@@ -1,6 +1,6 @@
 # Call Transfer Handoff (Fuente de Verdad)
 
-> Última actualización: 2026-04-08  
+> Última actualización: 2026-04-13  
 > Objetivo: evitar regresiones de flujo de transferencia y cambios innecesarios en nuevos chats.
 
 ## Resumen Ejecutivo
@@ -20,6 +20,9 @@
 5. Backend detecta estado y decide:
    - `human-answered`: se registra agente respondido.
    - `no-answer | busy | failed | voicemail`: failover inmediato al siguiente.
+   - `status-update: ended` del parent: también dispara failover inmediato (si aplica).
+   - si no llega `DialCallStatus` de Twilio, se usa fallback desde `status-update` para no trabar RR.
+   - protección anti-duplicado evita doble failover por eventos fuera de orden.
 6. Métricas agregan pasos de failover y razones por agente.
 7. Dashboard consume esos campos y muestra nombres/motivos.
 
@@ -35,6 +38,8 @@
    - Respuesta segura: `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`.
 6. No marcar `transfer_success` solo porque existe transfer intent o `assistant-forwarded-call`.
    - Confirmar con evidencia de conexión humana (`transferStatus` conectado y/o duración post-transfer confiable).
+7. Si faltan callbacks Twilio en producción, RR debe seguir avanzando vía fallback de `status-update`.
+   - No depender de un solo tipo de callback para escalar de agente.
 
 ## Configuración Recomendada
 
@@ -64,6 +69,7 @@ Debe incluir:
 - `roundRobinFailedAgents[].result` poblado (`no-answer`, `busy`, `failed`, `voicemail`).
 - `roundRobinAnsweredAgentName` poblado cuando hubo conexión humana real.
 - `roundRobinAgentsTriedCount` consistente con failovers.
+- `roundRobinFirstAgentResult` visible (`voicemail`, `no-answer`, `busy`, `failed`, `human-answered`).
 
 ## Síntomas Conocidos y Diagnóstico Rápido
 1. "El agente confirma transferencia y no debería":
@@ -72,8 +78,10 @@ Debe incluir:
 2. "Se escucha error de app después de tonos":
    - validar que `transfer-destination-request` no esté forzando ruta Twilio-first inicial
    - validar que `/webhooks/twilio/transfer-status` responda TwiML en callbacks `DialCallStatus`
+   - validar que `status-update: ended` esté disparando failover y no se esté saltando
 3. "No hay child calls / no recording":
    - revisar callbacks Twilio y que `statusCallback` llegue a `/webhooks/twilio/transfer-status`
+   - confirmar logs de fallback: `RR fallback failover from status-update (missing DialCallStatus)`
 4. "Dashboard muestra transfer conectada pero agente nunca contestó":
    - revisar que `transfer_success` no se derive solo de `endedReason`
    - validar `transferStatus`, `postTransferDurationSec` y evidencia de leg conectada

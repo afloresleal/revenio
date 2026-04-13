@@ -7,6 +7,7 @@ Habilitar callbacks de Twilio en el **transfer leg** (llamada al agente humano) 
 - escalar inmediatamente en `busy/no-answer/failed/canceled`
 
 Sin estos callbacks, el backend queda en modo `vapi_only` y no hay failover real.
+Con fallback actual, si Twilio no manda `DialCallStatus`, RR escala desde `status-update` para no bloquearse.
 
 ## Contexto técnico (Revenio)
 - API base de webhooks: `https://<TU_API_PUBLICA>/webhooks/twilio/...`
@@ -55,6 +56,9 @@ Esperado en métricas/detalle:
 - `transferStatus` debe moverse (`ringing` y luego estado final o nuevo intento)
 - failover a siguiente agente dentro de ~5s
 - si todos fallan: estado interno `transfer-failover-exhausted`
+- si no llega callback Twilio, debe verse fallback en logs:
+  - `RR fallback failover from status-update (missing DialCallStatus)`
+- si llega `status-update: ended` antes de otros eventos, igual debe escalar y no quedarse trabado.
 
 Esperado en clasificación:
 - `transfer_success` solo con evidencia de conexión humana (status conectado y/o duración post-transfer confiable).
@@ -63,6 +67,10 @@ Esperado en clasificación:
 Esperado en detalle API (`GET /api/metrics/calls/:callId`):
 - `dataQuality.mode` deja de ser `vapi_only`
 - aparecen señales Twilio (`twilioParentCallSid`, `twilioTransferCallSid`, `transferStatus`)
+- aparecen campos de trazabilidad RR:
+  - `roundRobinFirstAgentResult`
+  - `roundRobinFirstAgentName`
+  - `roundRobinFirstAgentNumber`
 
 ## Señales de que sigue mal configurado
 Si aún ves:
