@@ -23,17 +23,6 @@ const TRANSFER_CONNECTED_STATUSES = new Set(['in-progress', 'answered', 'complet
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
-const recentStatusFailovers = new Map<string, number>();
-
-function hasRecentStatusFailover(callId: string): boolean {
-  const last = recentStatusFailovers.get(callId);
-  if (!last) return false;
-  return Date.now() - last < 45_000;
-}
-
-function markStatusFailover(callId: string) {
-  recentStatusFailovers.set(callId, Date.now());
-}
 
 function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
   if (!reason) return false;
@@ -1239,36 +1228,11 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     }
   }
   if (status === 'ended' && callId && twilioCallSid) {
-    if (hasRecentStatusFailover(callId)) {
-      console.log('Skipping ended-status failover (recent failover already triggered):', {
-        callId,
-        twilioCallSid,
-      });
-      return { ok: true, action: 'ended-status-failover-skipped-recent', callId };
-    }
-    try {
-      const failoverResult = await triggerRoundRobinFailoverFromCallId({
-        callId,
-        reason: 'child-ended-status-update',
-        currentChildCallSid: null,
-        parentCallSid: twilioCallSid ?? null,
-      });
-      console.log('Round robin failover from ended status-update (with parent sid):', {
-        callId,
-        twilioCallSid,
-        failoverResult,
-      });
-      if (asRecord(failoverResult)?.ok === true) {
-        markStatusFailover(callId);
-      }
-      return { ok: true, action: 'failover-from-ended-status', callId, failoverResult };
-    } catch (err) {
-      console.error('Round robin failover from ended status-update failed:', {
-        callId,
-        twilioCallSid,
-        error: String(err),
-      });
-    }
+    console.log('Deferring ended-status failover; waiting for child leg final status before RR escalation:', {
+      callId,
+      twilioCallSid,
+    });
+    return { ok: true, action: 'ended-status-deferred', callId };
   }
   
   // When call is forwarding, try to start recording on the child call
@@ -1312,14 +1276,6 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
     
     console.log('Could not start recording on child call:', { callId, error });
     if ((error === 'no_in_progress_child_calls' || error === 'child_calls_still_pending') && callId) {
-      if (hasRecentStatusFailover(callId)) {
-        console.log('Skipping RR fallback failover from status-update (recent ended-status failover):', {
-          callId,
-          twilioCallSid,
-          error,
-        });
-        return { ok: true, action: 'recording-failed', callId, error };
-      }
       try {
         const failoverResult = await triggerRoundRobinFailoverFromCallId({
           callId,
@@ -1333,9 +1289,6 @@ async function processStatusUpdate(body: unknown): Promise<HandlerResult | null>
           error,
           failoverResult,
         });
-        if (asRecord(failoverResult)?.ok === true) {
-          markStatusFailover(callId);
-        }
         return { ok: true, action: 'recording-failed-failover', callId, error, failoverResult };
       } catch (err) {
         console.error('RR fallback failover from status-update failed:', {
