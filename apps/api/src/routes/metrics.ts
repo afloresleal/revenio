@@ -15,6 +15,8 @@ const DASHBOARD_TIMEZONE = 'America/Mexico_City';
 const DEFAULT_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_LIMIT ?? 100);
 const MAX_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_MAX_LIMIT ?? 500);
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
 const CONNECTED_TRANSFER_STATUSES = new Set(['in-progress', 'answered', 'completed']);
 
 type TzDateParts = {
@@ -98,6 +100,94 @@ function asNumber(value: unknown): number | undefined {
 
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function twilioAuthHeader(): string {
+  return `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`;
+}
+
+function canUseTwilioSync(): boolean {
+  return !!TWILIO_ACCOUNT_SID && !!TWILIO_AUTH_TOKEN;
+}
+
+function normalizePhone(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const keepPlus = value.trim().startsWith('+');
+  const digits = value.replace(/[^\d]/g, '');
+  if (!digits) return null;
+  return keepPlus ? `+${digits}` : digits;
+}
+
+type TwilioCallItem = {
+  sid?: string;
+  to?: string;
+  status?: string;
+  duration?: string;
+};
+
+type TwilioRecordingItem = {
+  sid?: string;
+  status?: string;
+  duration?: string;
+};
+
+async function fetchTwilioChildCalls(parentCallSid: string): Promise<TwilioCallItem[]> {
+  if (!canUseTwilioSync() || !parentCallSid) return [];
+  const url = new URL(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`);
+  url.searchParams.set('ParentCallSid', parentCallSid);
+  url.searchParams.set('PageSize', '20');
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: twilioAuthHeader() },
+  });
+  if (!resp.ok) return [];
+  const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+  return Array.isArray(data.calls) ? (data.calls as TwilioCallItem[]) : [];
+}
+
+function pickTransferChild(
+  calls: TwilioCallItem[],
+  expectedTransferNumber: string | null | undefined
+): TwilioCallItem | null {
+  if (!calls.length) return null;
+  const normalizedExpected = normalizePhone(expectedTransferNumber);
+  const ranked = calls
+    .map((c) => {
+      const durationSec = Number.parseInt(c.duration ?? '0', 10);
+      const normalizedTo = normalizePhone(c.to);
+      const score =
+        (normalizedExpected && normalizedTo && normalizedExpected === normalizedTo ? 10 : 0) +
+        (Number.isFinite(durationSec) && durationSec > 0 ? 3 : 0) +
+        ((c.status ?? '').toLowerCase() === 'completed' ? 1 : 0);
+      return { c, score };
+    })
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.c ?? null;
+}
+
+async function fetchTwilioLatestRecording(callSid: string): Promise<{
+  recordingUrl: string | null;
+  recordingDurationSec: number | null;
+}> {
+  if (!canUseTwilioSync() || !callSid) {
+    return { recordingUrl: null, recordingDurationSec: null };
+  }
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(callSid)}/Recordings.json?PageSize=20`;
+  const resp = await fetch(url, {
+    headers: { Authorization: twilioAuthHeader() },
+  });
+  if (!resp.ok) return { recordingUrl: null, recordingDurationSec: null };
+  const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+  const recordings = (Array.isArray(data.recordings) ? data.recordings : []) as TwilioRecordingItem[];
+  if (!recordings.length) return { recordingUrl: null, recordingDurationSec: null };
+  const preferred =
+    recordings.find((r) => (r.status ?? '').toLowerCase() === 'completed') ??
+    recordings[0];
+  const sid = preferred?.sid ?? null;
+  const durationSec = Number.parseInt(preferred?.duration ?? '0', 10);
+  return {
+    recordingUrl: sid ? `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Recordings/${sid}.mp3` : null,
+    recordingDurationSec: Number.isFinite(durationSec) && durationSec > 0 ? durationSec : null,
+  };
 }
 
 function pickTimestamp(rec: Record<string, unknown>, keys: string[]): string | undefined {
@@ -1339,7 +1429,15 @@ router.post('/calls/:callId/sync', async (req, res) => {
         durationSec: true,
         endedReason: true,
         transcript: true,
+        transferTranscript: true,
+        fullTranscript: true,
         recordingUrl: true,
+        transferRecordingUrl: true,
+        transferRecordingDurationSec: true,
+        twilioParentCallSid: true,
+        twilioTransferCallSid: true,
+        transferStatus: true,
+        postTransferDurationSec: true,
         cost: true,
       },
     });
@@ -1385,6 +1483,46 @@ router.post('/calls/:callId/sync', async (req, res) => {
         where: { callId },
         data: patch,
       });
+    }
+
+    // Twilio enrichment for transfer leg recording/transcript, used by dashboard "sync this call".
+    if (canUseTwilioSync()) {
+      let nextChildCallSid = metric.twilioTransferCallSid;
+      if (!nextChildCallSid && metric.twilioParentCallSid) {
+        const childCalls = await fetchTwilioChildCalls(metric.twilioParentCallSid);
+        const picked = pickTransferChild(childCalls, metric.transferNumber ?? snapshot.transferNumber ?? null);
+        nextChildCallSid = asString(picked?.sid) ?? null;
+      }
+
+      if (nextChildCallSid) {
+        const rec = await fetchTwilioLatestRecording(nextChildCallSid);
+        if (rec.recordingUrl) {
+          const nextTransferTranscript =
+            metric.transferTranscript ||
+            (canTranscribeRecording()
+              ? (await transcribeRecordingFromUrl(rec.recordingUrl)).text
+              : null);
+          const nextFullTranscript = composeFullTranscript(
+            metric.transcript ?? snapshot.transcript ?? null,
+            nextTransferTranscript
+          );
+
+          await prisma.callMetric.update({
+            where: { callId },
+            data: {
+              twilioTransferCallSid: nextChildCallSid,
+              transferRecordingUrl: rec.recordingUrl,
+              transferRecordingDurationSec: rec.recordingDurationSec ?? metric.transferRecordingDurationSec ?? undefined,
+              postTransferDurationSec: rec.recordingDurationSec ?? metric.postTransferDurationSec ?? undefined,
+              transferTranscript: nextTransferTranscript ?? undefined,
+              fullTranscript: nextFullTranscript ?? undefined,
+              transferStatus: metric.transferStatus ?? 'completed',
+              lastEventType: 'manual-sync-twilio-transfer-recording',
+              lastEventAt: new Date(),
+            },
+          });
+        }
+      }
     }
 
     const updatedMetric = await prisma.callMetric.findUnique({
