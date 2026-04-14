@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
+import { canRunRoundRobinFailover } from '../lib/call-window.js';
 
 const router = Router();
 
@@ -309,6 +310,11 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   currentChildCallSid?: string | null;
   parentCallSid?: string | null;
 }) {
+  const rrWindow = canRunRoundRobinFailover();
+  if (!rrWindow.allowed) {
+    return { ok: false, reason: 'outside_business_hours' as const, policy: rrWindow };
+  }
+
   const attempt = await prisma.callAttempt.findFirst({
     where: { providerId: params.callId },
     orderBy: { createdAt: 'desc' },
@@ -488,6 +494,11 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   reason: string;
   parentCallSid?: string | null;
 }) {
+  const rrWindow = canRunRoundRobinFailover();
+  if (!rrWindow.allowed) {
+    return { ok: false, reason: 'outside_business_hours' as const, policy: rrWindow };
+  }
+
   const attempt = await prisma.callAttempt.findFirst({
     where: { providerId: params.callId },
     orderBy: { createdAt: 'desc' },

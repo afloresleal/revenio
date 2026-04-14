@@ -3,6 +3,13 @@ import express from "express";
 import cors from "cors";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
+import {
+  canRunRoundRobinFailover,
+  canStartOutboundCall,
+  getCallWindowSettings,
+  resetCallWindowSettings,
+  updateCallWindowSettings,
+} from "./lib/call-window.js";
 
 // Import route modules
 import metricsRouter from "./routes/metrics.js";
@@ -565,6 +572,15 @@ async function executeFailoverToNextAgent(params: {
   currentChildCallSid?: string | null;
   reason: AgentFailoverReason;
 }) {
+  const rrWindow = canRunRoundRobinFailover();
+  if (!rrWindow.allowed) {
+    return {
+      ok: false,
+      reason: "outside_business_hours" as const,
+      policy: rrWindow,
+    };
+  }
+
   const attempt = await prisma.callAttempt.findUnique({
     where: { id: params.attemptId },
     select: {
@@ -711,6 +727,15 @@ async function selectNextRoundRobinAgent(params: {
   currentChildCallSid?: string | null;
   reason: AgentFailoverReason;
 }) {
+  const rrWindow = canRunRoundRobinFailover();
+  if (!rrWindow.allowed) {
+    return {
+      ok: false,
+      reason: "outside_business_hours" as const,
+      policy: rrWindow,
+    };
+  }
+
   const attempt = await prisma.callAttempt.findUnique({
     where: { id: params.attemptId },
     select: {
@@ -1553,19 +1578,6 @@ function getLanguageForAssistant(assistantId: string): 'es' | 'en' {
 
 // ============ BUSINESS HOURS HELPERS ============
 
-/** Get current hour in CST (America/Mexico_City) */
-function getCSTHour(): number {
-  const now = new Date();
-  const cstTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
-  return cstTime.getHours();
-}
-
-/** Check if current time is within business hours (7am - 10pm CST) */
-function isWithinBusinessHours(): boolean {
-  const hour = getCSTHour();
-  return hour >= 7 && hour < 22; // 7:00 AM - 9:59 PM
-}
-
 const callSchema = z.object({
   lead_id: z.string().uuid(),
   to_number: z.string().min(6),
@@ -1711,6 +1723,15 @@ function buildAssistantOverrides(
 }
 
 app.post("/call/test/direct", async (req, res) => {
+  const callWindow = canStartOutboundCall();
+  if (!callWindow.allowed) {
+    return res.status(400).json({
+      error: "outside_business_hours",
+      message: "Llamadas fuera de horario habilitado",
+      call_window: callWindow,
+    });
+  }
+
   const parsed = callDirectSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
@@ -1950,12 +1971,12 @@ function getRoundRobinHumanAgentsFromRequest(
 
 app.post("/call/vapi", async (req, res) => {
   // 🚫 VALIDATE BUSINESS HOURS FIRST
-  if (!isWithinBusinessHours()) {
-    const hour = getCSTHour();
+  const callWindow = canStartOutboundCall();
+  if (!callWindow.allowed) {
     return res.status(400).json({
       error: 'outside_business_hours',
-      message: 'Llamadas solo permitidas de 7:00 AM a 10:00 PM CST',
-      current_hour_cst: hour
+      message: 'Llamadas fuera de horario habilitado',
+      call_window: callWindow,
     });
   }
 
@@ -2227,6 +2248,60 @@ app.get("/lab/history", async (req, res) => {
   });
 
   return res.json({ attempts, events });
+});
+
+const callWindowSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  timezone: z.string().min(1).max(80).optional(),
+  startHour: z.number().int().min(0).max(23).optional(),
+  endHour: z.number().int().min(0).max(23).optional(),
+  activeWeekdays: z.array(z.number().int().min(0).max(6)).optional(),
+  applyToRoundRobinFailover: z.boolean().optional(),
+  reset: z.boolean().optional(),
+});
+
+app.get("/lab/settings/call-window", (_req, res) => {
+  const settings = getCallWindowSettings();
+  const startEval = canStartOutboundCall();
+  const failoverEval = canRunRoundRobinFailover();
+  return res.json({
+    ok: true,
+    settings,
+    evaluation: {
+      startOutbound: startEval,
+      roundRobinFailover: failoverEval,
+    },
+  });
+});
+
+app.post("/lab/settings/call-window", async (req, res) => {
+  const parsed = callWindowSettingsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const data = parsed.data;
+  const settings = data.reset
+    ? resetCallWindowSettings()
+    : updateCallWindowSettings({
+        enabled: data.enabled,
+        timezone: data.timezone,
+        startHour: data.startHour,
+        endHour: data.endHour,
+        activeWeekdays: data.activeWeekdays,
+        applyToRoundRobinFailover: data.applyToRoundRobinFailover,
+      });
+
+  const startEval = canStartOutboundCall();
+  const failoverEval = canRunRoundRobinFailover();
+  return res.json({
+    ok: true,
+    settings,
+    evaluation: {
+      startOutbound: startEval,
+      roundRobinFailover: failoverEval,
+    },
+  });
 });
 
 app.post("/lab/sync-attempt/:id", async (req, res) => {

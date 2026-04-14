@@ -21,6 +21,12 @@ const fields = [
   "rr_agent_number_4",
   "rr_agent_name_5",
   "rr_agent_number_5",
+  "cw_timezone",
+  "cw_weekdays",
+  "cw_start_hour",
+  "cw_end_hour",
+  "cw_enabled",
+  "cw_apply_rr",
   "filter_status",
   "filter_lead",
   "filter_from",
@@ -60,6 +66,7 @@ if (!$('api_base').value) {
 }
 
 const out = $("out");
+const callWindowStatus = $("cw_status");
 const historyEl = $("history");
 const assistantSelect = $("assistant_select");
 const phoneSelect = $("phone_select");
@@ -233,6 +240,76 @@ function clearRoundRobinAgents() {
   }
 }
 
+function parseWeekdaysInput(raw) {
+  if (!raw || !String(raw).trim()) return [];
+  return String(raw)
+    .split(",")
+    .map((token) => Number.parseInt(token.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n >= 0 && n <= 6);
+}
+
+function applyCallWindowSettingsToForm(settings = {}) {
+  if ($("cw_timezone")) $("cw_timezone").value = settings.timezone ?? "";
+  if ($("cw_start_hour")) $("cw_start_hour").value = Number.isFinite(settings.startHour) ? String(settings.startHour) : "";
+  if ($("cw_end_hour")) $("cw_end_hour").value = Number.isFinite(settings.endHour) ? String(settings.endHour) : "";
+  if ($("cw_weekdays")) $("cw_weekdays").value = Array.isArray(settings.activeWeekdays) ? settings.activeWeekdays.join(",") : "";
+  if ($("cw_enabled")) $("cw_enabled").checked = !!settings.enabled;
+  if ($("cw_apply_rr")) $("cw_apply_rr").checked = !!settings.applyToRoundRobinFailover;
+}
+
+async function loadCallWindowSettings(showInOut = false) {
+  if (!callWindowStatus) return;
+  callWindowStatus.textContent = "Cargando configuración...";
+  const result = await get("/lab/settings/call-window");
+  if (result.status !== 200 || !result.data?.settings) {
+    callWindowStatus.textContent = `Error: ${result.status}`;
+    if (showInOut) out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
+  applyCallWindowSettingsToForm(result.data.settings);
+  callWindowStatus.textContent = JSON.stringify(result.data, null, 2);
+  if (showInOut) out.textContent = JSON.stringify(result, null, 2);
+}
+
+async function saveCallWindowSettings() {
+  if (!callWindowStatus) return;
+  callWindowStatus.textContent = "Guardando...";
+  const payload = {
+    enabled: $("cw_enabled")?.checked ?? true,
+    timezone: $("cw_timezone")?.value.trim() || undefined,
+    startHour: Number.parseInt($("cw_start_hour")?.value ?? "", 10),
+    endHour: Number.parseInt($("cw_end_hour")?.value ?? "", 10),
+    activeWeekdays: parseWeekdaysInput($("cw_weekdays")?.value),
+    applyToRoundRobinFailover: $("cw_apply_rr")?.checked ?? true,
+  };
+  if (!Number.isFinite(payload.startHour)) delete payload.startHour;
+  if (!Number.isFinite(payload.endHour)) delete payload.endHour;
+  if (!payload.activeWeekdays.length) delete payload.activeWeekdays;
+  const result = await post("/lab/settings/call-window", payload);
+  if (result.status !== 200 || !result.data?.settings) {
+    callWindowStatus.textContent = `Error: ${result.status}`;
+    out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
+  applyCallWindowSettingsToForm(result.data.settings);
+  callWindowStatus.textContent = JSON.stringify(result.data, null, 2);
+  out.textContent = JSON.stringify(result, null, 2);
+}
+
+async function resetCallWindowSettings() {
+  if (!callWindowStatus) return;
+  callWindowStatus.textContent = "Reseteando...";
+  const result = await post("/lab/settings/call-window", { reset: true });
+  if (result.status !== 200 || !result.data?.settings) {
+    callWindowStatus.textContent = `Error: ${result.status}`;
+    out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
+  applyCallWindowSettingsToForm(result.data.settings);
+  callWindowStatus.textContent = JSON.stringify(result.data, null, 2);
+  out.textContent = JSON.stringify(result, null, 2);
+}
+
 $("btn_validate").addEventListener("click", async () => {
   out.textContent = "Validando IDs...";
   const payload = {
@@ -355,6 +432,24 @@ if ($("btn_rr_clear")) {
   $("btn_rr_clear").addEventListener("click", () => {
     clearRoundRobinAgents();
     out.textContent = "Configuración de round robin limpiada.";
+  });
+}
+
+if ($("btn_cw_load")) {
+  $("btn_cw_load").addEventListener("click", async () => {
+    await loadCallWindowSettings(true);
+  });
+}
+
+if ($("btn_cw_save")) {
+  $("btn_cw_save").addEventListener("click", async () => {
+    await saveCallWindowSettings();
+  });
+}
+
+if ($("btn_cw_reset")) {
+  $("btn_cw_reset").addEventListener("click", async () => {
+    await resetCallWindowSettings();
   });
 }
 
@@ -669,3 +764,4 @@ async function loadHistory() {
 
 setActiveTab("ops");
 setupDatePickerBehavior();
+loadCallWindowSettings().catch(() => {});
