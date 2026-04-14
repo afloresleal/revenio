@@ -101,8 +101,10 @@ function setActiveTab(tabName) {
     button.classList.toggle("is-active", isActive);
   });
   const opsPanel = $("panel_ops");
+  const responsePanel = $("panel_response");
   const historyPanel = $("panel_history");
   if (opsPanel) opsPanel.classList.toggle("is-active", tabName === "ops");
+  if (responsePanel) responsePanel.classList.toggle("is-active", tabName === "response");
   if (historyPanel) historyPanel.classList.toggle("is-active", tabName === "history");
 
   if (tabName === "history" && !historyLoaded) {

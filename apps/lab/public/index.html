@@ -57,13 +57,15 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
       <nav class="inline-flex gap-2 p-1 rounded-xl border border-slate-800 bg-slate-900/60" aria-label="Vistas del Lab">
         <button id="tab_ops" class="tab-button is-active" data-tab-target="ops">Operación</button>
+        <button id="tab_response" class="tab-button" data-tab-target="response">Respuesta</button>
         <button id="tab_history" class="tab-button" data-tab-target="history">Histórico</button>
       </nav>
 
       <section id="panel_ops" class="tab-panel is-active space-y-4">
         <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
-          <h3 class="section-title">Conexión</h3>
-          <p class="section-help">Paso 1. Verifica conexión al API antes de operar.</p>
+          <h3 class="section-title">Configuración rápida</h3>
+          <p class="section-help">Todo en un solo bloque para ejecutar pruebas sin confusión.</p>
+          <p class="subsection-title" style="margin-top:1rem;">Conexión</p>
           <div class="grid grid-cols-1 gap-4">
             <div>
               <label class="field-label">API base</label>
@@ -74,11 +76,10 @@
               <button id="btn_load" class="ghost compact-btn">Ir a histórico</button>
             </div>
           </div>
-        </section>
 
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
-          <h3 class="section-title">Credenciales Vapi</h3>
-          <p class="section-help">Paso 2. Carga assistants y números desde Vapi; también puedes capturar IDs manualmente.</p>
+          <div class="subsection">
+            <p class="subsection-title">Credenciales Vapi</p>
+            <p class="section-help">Paso 2. Carga assistants y números desde Vapi; también puedes capturar IDs manualmente.</p>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="md:col-span-2">
               <label class="field-label">VAPI API Key (privada)</label>
@@ -123,11 +124,11 @@
               </div>
             </div>
           </div>
-        </section>
+          </div>
 
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
-          <h3 class="section-title">Lead</h3>
-          <p class="section-help">Paso 3. Define a quién llamar y ejecuta la prueba.</p>
+          <div class="subsection">
+            <p class="subsection-title">Lead</p>
+            <p class="section-help">Paso 3. Define a quién llamar y ejecuta la prueba.</p>
           <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
             <div>
               <label class="field-label">Número del lead (E.164)</label>
@@ -147,6 +148,46 @@
             </div>
             <div class="actions actions-row md:col-span-2 xl:col-span-4 justify-end button-group">
               <button id="btn_call" class="primary cta-btn">Crear lead + Llamar</button>
+            </div>
+          </div>
+
+          <div class="subsection">
+            <p class="subsection-title">Horario de llamadas (runtime)</p>
+            <p class="text-xs text-slate-500 mt-2">
+              Configuración en memoria del API (se mantiene hasta reinicio/deploy). Aplica a inicio de llamada y, opcionalmente, al failover de round robin.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+              <div>
+                <label class="field-label">Timezone (IANA)</label>
+                <input id="cw_timezone" class="field-input" placeholder="America/Mexico_City" />
+              </div>
+              <div>
+                <label class="field-label">Días activos (0=Dom ... 6=Sáb)</label>
+                <input id="cw_weekdays" class="field-input" placeholder="1,2,3,4,5,6" />
+              </div>
+              <div>
+                <label class="field-label">Hora inicio (0-23)</label>
+                <input id="cw_start_hour" type="number" min="0" max="23" class="field-input" placeholder="7" />
+              </div>
+              <div>
+                <label class="field-label">Hora fin (0-23)</label>
+                <input id="cw_end_hour" type="number" min="0" max="23" class="field-input" placeholder="22" />
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 mt-3 text-sm text-slate-300">
+              <label class="inline-flex items-center gap-2">
+                <input id="cw_enabled" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-800" />
+                Habilitar horario
+              </label>
+              <label class="inline-flex items-center gap-2">
+                <input id="cw_apply_rr" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-800" />
+                Aplicar también a failover RR
+              </label>
+            </div>
+            <div class="actions actions-row button-group mt-3">
+              <button id="btn_cw_load" class="ghost compact-btn compact-btn--sm" type="button">Cargar</button>
+              <button id="btn_cw_save" class="secondary compact-btn compact-btn--sm" type="button">Guardar</button>
+              <button id="btn_cw_reset" class="ghost compact-btn compact-btn--sm" type="button">Reset</button>
             </div>
           </div>
 
@@ -223,51 +264,16 @@
               </div>
             </div>
           </div>
-
-          <div class="subsection">
-            <p class="subsection-title">Horario de llamadas (runtime)</p>
-            <p class="text-xs text-slate-500 mt-2">
-              Configuración en memoria del API (se mantiene hasta reinicio/deploy). Aplica a inicio de llamada y, opcionalmente, al failover de round robin.
-            </p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              <div>
-                <label class="field-label">Timezone (IANA)</label>
-                <input id="cw_timezone" class="field-input" placeholder="America/Mexico_City" />
-              </div>
-              <div>
-                <label class="field-label">Días activos (0=Dom ... 6=Sáb)</label>
-                <input id="cw_weekdays" class="field-input" placeholder="1,2,3,4,5,6" />
-              </div>
-              <div>
-                <label class="field-label">Hora inicio (0-23)</label>
-                <input id="cw_start_hour" type="number" min="0" max="23" class="field-input" placeholder="7" />
-              </div>
-              <div>
-                <label class="field-label">Hora fin (0-23)</label>
-                <input id="cw_end_hour" type="number" min="0" max="23" class="field-input" placeholder="22" />
-              </div>
-            </div>
-            <div class="flex flex-wrap items-center gap-3 mt-3 text-sm text-slate-300">
-              <label class="inline-flex items-center gap-2">
-                <input id="cw_enabled" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-800" />
-                Habilitar horario
-              </label>
-              <label class="inline-flex items-center gap-2">
-                <input id="cw_apply_rr" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-800" />
-                Aplicar también a failover RR
-              </label>
-            </div>
-            <div class="actions actions-row button-group mt-3">
-              <button id="btn_cw_load" class="ghost compact-btn compact-btn--sm" type="button">Cargar</button>
-              <button id="btn_cw_save" class="secondary compact-btn compact-btn--sm" type="button">Guardar</button>
-              <button id="btn_cw_reset" class="ghost compact-btn compact-btn--sm" type="button">Reset</button>
-            </div>
-            <pre id="cw_status" class="mt-3">Sin cargar.</pre>
           </div>
         </section>
+      </section>
 
+      <section id="panel_response" class="tab-panel space-y-4">
         <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
           <h3 class="section-title">Respuesta</h3>
+          <p class="section-help">JSON de salida y mensajes de ejecución para soporte y validación.</p>
+          <p class="subsection-title" style="margin-top:1rem;">Estado horario</p>
+          <pre id="cw_status" class="mt-2">Sin cargar.</pre>
           <div class="actions mt-3">
             <button id="btn_retry_last" class="secondary compact-btn" style="display:none;">Reintentar última acción</button>
           </div>
