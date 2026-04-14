@@ -1496,11 +1496,17 @@ router.post('/calls/:callId/sync', async (req, res) => {
 
       if (nextChildCallSid) {
         const rec = await fetchTwilioLatestRecording(nextChildCallSid);
-        if (rec.recordingUrl) {
+        const recFromParent =
+          !rec.recordingUrl && metric.twilioParentCallSid
+            ? await fetchTwilioLatestRecording(metric.twilioParentCallSid)
+            : { recordingUrl: null, recordingDurationSec: null };
+        const effectiveRecordingUrl = rec.recordingUrl ?? recFromParent.recordingUrl;
+        const effectiveRecordingDurationSec = rec.recordingDurationSec ?? recFromParent.recordingDurationSec;
+        if (effectiveRecordingUrl) {
           const nextTransferTranscript =
             metric.transferTranscript ||
             (canTranscribeRecording()
-              ? (await transcribeRecordingFromUrl(rec.recordingUrl)).text
+              ? (await transcribeRecordingFromUrl(effectiveRecordingUrl)).text
               : null);
           const nextFullTranscript = composeFullTranscript(
             metric.transcript ?? snapshot.transcript ?? null,
@@ -1511,9 +1517,9 @@ router.post('/calls/:callId/sync', async (req, res) => {
             where: { callId },
             data: {
               twilioTransferCallSid: nextChildCallSid,
-              transferRecordingUrl: rec.recordingUrl,
-              transferRecordingDurationSec: rec.recordingDurationSec ?? metric.transferRecordingDurationSec ?? undefined,
-              postTransferDurationSec: rec.recordingDurationSec ?? metric.postTransferDurationSec ?? undefined,
+              transferRecordingUrl: effectiveRecordingUrl,
+              transferRecordingDurationSec: effectiveRecordingDurationSec ?? metric.transferRecordingDurationSec ?? undefined,
+              postTransferDurationSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? undefined,
               transferTranscript: nextTransferTranscript ?? undefined,
               fullTranscript: nextFullTranscript ?? undefined,
               transferStatus: metric.transferStatus ?? 'completed',

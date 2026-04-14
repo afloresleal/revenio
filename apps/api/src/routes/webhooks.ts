@@ -1670,26 +1670,39 @@ router.post('/twilio/recording-status', async (req, res) => {
   try {
     const body = req.body;
     const callSid = body.CallSid;
+    const parentCallSid = body.ParentCallSid;
     const recordingSid = body.RecordingSid;
     const recordingUrl = body.RecordingUrl;
     const recordingStatus = body.RecordingStatus;
     const recordingDuration = body.RecordingDuration;
+    const callIdFromQuery = asString(req.query?.vapi_call_id);
     
     console.log('Twilio recording-status callback:', {
       callSid,
+      parentCallSid,
       recordingSid,
       recordingStatus,
       recordingDuration,
       recordingUrl,
+      callIdFromQuery,
     });
     
     if (recordingStatus !== 'completed') {
       return res.status(200).send('OK');
     }
     
-    // Find the call metric by twilioTransferCallSid
+    // Recording callbacks can reference either child or parent leg.
+    // Try transfer sid, then parent sid, then explicit callId query.
     const metric = await prisma.callMetric.findFirst({
-      where: { twilioTransferCallSid: callSid },
+      where: {
+        OR: [
+          { twilioTransferCallSid: callSid },
+          { twilioParentCallSid: callSid },
+          ...(parentCallSid ? [{ twilioParentCallSid: parentCallSid }] : []),
+          ...(callIdFromQuery ? [{ callId: callIdFromQuery }] : []),
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
     });
     
     if (metric) {
@@ -1700,6 +1713,8 @@ router.post('/twilio/recording-status', async (req, res) => {
       await prisma.callMetric.update({
         where: { id: metric.id },
         data: {
+          // Keep transfer leg reference if known, but accept parent-leg recording callbacks.
+          twilioTransferCallSid: metric.twilioTransferCallSid ?? (callSid || undefined),
           transferRecordingUrl: fullRecordingUrl,
           transferRecordingDurationSec: Number.isFinite(durationSec) ? durationSec : null,
           postTransferDurationSec: Number.isFinite(durationSec) ? durationSec : metric.postTransferDurationSec,
@@ -1743,7 +1758,12 @@ router.post('/twilio/recording-status', async (req, res) => {
     } else {
       // Try to find by parent call SID (the child call may not be linked yet)
       const link = await prisma.twilioCallLink.findFirst({
-        where: { childCallSid: callSid },
+        where: {
+          OR: [
+            { childCallSid: callSid },
+            ...(parentCallSid ? [{ parentCallSid }] : []),
+          ],
+        },
       });
       
       if (link) {
