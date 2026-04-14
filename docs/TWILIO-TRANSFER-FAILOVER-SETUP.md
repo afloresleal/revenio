@@ -19,6 +19,12 @@ Con fallback actual, si Twilio no manda `DialCallStatus`, RR escala desde `statu
 - Ventana de espera de child call (`queued/ringing` antes de failover):
   - `TRANSFER_CHILD_CALL_MAX_WAIT_MS` (default: `9000`)
   - `TRANSFER_CHILD_CALL_POLL_INTERVAL_MS` (default: `1200`)
+  - `TRANSFER_CHILD_CALL_MAX_ATTEMPTS` (recomendado actual: `12`)
+
+## Base URL recomendada
+Para evitar callbacks apuntando a dominio incorrecto:
+- definir `PUBLIC_API_BASE_URL` (o `API_BASE_URL`) con el dominio público real de Railway.
+- fallback soportado por backend: `RAILWAY_PUBLIC_DOMAIN`.
 
 ## Tarea para clawdbot (Twilio Console/API)
 Configurar la llamada transferida (child leg) para enviar callbacks a Revenio.
@@ -39,10 +45,21 @@ Cuando Twilio pega al callback de `Dial` (`/webhooks/twilio/transfer-status`), e
 Si se responde inválido, Twilio puede reproducir:
 `"we are sorry an application error has occurred, goodbye"`
 
+#### XML escaping (crítico)
+Si `action`/`statusCallback` llevan query params, deben ir escapados en TwiML:
+- usar `&amp;` en lugar de `&` dentro de atributos XML.
+- esto evita XML inválido y el mensaje de error de aplicación de Twilio.
+
 ### 2) Recording callback (recomendado)
 - `RecordingStatusCallback`: `https://<TU_API_PUBLICA>/webhooks/twilio/transfer-recording`
 - `RecordingStatusCallbackMethod`: `POST`
-- habilitar grabación del child leg
+- habilitar grabación del transfer leg desde `<Dial>`:
+  - `record="record-from-answer-dual"`
+  - `recordingStatusCallback="https://<TU_API_PUBLICA>/webhooks/twilio/recording-status?..."`
+
+Nota importante:
+- Twilio puede reportar recording en `CallSid` de parent o de child leg.
+- backend debe resolver ambos casos al guardar `transferRecordingUrl`.
 
 ### 3) Transcription callback (opcional recomendado)
 - `TranscriptionCallback`: `https://<TU_API_PUBLICA>/webhooks/twilio/transfer-transcription`
@@ -71,6 +88,15 @@ Esperado en detalle API (`GET /api/metrics/calls/:callId`):
   - `roundRobinFirstAgentResult`
   - `roundRobinFirstAgentName`
   - `roundRobinFirstAgentNumber`
+
+## Recuperación manual (dashboard)
+Si una llamada sí tuvo vendedor (`postTransferDurationSec > 0`) pero falta audio/transcript:
+- usar botón **Sincronizar solo esta llamada**
+- endpoint: `POST /api/metrics/calls/:callId/sync`
+- sincroniza desde Vapi + Twilio y ahora intenta:
+  - child leg recording
+  - fallback a parent leg recording
+  - transcripción (si `OPENAI_API_KEY` o whisper local habilitado)
 
 ## Señales de que sigue mal configurado
 Si aún ves:

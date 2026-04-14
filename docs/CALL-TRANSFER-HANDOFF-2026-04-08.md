@@ -1,6 +1,6 @@
 # Call Transfer Handoff (Fuente de Verdad)
 
-> Última actualización: 2026-04-13  
+> Última actualización: 2026-04-13 (noche)  
 > Objetivo: evitar regresiones de flujo de transferencia y cambios innecesarios en nuevos chats.
 
 ## Resumen Ejecutivo
@@ -22,6 +22,7 @@
    - `no-answer | busy | failed | voicemail`: failover inmediato al siguiente.
    - `status-update: ended` del parent: también dispara failover inmediato (si aplica).
    - si no llega `DialCallStatus` de Twilio, se usa fallback desde `status-update` para no trabar RR.
+   - si child leg queda `queued/ringing` durante toda la ventana, escalar por timeout (`child_calls_still_pending_timeout`).
    - protección anti-duplicado evita doble failover por eventos fuera de orden.
 6. Métricas agregan pasos de failover y razones por agente.
 7. Dashboard consume esos campos y muestra nombres/motivos.
@@ -36,19 +37,32 @@
 5. Cuando Twilio llama al endpoint configurado en `<Dial action=...>`, responder SIEMPRE TwiML válido.
    - Si se responde texto plano (`ok`) puede sonar: `"we are sorry an application error has occurred, goodbye"`.
    - Respuesta segura: `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`.
-6. No marcar `transfer_success` solo porque existe transfer intent o `assistant-forwarded-call`.
+6. Escapar URLs en atributos XML de TwiML (`action`, `statusCallback`, `amdStatusCallback`, etc.).
+   - Si `callbackUrl` lleva query params, `&` debe ir escapado como `&amp;`.
+7. En `<Dial>`, usar grabación nativa para el transfer leg:
+   - `record="record-from-answer-dual"`
+   - `recordingStatusCallback=".../webhooks/twilio/recording-status?..."`
+8. Recording callback de Twilio puede venir por parent o child leg.
+   - Resolver métrica por `twilioTransferCallSid` o `twilioParentCallSid` (y `ParentCallSid`/`vapi_call_id` si vienen).
+9. El botón `Sincronizar solo esta llamada` debe consultar Twilio (no solo Vapi):
+   - buscar child leg por parent sid
+   - fallback a recording de parent leg
+   - poblar `transferRecordingUrl`, duración y `transferTranscript` (si transcripción habilitada)
+10. No marcar `transfer_success` solo porque existe transfer intent o `assistant-forwarded-call`.
    - Confirmar con evidencia de conexión humana (`transferStatus` conectado y/o duración post-transfer confiable).
-7. Si faltan callbacks Twilio en producción, RR debe seguir avanzando vía fallback de `status-update`.
+11. Si faltan callbacks Twilio en producción, RR debe seguir avanzando vía fallback de `status-update`.
    - No depender de un solo tipo de callback para escalar de agente.
 
 ## Configuración Recomendada
 
 ### Variables (API)
 - `TRANSFER_FAILOVER_RING_TIMEOUT_SEC=15`
-- `TRANSFER_CHILD_CALL_MAX_ATTEMPTS=4`
+- `TRANSFER_CHILD_CALL_MAX_ATTEMPTS=12`
 - `TRANSFER_CHILD_CALL_POLL_INTERVAL_MS=1200`
 - `TRANSFER_CHILD_CALL_MAX_WAIT_MS` opcional (si se usa, no exceder lo necesario)
 - `BRENDA_TRANSFER_TRIGGER_STATUS=stopped`
+- `PUBLIC_API_BASE_URL` / `API_BASE_URL` recomendado
+  - fallback automático: `RAILWAY_PUBLIC_DOMAIN`
 
 ### Twilio `<Dial><Number>`
 Debe incluir:
@@ -56,6 +70,8 @@ Debe incluir:
 - `statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled"`
 - `machineDetection="DetectMessageEnd"`
 - `amdStatusCallback`
+- `record="record-from-answer-dual"`
+- `recordingStatusCallback`
 
 ## Mapeo de Motivos por Agente
 - `human-answered`: contestó humano.
@@ -85,6 +101,10 @@ Debe incluir:
 4. "Dashboard muestra transfer conectada pero agente nunca contestó":
    - revisar que `transfer_success` no se derive solo de `endedReason`
    - validar `transferStatus`, `postTransferDurationSec` y evidencia de leg conectada
+5. "Se conectó con humano pero no hay audio/transcript de transfer":
+   - revisar `twilio/recording-status` callback (parent o child sid)
+   - usar `POST /api/metrics/calls/:callId/sync` para enriquecimiento puntual desde Twilio
+   - validar que exista `transferRecordingUrl` en `CallMetric`
 
 ## Checklist Antes de Cerrar un Cambio
 - [ ] Build API OK (`npm -w apps/api run build`)
@@ -99,3 +119,9 @@ Debe incluir:
 ## Commits de Referencia
 - `935728d` Improve RR failover visibility, AMD voicemail handling, and faster child-call timeout
 - `ac7ebe1` Restore Brenda auto-transfer and force Vapi destination flow
+- `1eee20b` Fix(vapi): backend deja de sobreescribir prompt/firstMessage/model/tools
+- `41e282b` Fix(twiml): escapar callback URLs en atributos XML de `<Dial>`
+- `32f02df` Fix(twilio): grabar transfer leg desde `<Dial>` con `recordingStatusCallback`
+- `d5949a3` Fix(metrics): normalizar outcome/sentiment con señales Twilio
+- `4acc8a5` Fix(metrics-sync): sync de llamada también enriquece transfer recording/transcript desde Twilio
+- `381192b` Fix(twilio-recording): resolver recordings por parent o child leg

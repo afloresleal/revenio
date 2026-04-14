@@ -19,10 +19,9 @@ Incluye:
 5. Lab y Dashboard consultan la API (`/lab/*` y `/api/metrics/*`).
 
 ### Voice agents (multi-idioma)
-El backend soporta asistentes en ES/EN y ajusta:
-- greeting inicial
-- mensaje de transfer
-- prompt de sistema para el flujo sin nombre
+El backend soporta asistentes en ES/EN y respeta configuración de Vapi como fuente de verdad:
+- prompt y first message se configuran en Vapi
+- backend solo envía `assistantOverrides.variableValues` (ej. `name`) + metadata
 
 Referencia: [docs/VAPI-CONFIG.md](docs/VAPI-CONFIG.md)
 
@@ -122,6 +121,10 @@ METRICS_BACKFILL_MAX_LIMIT=500
 
 # Enlaces webhook generados por API
 WEBHOOK_BASE_URL=https://tu-api-publica
+PUBLIC_API_BASE_URL=https://tu-api-publica
+API_BASE_URL=https://tu-api-publica
+# En Railway, si no defines PUBLIC/API_BASE_URL, se usa:
+# RAILWAY_PUBLIC_DOMAIN
 ```
 
 ### Migraciones Prisma
@@ -238,9 +241,38 @@ Recordings proxy:
 - RR debe escalar también en `status-update: ended` (no esperar solo `DialCallStatus`).
 - Si Twilio no envía `DialCallStatus`, usar fallback desde `status-update` para evitar llamadas trabadas.
 - Proteger contra doble failover por eventos fuera de orden (cooldown anti-duplicado).
+- Si el transfer leg queda `ringing/queued` toda la ventana de espera, escalar por timeout (`child_calls_still_pending_timeout`).
+- Escapar XML en URLs de TwiML (`&` -> `&amp;`) para evitar audio Twilio "application error".
+- En `<Dial>`, habilitar grabación nativa (`record="record-from-answer-dual"` + `recordingStatusCallback`).
 - `transfer_success` debe representar conexión humana real, no solo intento de transfer.
 - Runbook operativo: [docs/CALL-TRANSFER-HANDOFF-2026-04-08.md](docs/CALL-TRANSFER-HANDOFF-2026-04-08.md)
 - Setup Twilio detallado: [docs/TWILIO-TRANSFER-FAILOVER-SETUP.md](docs/TWILIO-TRANSFER-FAILOVER-SETUP.md)
+
+---
+
+## 9) Contexto rápido (para retomar en nuevo chat)
+
+Estado operativo al cierre (2026-04-13):
+- Brenda auto-transfiere en `speech-update` (`assistantId` fijo de Brenda, sin depender de `turn`).
+- Backend no sobreescribe prompt/firstMessage/model/tools de Vapi (Vapi manda el guion).
+- Round robin secuencial activo (1 -> 2 -> 3), con failover por:
+  - `busy/no-answer/failed/voicemail`
+  - `status-update` sin `DialCallStatus` (fallback)
+  - timeout de pending (`queued/ringing`) al agotar ventana.
+- TwiML usa callback URLs escapadas en XML y `recordingStatusCallback` en `<Dial>`.
+- Métricas normalizan outcome/sentiment con señales reales de Twilio:
+  - evita mostrar `abandoned/negative` cuando hubo conexión humana.
+- Botón `Sincronizar solo esta llamada` ahora enriquece desde Twilio (child y parent leg) para recuperar recording/transcript faltante.
+
+Checklist corto cuando algo falle:
+1. Revisar logs por `twilio_status_webhook_hit` y `twilio_transfer_status_response`.
+2. Verificar `callbackUrl` y `recordingCallbackUrl` en logs (dominio correcto de Railway).
+3. Confirmar en detalle:
+   - `twilioParentCallSid`
+   - `twilioTransferCallSid`
+   - `transferStatus`
+   - `postTransferDurationSec`
+4. Si falta audio humano, usar `Sincronizar solo esta llamada` y reabrir detalle.
 
 ---
 
