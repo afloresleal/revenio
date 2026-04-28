@@ -566,6 +566,28 @@ function extractSelectedTransferNumberFromResultJson(resultJson: unknown): strin
   );
 }
 
+function extractFallbackTransferNumberFromResultJson(resultJson: unknown): string | null {
+  if (!resultJson || typeof resultJson !== "object") return null;
+  const root = resultJson as Record<string, unknown>;
+  const rr = root.roundRobin && typeof root.roundRobin === "object"
+    ? (root.roundRobin as Record<string, unknown>)
+    : null;
+  return (
+    asNonEmptyString(root.fallbackTransferNumber) ??
+    asNonEmptyString(root.fallback_transfer_number) ??
+    asNonEmptyString(rr?.fallbackTransferNumber) ??
+    asNonEmptyString(rr?.fallback_transfer_number) ??
+    null
+  );
+}
+
+function shouldUseFallbackTransfer(
+  rr: Record<string, unknown>,
+  fallbackTransferNumber: string | null,
+): fallbackTransferNumber is string {
+  return !!fallbackTransferNumber && rr.fallbackTransferAttempted !== true;
+}
+
 async function executeFailoverToNextAgent(params: {
   attemptId: string;
   leadId?: string | null;
@@ -602,12 +624,98 @@ async function executeFailoverToNextAgent(params: {
   if (!rr || rr.enabled !== true) return { ok: false, reason: "round_robin_disabled" as const };
 
   const agents = parseRoundRobinAgentsFromResultJson(result);
-  if (agents.length <= 1) return { ok: false, reason: "insufficient_pool" as const };
+  if (agents.length === 0) return { ok: false, reason: "insufficient_pool" as const };
 
   const currentIndex = asFiniteInteger(rr.selectedAgentIndex) ?? 0;
   const currentAgent = agents[currentIndex] ?? null;
   const nextIndex = currentIndex + 1;
   if (nextIndex >= agents.length) {
+    const fallbackTransferNumber = extractFallbackTransferNumberFromResultJson(result);
+    if (shouldUseFallbackTransfer(rr, fallbackTransferNumber)) {
+      const transferResp = await fetch(attempt.controlUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "transfer",
+          destination: { type: "number", number: fallbackTransferNumber },
+        }),
+      });
+      if (!transferResp.ok) {
+        return { ok: false, reason: "fallback_transfer_command_failed" as const, status: transferResp.status };
+      }
+
+      const nextRoundRobin = {
+        ...rr,
+        selectedAgentIndex: agents.length,
+        selectedAgentName: null,
+        selectedTransferNumber: fallbackTransferNumber,
+        fallbackTransferNumber,
+        fallbackTransferAttempted: true,
+        fallbackTransferAttemptedAt: new Date().toISOString(),
+        lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+        lastFailoverReason: params.reason,
+        lastEscalatedAt: new Date().toISOString(),
+        lastFailedAgentIndex: currentIndex,
+        lastFailedAgentName: currentAgent?.name ?? null,
+        lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+        lastFailedAgentResult: params.reason,
+        ...buildFirstAgentOutcomePatch({
+          rr,
+          currentIndex,
+          currentAgent,
+          result: params.reason,
+        }),
+      };
+
+      await prisma.callAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: "auto-transferred-fallback",
+          resultJson: {
+            ...result,
+            transferNumber: fallbackTransferNumber,
+            fallbackTransferNumber,
+            roundRobin: nextRoundRobin,
+          } as any,
+        },
+      });
+
+      if (params.leadId ?? attempt.leadId) {
+        await prisma.event.create({
+          data: {
+            leadId: (params.leadId ?? attempt.leadId)!,
+            type: "transfer_fallback",
+            detail: {
+              attemptId: attempt.id,
+              callId: attempt.providerId,
+              reason: params.reason,
+              currentChildCallSid: params.currentChildCallSid ?? null,
+              failedAgentIndex: currentIndex,
+              failedAgentName: currentAgent?.name ?? null,
+              failedAgentNumber: currentAgent?.transferNumber ?? null,
+              failedAgentResult: params.reason,
+              nextIndex: agents.length,
+              nextTransferNumber: fallbackTransferNumber,
+              nextAgentName: null,
+              fallback: true,
+            } as any,
+          },
+        });
+      }
+
+      return {
+        ok: true,
+        failedAgentIndex: currentIndex,
+        failedAgentName: currentAgent?.name ?? null,
+        failedAgentNumber: currentAgent?.transferNumber ?? null,
+        failedAgentResult: params.reason,
+        nextIndex: agents.length,
+        nextTransferNumber: fallbackTransferNumber,
+        nextAgentName: null,
+        fallback: true,
+      };
+    }
+
     await prisma.callAttempt.update({
       where: { id: attempt.id },
       data: {
@@ -756,12 +864,86 @@ async function selectNextRoundRobinAgent(params: {
   if (!rr || rr.enabled !== true) return { ok: false, reason: "round_robin_disabled" as const };
 
   const agents = parseRoundRobinAgentsFromResultJson(result);
-  if (agents.length <= 1) return { ok: false, reason: "insufficient_pool" as const };
+  if (agents.length === 0) return { ok: false, reason: "insufficient_pool" as const };
 
   const currentIndex = asFiniteInteger(rr.selectedAgentIndex) ?? 0;
   const currentAgent = agents[currentIndex] ?? null;
   const nextIndex = currentIndex + 1;
   if (nextIndex >= agents.length) {
+    const fallbackTransferNumber = extractFallbackTransferNumberFromResultJson(result);
+    if (shouldUseFallbackTransfer(rr, fallbackTransferNumber)) {
+      const nextRoundRobin = {
+        ...rr,
+        selectedAgentIndex: agents.length,
+        selectedAgentName: null,
+        selectedTransferNumber: fallbackTransferNumber,
+        fallbackTransferNumber,
+        fallbackTransferAttempted: true,
+        fallbackTransferAttemptedAt: new Date().toISOString(),
+        lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+        lastFailoverReason: params.reason,
+        lastEscalatedAt: new Date().toISOString(),
+        lastFailedAgentIndex: currentIndex,
+        lastFailedAgentName: currentAgent?.name ?? null,
+        lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+        lastFailedAgentResult: params.reason,
+        ...buildFirstAgentOutcomePatch({
+          rr,
+          currentIndex,
+          currentAgent,
+          result: params.reason,
+        }),
+      };
+
+      await prisma.callAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: "auto-transferred-fallback",
+          resultJson: {
+            ...result,
+            transferNumber: fallbackTransferNumber,
+            fallbackTransferNumber,
+            roundRobin: nextRoundRobin,
+          } as any,
+        },
+      });
+
+      if (params.leadId ?? attempt.leadId) {
+        await prisma.event.create({
+          data: {
+            leadId: (params.leadId ?? attempt.leadId)!,
+            type: "transfer_fallback",
+            detail: {
+              attemptId: attempt.id,
+              callId: attempt.providerId,
+              reason: params.reason,
+              currentChildCallSid: params.currentChildCallSid ?? null,
+              failedAgentIndex: currentIndex,
+              failedAgentName: currentAgent?.name ?? null,
+              failedAgentNumber: currentAgent?.transferNumber ?? null,
+              failedAgentResult: params.reason,
+              nextIndex: agents.length,
+              nextTransferNumber: fallbackTransferNumber,
+              nextAgentName: null,
+              fallback: true,
+            } as any,
+          },
+        });
+      }
+
+      return {
+        ok: true,
+        failedAgentIndex: currentIndex,
+        failedAgentName: currentAgent?.name ?? null,
+        failedAgentNumber: currentAgent?.transferNumber ?? null,
+        failedAgentResult: params.reason,
+        nextIndex: agents.length,
+        nextTransferNumber: fallbackTransferNumber,
+        nextAgentName: null,
+        fallback: true,
+      };
+    }
+
     await prisma.callAttempt.update({
       where: { id: attempt.id },
       data: {
@@ -1560,7 +1742,6 @@ const port = Number(process.env.PORT ?? 3000);
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? "";
 const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? "";
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID ?? "";
-const TRANSFER_NUMBER = process.env.TRANSFER_NUMBER ?? "+525527326714";
 
 // ============ MULTI-LANGUAGE SUPPORT ============
 
@@ -1753,14 +1934,21 @@ app.post("/call/test/direct", async (req, res) => {
   const resolvedVapiApiKey = vapi_api_key ?? VAPI_API_KEY;
   const resolvedVapiPhoneNumberId = vapi_phone_number_id ?? VAPI_PHONE_NUMBER_ID;
   const resolvedVapiAssistantId = vapi_assistant_id ?? VAPI_ASSISTANT_ID;
-  const defaultTransferNumber = transfer_number ?? TRANSFER_NUMBER;
+  const fallbackTransferNumber = transfer_number ?? null;
   const safeName = lead_name ? sanitizeName(lead_name) : null;
   const requestAgents = getRoundRobinHumanAgentsFromRequest(round_robin_agents);
-  const envAgents = getRoundRobinHumanAgentsFromEnv(defaultTransferNumber);
+  const envAgents = getRoundRobinHumanAgentsFromEnv();
   const configuredRoundRobinAgents = requestAgents.length ? requestAgents : envAgents;
   const roundRobinRequested = round_robin_enabled === true || requestAgents.length > 0;
   const shouldUseRoundRobin = roundRobinRequested && configuredRoundRobinAgents.length > 0;
-  let selectedTransferNumber = defaultTransferNumber;
+  if (!fallbackTransferNumber) {
+    return res.status(400).json({
+      error: "missing_transfer_number",
+      message: "Configura Número de transferencia (E.164) en Lab; no hay fallback por env ni hardcodeado.",
+      required: ["transfer_number"],
+    });
+  }
+  let selectedTransferNumber = fallbackTransferNumber;
   let selectedAgentName: string | null = null;
   let selectedAgentIndex: number | null = null;
   if (shouldUseRoundRobin) {
@@ -1850,10 +2038,11 @@ app.post("/call/test/direct", async (req, res) => {
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
+              fallbackTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
               agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
-          : { enabled: false },
+          : { enabled: false, fallbackTransferNumber },
       } as any,
     },
   });
@@ -1870,6 +2059,7 @@ app.post("/call/test/direct", async (req, res) => {
       controlUrl: data?.monitor?.controlUrl ?? null,
       resultJson: {
         transferNumber: selectedTransferNumber,
+        fallbackTransferNumber,
         roundRobin: shouldUseRoundRobin
           ? {
               enabled: true,
@@ -1877,10 +2067,11 @@ app.post("/call/test/direct", async (req, res) => {
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
+              fallbackTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
               agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
-          : { enabled: false },
+          : { enabled: false, fallbackTransferNumber },
       } as any,
     },
   });
@@ -1901,6 +2092,7 @@ app.post("/call/test/direct", async (req, res) => {
       assistant_id: resolvedVapiAssistantId,
       human_agent_name: selectedAgentName,
       transfer_number: selectedTransferNumber,
+      fallback_transfer_number: fallbackTransferNumber,
       round_robin_enabled: shouldUseRoundRobin,
       round_robin_index: selectedAgentIndex,
       round_robin_pool_size: shouldUseRoundRobin ? configuredRoundRobinAgents.length : 0,
@@ -1948,13 +2140,13 @@ function parseCsvList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function getRoundRobinHumanAgentsFromEnv(defaultTransferNumber: string): RoundRobinHumanAgent[] {
+function getRoundRobinHumanAgentsFromEnv(): RoundRobinHumanAgent[] {
   const transferNumbers = parseCsvList(process.env.HUMAN_AGENT_NUMBERS || process.env.TRANSFER_NUMBERS)
     .slice(0, MAX_ROUND_ROBIN_AGENTS);
   const names = parseCsvList(process.env.HUMAN_AGENT_NAMES);
   if (!transferNumbers.length) return [];
   return transferNumbers.map((transferNumber, index) => ({
-    transferNumber: transferNumber || defaultTransferNumber,
+    transferNumber,
     name: names[index],
   }));
 }
@@ -1986,10 +2178,10 @@ app.post("/call/vapi", async (req, res) => {
   }
 
   const { to_number, transfer_number, lead_name, lead_id, lead_source, round_robin_enabled, round_robin_agents } = parsed.data;
-  const defaultTransferNumber = transfer_number ?? TRANSFER_NUMBER;
+  const fallbackTransferNumber = transfer_number ?? null;
   const safeName = lead_name ? sanitizeName(lead_name) : null;
   const requestAgents = getRoundRobinHumanAgentsFromRequest(round_robin_agents);
-  const envAgents = getRoundRobinHumanAgentsFromEnv(defaultTransferNumber);
+  const envAgents = getRoundRobinHumanAgentsFromEnv();
   const configuredRoundRobinAgents = requestAgents.length ? requestAgents : envAgents;
   const roundRobinRequested = round_robin_enabled === true || requestAgents.length > 0;
   const shouldUseRoundRobin = roundRobinRequested && configuredRoundRobinAgents.length > 0;
@@ -2002,7 +2194,15 @@ app.post("/call/vapi", async (req, res) => {
     });
   }
 
-  let selectedTransferNumber = defaultTransferNumber;
+  if (!fallbackTransferNumber) {
+    return res.status(400).json({
+      error: "missing_transfer_number",
+      message: "Configura transfer_number; no hay fallback por env ni hardcodeado.",
+      required: ["transfer_number"],
+    });
+  }
+
+  let selectedTransferNumber = fallbackTransferNumber;
   let selectedAgentName: string | null = null;
   let selectedAgentIndex: number | null = null;
   if (shouldUseRoundRobin) {
@@ -2087,10 +2287,11 @@ app.post("/call/vapi", async (req, res) => {
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
+              fallbackTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
               agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
-          : { enabled: false },
+          : { enabled: false, fallbackTransferNumber },
       } as any,
     },
   });
@@ -2111,6 +2312,7 @@ app.post("/call/vapi", async (req, res) => {
       controlUrl: data?.monitor?.controlUrl ?? null,
       resultJson: {
         transferNumber: selectedTransferNumber,
+        fallbackTransferNumber,
         assistantId: selectedAssistantId,
         roundRobin: shouldUseRoundRobin
           ? {
@@ -2119,10 +2321,11 @@ app.post("/call/vapi", async (req, res) => {
               selectedAgentIndex,
               selectedAgentName,
               selectedTransferNumber,
+              fallbackTransferNumber,
               poolSize: configuredRoundRobinAgents.length,
               agents: buildRoundRobinAgentsSnapshot(configuredRoundRobinAgents),
             }
-          : { enabled: false },
+          : { enabled: false, fallbackTransferNumber },
       } as any,
     },
   });
@@ -2143,6 +2346,7 @@ app.post("/call/vapi", async (req, res) => {
       assistant_id: selectedAssistantId,
       human_agent_name: selectedAgentName,
       transfer_number: selectedTransferNumber,
+      fallback_transfer_number: fallbackTransferNumber,
       round_robin_enabled: shouldUseRoundRobin,
       round_robin_index: selectedAgentIndex,
       round_robin_pool_size: shouldUseRoundRobin ? configuredRoundRobinAgents.length : 0,

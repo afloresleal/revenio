@@ -19,7 +19,6 @@ const VAPI_API_KEY = process.env.VAPI_API_KEY;
 const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID;
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
 const API_KEY = process.env.API_KEY || 'revenio-test-key-2026';
-const TRANSFER_NUMBER = process.env.TRANSFER_NUMBER || '+525527326714';
 
 // === MENSAJES ===
 // SIN nombre - saludo dinámico por hora (CST = America/Mexico_City)
@@ -105,7 +104,7 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/call/vapi', authMiddleware, rateLimitMiddleware, async (req, res) => {
-  const { to_number, lead_name } = req.body;
+  const { to_number, lead_name, transfer_number } = req.body;
   
   if (!to_number) {
     return res.status(400).json({ error: 'to_number_required' });
@@ -119,6 +118,10 @@ app.post('/call/vapi', authMiddleware, rateLimitMiddleware, async (req, res) => 
   }
 
   const safeName = sanitizeName(lead_name);
+  const transferNumber = typeof transfer_number === 'string' ? transfer_number.trim() : '';
+  if (!safeName && !validatePhoneNumber(transferNumber)) {
+    return res.status(400).json({ error: 'invalid_transfer_number', hint: 'Format: +521234567890' });
+  }
 
   // Base payload
   const payload = {
@@ -152,7 +155,7 @@ app.post('/call/vapi', authMiddleware, rateLimitMiddleware, async (req, res) => 
           }],
           destinations: [{
             type: "number",
-            number: TRANSFER_NUMBER
+            number: transferNumber
           }]
         }]
       }

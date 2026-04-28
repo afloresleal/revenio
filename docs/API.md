@@ -34,7 +34,8 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
   - `HUMAN_AGENT_NUMBERS` (coma-separado)
   - `HUMAN_AGENT_NAMES` (coma-separado, opcional)
 - Cuando está activo, el API rota por índice y responde `selected_agent`.
-- Si `transfer_number` global viene en el request, se usa como fallback cuando no hay pool de round robin.
+- `transfer_number` del request es requerido: se usa como destino directo sin RR y como fallback final si se agotan los agentes del pool.
+- No hay número de fallback por ENV ni hardcodeado.
 
 ### Flujos
 

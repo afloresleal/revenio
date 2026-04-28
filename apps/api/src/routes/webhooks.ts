@@ -4,15 +4,15 @@
  */
 
 import { Router } from 'express';
+import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
-import { canRunRoundRobinFailover } from '../lib/call-window.js';
+import { canRunRoundRobinFailover, canStartOutboundCall } from '../lib/call-window.js';
 
 const router = Router();
 
-const DEFAULT_ADVISOR_NUMBER = process.env.TRANSFER_NUMBER ?? '+525527326714';
 const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
 const BRENDA_TRANSFER_TRIGGER_STATUS =
   (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'stopped').toLowerCase() === 'started'
@@ -22,8 +22,69 @@ const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOV
 const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
 const TRANSFER_CONNECTED_STATUSES = new Set(['in-progress', 'answered', 'completed']);
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID ?? '';
+const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
+const GHL_API_BASE_URL = normalizeBaseUrl(process.env.GHL_API_BASE_URL ?? 'https://services.leadconnectorhq.com');
+const GHL_API_VERSION = process.env.GHL_API_VERSION ?? '2021-07-28';
+const MAX_ROUND_ROBIN_AGENTS = 5;
+
+type GhlAgentConfig = {
+  name: string;
+  ghlUserId: string;
+  transferNumber: string;
+  priority: number;
+};
+
+type GhlPropertyConfig = {
+  key: string;
+  name: string;
+  locationId: string;
+  pipelineId?: string;
+  triggerStageId?: string;
+  connectedStageId?: string;
+  transcriptCustomFieldId?: string;
+  apiKey?: string;
+  agents: GhlAgentConfig[];
+};
+
+const KRP_GHL_PROPERTIES: GhlPropertyConfig[] = [
+  {
+    key: 'isla_blanca',
+    name: 'Isla Blanca',
+    locationId: 'V9kOoUXOU3jKjuvzg3sN',
+    pipelineId: process.env.GHL_ISLA_BLANCA_PIPELINE_ID,
+    triggerStageId: process.env.GHL_ISLA_BLANCA_TRIGGER_STAGE_ID,
+    connectedStageId: process.env.GHL_ISLA_BLANCA_CONNECTED_STAGE_ID,
+    transcriptCustomFieldId: process.env.GHL_ISLA_BLANCA_TRANSCRIPT_FIELD_ID,
+    apiKey: process.env.GHL_ISLA_BLANCA_API_KEY,
+    agents: [
+      { name: 'Alexis Ivanob Cruz Velazquez', ghlUserId: 'lehYCDR8fuQgONaFKO00', transferNumber: '+525532380202', priority: 1 },
+      { name: 'Maria Jose Hernandez', ghlUserId: 'Sxd59pSKaAcR1AAVl9MC', transferNumber: '+529984808749', priority: 2 },
+      { name: 'Monica Perez', ghlUserId: 'p2lGezwhgKL6DldEPUsQ', transferNumber: '+529981475316', priority: 3 },
+    ],
+  },
+  {
+    key: 'nikki_ocean',
+    name: 'Nikki Ocean',
+    locationId: 'ftdXjrhF7nXY6EWVpWN1',
+    pipelineId: process.env.GHL_NIKKI_OCEAN_PIPELINE_ID,
+    triggerStageId: process.env.GHL_NIKKI_OCEAN_TRIGGER_STAGE_ID,
+    connectedStageId: process.env.GHL_NIKKI_OCEAN_CONNECTED_STAGE_ID,
+    transcriptCustomFieldId: process.env.GHL_NIKKI_OCEAN_TRANSCRIPT_FIELD_ID,
+    apiKey: process.env.GHL_NIKKI_OCEAN_API_KEY,
+    agents: [
+      { name: 'Victoria Belen Herrera', ghlUserId: 'rqNpk7iQRDnqfyDgoah5', transferNumber: '+529841381972', priority: 1 },
+      { name: 'Emilse Salgado', ghlUserId: '7ds2JoaMldvrHVd1bWkf', transferNumber: '+529845262391', priority: 2 },
+      { name: 'Ileana Macedo', ghlUserId: 'Z76JHKRfG2JycRBXRXs1', transferNumber: '+529843174525', priority: 3 },
+      { name: 'Mariela Romero', ghlUserId: 'yuXmQ88zfEsy57xIzitB', transferNumber: '+529934764642', priority: 4 },
+      { name: 'Matias Fernandez', ghlUserId: 'dNzZ7z2Ok1Sc4dFmyRXT', transferNumber: '+529841679017', priority: 5 },
+      // Omar Sanchez queda fuera del pool MVP porque Revenio limita RR a 5 agentes.
+      { name: 'Omar Sanchez', ghlUserId: '3cZNGTYoEnjLd2VsYrYs', transferNumber: '+529933934009', priority: 6 },
+    ],
+  },
+];
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
@@ -74,6 +135,87 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function sanitizeName(name: string): string {
+  return name
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+function normalizePhoneForMatch(value: string | null | undefined): string {
+  return (value ?? '').replace(/\D/g, '');
+}
+
+function buildAssistantOverrides(safeName: string | null, leadId: string, attemptId: string): Record<string, unknown> {
+  const metadata = { lead_id: leadId, attempt_id: attemptId };
+  if (safeName) {
+    return {
+      variableValues: { name: safeName },
+      metadata,
+    };
+  }
+  return { metadata };
+}
+
+function findGhlProperty(locationId: string): GhlPropertyConfig | null {
+  return KRP_GHL_PROPERTIES.find((property) => property.locationId === locationId) ?? null;
+}
+
+function getActiveGhlAgents(property: GhlPropertyConfig): GhlAgentConfig[] {
+  return property.agents
+    .filter((agent) => agent.priority >= 1 && agent.priority <= MAX_ROUND_ROBIN_AGENTS)
+    .sort((a, b) => a.priority - b.priority);
+}
+
+function buildGhlRoundRobinAgents(property: GhlPropertyConfig, assignedTo: string): GhlAgentConfig[] {
+  const agents = getActiveGhlAgents(property);
+  const assignedAgent = agents.find((agent) => agent.ghlUserId === assignedTo);
+  if (!assignedAgent) return agents;
+  return [
+    assignedAgent,
+    ...agents.filter((agent) => agent.ghlUserId !== assignedTo),
+  ].slice(0, MAX_ROUND_ROBIN_AGENTS);
+}
+
+function buildRoundRobinSnapshot(agents: GhlAgentConfig[]) {
+  return agents.map((agent) => ({
+    name: agent.name,
+    transferNumber: agent.transferNumber,
+    ghlUserId: agent.ghlUserId,
+    priority: agent.priority,
+  }));
+}
+
+async function fetchGhlContact(property: GhlPropertyConfig, contactId: string): Promise<Record<string, unknown> | null> {
+  if (!property.apiKey) return null;
+  const resp = await fetch(`${GHL_API_BASE_URL}/contacts/${encodeURIComponent(contactId)}`, {
+    headers: {
+      Authorization: `Bearer ${property.apiKey}`,
+      Version: GHL_API_VERSION,
+      Accept: 'application/json',
+    },
+  });
+  if (!resp.ok) return null;
+  const data = asRecord(await resp.json().catch(() => null));
+  return asRecord(data?.contact) ?? data;
+}
+
+function findGhlAgentByTransferNumber(resultJson: Record<string, unknown> | null, transferNumber: string | null): Record<string, unknown> | null {
+  if (!transferNumber) return null;
+  const rr = asRecord(resultJson?.roundRobin);
+  const agents = Array.isArray(rr?.agents) ? rr.agents : [];
+  const normalizedTransferNumber = normalizePhoneForMatch(transferNumber);
+  for (const agent of agents) {
+    const rec = asRecord(agent);
+    const agentNumber = asString(rec?.transferNumber) ?? asString(rec?.transfer_number);
+    if (agentNumber && normalizePhoneForMatch(agentNumber) === normalizedTransferNumber) {
+      return rec;
+    }
+  }
+  return null;
 }
 
 function buildTranscriptFromMessages(messages: unknown): string | null {
@@ -304,6 +446,25 @@ function buildFirstAgentOutcomePatch(params: {
   };
 }
 
+function extractFallbackTransferNumber(resultJson: Record<string, unknown> | null): string | null {
+  if (!resultJson) return null;
+  const rr = asRecord(resultJson.roundRobin);
+  return (
+    asString(resultJson.fallbackTransferNumber) ??
+    asString(resultJson.fallback_transfer_number) ??
+    asString(rr?.fallbackTransferNumber) ??
+    asString(rr?.fallback_transfer_number) ??
+    null
+  );
+}
+
+function shouldUseFallbackTransfer(
+  rr: Record<string, unknown>,
+  fallbackTransferNumber: string | null,
+): fallbackTransferNumber is string {
+  return !!fallbackTransferNumber && rr.fallbackTransferAttempted !== true;
+}
+
 async function triggerRoundRobinFailoverFromCallId(params: {
   callId: string;
   reason: string;
@@ -327,12 +488,129 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   if (!rr || rr.enabled !== true) return { ok: false, reason: 'round_robin_disabled' as const };
 
   const agents = parseRoundRobinAgents(result);
-  if (agents.length <= 1) return { ok: false, reason: 'insufficient_pool' as const };
+  if (agents.length === 0) return { ok: false, reason: 'insufficient_pool' as const };
+
+  const metric = await prisma.callMetric.findUnique({
+    where: { callId: params.callId },
+    select: { twilioParentCallSid: true },
+  });
+  const parentSid =
+    asString(params.parentCallSid) ??
+    asString(metric?.twilioParentCallSid) ??
+    (await fetchVapiTwilioParentSid(params.callId));
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    return { ok: false, reason: 'missing_twilio_credentials' as const };
+  }
+  if (!parentSid) {
+    return { ok: false, reason: 'missing_parent_sid' as const };
+  }
 
   const currentIndex = asFiniteInt(rr.selectedAgentIndex) ?? 0;
   const currentAgent = agents[currentIndex] ?? null;
   const nextIndex = currentIndex + 1;
   if (nextIndex >= agents.length) {
+    const fallbackTransferNumber = extractFallbackTransferNumber(result);
+    if (shouldUseFallbackTransfer(rr, fallbackTransferNumber)) {
+      const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+      const callbackQs = new URLSearchParams();
+      callbackQs.set('attempt_id', attempt.id);
+      callbackQs.set('vapi_call_id', params.callId);
+      if (attempt.leadId) callbackQs.set('lead_id', attempt.leadId);
+      const callbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/transfer-status?${callbackQs.toString()}`;
+      const recordingCallbackUrl = `${PUBLIC_API_BASE_URL}/webhooks/twilio/recording-status?${callbackQs.toString()}`;
+      const callbackUrlXml = escapeXml(callbackUrl);
+      const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
+      const fallbackTransferNumberXml = escapeXml(fallbackTransferNumber);
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${fallbackTransferNumberXml}</Number></Dial></Response>`;
+      const twilioResp = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({ Twiml: twiml }).toString(),
+        },
+      );
+      if (!twilioResp.ok) {
+        const twilioBody = await twilioResp.text().catch(() => '');
+        if (looksLikeInactiveCallError(twilioBody)) {
+          return { ok: false, reason: 'parent_not_active' as const, status: twilioResp.status };
+        }
+        return { ok: false, reason: 'fallback_transfer_command_failed' as const, status: twilioResp.status, body: twilioBody };
+      }
+
+      await prisma.callAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: 'auto-transferred-fallback',
+          resultJson: {
+            ...result,
+            transferNumber: fallbackTransferNumber,
+            fallbackTransferNumber,
+            roundRobin: {
+              ...rr,
+              selectedAgentIndex: agents.length,
+              selectedAgentName: null,
+              selectedTransferNumber: fallbackTransferNumber,
+              fallbackTransferNumber,
+              fallbackTransferAttempted: true,
+              fallbackTransferAttemptedAt: new Date().toISOString(),
+              lastFailoverReason: params.reason,
+              lastEscalatedFromCallSid: params.currentChildCallSid ?? rr.lastEscalatedFromCallSid,
+              lastEscalatedAt: new Date().toISOString(),
+              lastFailedAgentIndex: currentIndex,
+              lastFailedAgentName: currentAgent?.name ?? null,
+              lastFailedAgentNumber: currentAgent?.transferNumber ?? null,
+              lastFailedAgentResult: params.reason,
+              ...buildFirstAgentOutcomePatch({
+                rr,
+                currentIndex,
+                currentAgent,
+                result: params.reason,
+              }),
+            },
+          } as any,
+        },
+      });
+
+      if (attempt.leadId) {
+        await prisma.event.create({
+          data: {
+            leadId: attempt.leadId,
+            type: 'transfer_fallback',
+            detail: {
+              attemptId: attempt.id,
+              callId: params.callId,
+              reason: params.reason,
+              currentChildCallSid: params.currentChildCallSid ?? null,
+              failedAgentIndex: currentIndex,
+              failedAgentName: currentAgent?.name ?? null,
+              failedAgentNumber: currentAgent?.transferNumber ?? null,
+              failedAgentResult: params.reason,
+              nextIndex: agents.length,
+              nextTransferNumber: fallbackTransferNumber,
+              nextAgentName: null,
+              fallback: true,
+            } as any,
+          },
+        });
+      }
+
+      return {
+        ok: true,
+        failedAgentIndex: currentIndex,
+        failedAgentName: currentAgent?.name ?? null,
+        failedAgentNumber: currentAgent?.transferNumber ?? null,
+        failedAgentResult: params.reason,
+        nextIndex: agents.length,
+        nextTransferNumber: fallbackTransferNumber,
+        nextAgentName: null,
+        fallback: true,
+      };
+    }
+
     await prisma.callAttempt.update({
       where: { id: attempt.id },
       data: {
@@ -362,21 +640,6 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   }
 
   const nextAgent = agents[nextIndex];
-  const metric = await prisma.callMetric.findUnique({
-    where: { callId: params.callId },
-    select: { twilioParentCallSid: true },
-  });
-  const parentSid =
-    asString(params.parentCallSid) ??
-    asString(metric?.twilioParentCallSid) ??
-    (await fetchVapiTwilioParentSid(params.callId));
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-    return { ok: false, reason: 'missing_twilio_credentials' as const };
-  }
-  if (!parentSid) {
-    return { ok: false, reason: 'missing_parent_sid' as const };
-  }
-
   const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
   const callbackQs = new URLSearchParams();
   callbackQs.set('attempt_id', attempt.id);
@@ -668,6 +931,310 @@ function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
       endedReason,
       status,
     },
+  };
+}
+
+const ghlOpportunityAssignedSchema = z.object({
+  type: z.string().min(1),
+  locationId: z.string().min(1),
+  id: z.string().min(1),
+  assignedTo: z.string().min(1),
+  contactId: z.string().min(1).optional(),
+  pipelineId: z.string().min(1).optional(),
+  pipelineStageId: z.string().min(1).optional(),
+  pipeline: z.object({
+    id: z.string().min(1).optional(),
+    name: z.string().optional(),
+  }).optional(),
+  stage: z.object({
+    id: z.string().min(1).optional(),
+    name: z.string().optional(),
+  }).optional(),
+  contact: z.object({
+    id: z.string().min(1).optional(),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    phone: z.string().min(6).optional(),
+    email: z.string().optional(),
+    assignedTo: z.string().optional(),
+  }).optional(),
+});
+
+async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityAssignedSchema>) {
+  const property = findGhlProperty(input.locationId);
+  if (!property) return { ok: true, ignored: true, reason: 'unknown_location' as const };
+
+  const eventType = input.type;
+  if (eventType !== 'OpportunityAssignedTo' && eventType !== 'OpportunityAssignedToUpdate') {
+    return { ok: true, ignored: true, reason: 'unsupported_ghl_event' as const, eventType };
+  }
+
+  const stageId = input.stage?.id ?? input.pipelineStageId;
+  if (property.triggerStageId && stageId && stageId !== property.triggerStageId) {
+    return { ok: true, ignored: true, reason: 'non_trigger_stage' as const, stageId };
+  }
+
+  const contactId = input.contact?.id ?? input.contactId;
+  const fetchedContact = !input.contact?.phone && contactId ? await fetchGhlContact(property, contactId) : null;
+  const phone =
+    input.contact?.phone ??
+    asString(fetchedContact?.phone) ??
+    asString(fetchedContact?.phoneNumber) ??
+    asString(fetchedContact?.['Phone']);
+  if (!phone) return { ok: false, error: 'missing_contact_phone' as const };
+
+  const callWindow = canStartOutboundCall();
+  if (!callWindow.allowed) {
+    return { ok: false, error: 'outside_business_hours' as const, call_window: callWindow };
+  }
+
+  if (!VAPI_API_KEY || !VAPI_PHONE_NUMBER_ID || !VAPI_ASSISTANT_ID) {
+    return {
+      ok: false,
+      error: 'missing_vapi_config' as const,
+      required: ['VAPI_API_KEY', 'VAPI_PHONE_NUMBER_ID', 'VAPI_ASSISTANT_ID'],
+    };
+  }
+
+  const duplicate = await prisma.event.findFirst({
+    where: {
+      type: 'ghl_opportunity_assigned',
+      detail: {
+        path: ['opportunityId'],
+        equals: input.id,
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (duplicate) {
+    return { ok: true, ignored: true, reason: 'duplicate_opportunity_event' as const, event_id: duplicate.id };
+  }
+
+  const firstName = sanitizeName(input.contact?.firstName ?? asString(fetchedContact?.firstName) ?? asString(fetchedContact?.first_name) ?? '');
+  const lastName = sanitizeName(input.contact?.lastName ?? asString(fetchedContact?.lastName) ?? asString(fetchedContact?.last_name) ?? '');
+  const contactEmail = input.contact?.email ?? asString(fetchedContact?.email);
+  const leadName = sanitizeName(`${firstName} ${lastName}`.trim() || contactEmail || 'Lead GHL');
+  const agents = buildGhlRoundRobinAgents(property, input.assignedTo);
+  const assignedAgent = agents.find((agent) => agent.ghlUserId === input.assignedTo) ?? null;
+  if (!assignedAgent) {
+    return { ok: false, error: 'assigned_agent_not_configured' as const, assignedTo: input.assignedTo, property: property.key };
+  }
+
+  const lead = await prisma.lead.create({
+    data: {
+      name: leadName,
+      phone,
+      source: `gohighlevel:${property.key}`,
+      events: {
+        create: {
+          type: 'ghl_opportunity_assigned',
+          detail: {
+            locationId: input.locationId,
+            propertyKey: property.key,
+            opportunityId: input.id,
+            contactId: contactId ?? null,
+            assignedTo: input.assignedTo,
+            assignedAgentName: assignedAgent.name,
+            pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
+            stageId,
+            stageName: input.stage?.name ?? null,
+            payload: input,
+            fetchedContact,
+          } as any,
+        },
+      },
+    },
+  });
+
+  const attempt = await prisma.callAttempt.create({
+    data: {
+      leadId: lead.id,
+      status: 'initiated',
+    },
+  });
+  const assistantOverrides = buildAssistantOverrides(leadName, lead.id, attempt.id);
+  const payload = {
+    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    assistantId: VAPI_ASSISTANT_ID,
+    customer: { number: phone },
+    assistantOverrides,
+  };
+
+  let resp: Response;
+  let data: any = {};
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    resp = await fetch('https://api.vapi.ai/call/phone', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${VAPI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    data = await resp.json().catch(() => ({}));
+  } catch (error) {
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: { status: 'failed' },
+    });
+    return {
+      ok: false,
+      error: 'vapi_network_error' as const,
+      message: error instanceof Error ? error.message : String(error),
+      lead_id: lead.id,
+      attempt_id: attempt.id,
+    };
+  }
+
+  await prisma.event.create({
+    data: {
+      leadId: lead.id,
+      type: 'vapi_call_request',
+      detail: {
+        request: payload,
+        response: data,
+        status: resp.status,
+        flow: 'gohighlevel',
+        roundRobin: {
+          enabled: true,
+          strategy: 'sequential_failover',
+          selectedAgentIndex: 0,
+          selectedAgentName: assignedAgent.name,
+          selectedTransferNumber: assignedAgent.transferNumber,
+          poolSize: agents.length,
+          agents: buildRoundRobinSnapshot(agents),
+        },
+      } as any,
+    },
+  });
+
+  if (!resp.ok) {
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: { status: 'failed' },
+    });
+    return { ok: false, error: 'vapi_call_failed' as const, status: resp.status, data, lead_id: lead.id, attempt_id: attempt.id };
+  }
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: {
+      status: 'sent',
+      providerId: typeof data.id === 'string' ? data.id : null,
+      controlUrl: data?.monitor?.controlUrl ?? null,
+      resultJson: {
+        transferNumber: assignedAgent.transferNumber,
+        assistantId: VAPI_ASSISTANT_ID,
+        ghlIntegration: {
+          locationId: input.locationId,
+          propertyKey: property.key,
+          opportunityId: input.id,
+          contactId: contactId ?? null,
+          pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
+          triggerStageId: stageId ?? null,
+          connectedStageId: property.connectedStageId ?? null,
+          transcriptCustomFieldId: property.transcriptCustomFieldId ?? null,
+        },
+        roundRobin: {
+          enabled: true,
+          strategy: 'sequential_failover',
+          selectedAgentIndex: 0,
+          selectedAgentName: assignedAgent.name,
+          selectedTransferNumber: assignedAgent.transferNumber,
+          poolSize: agents.length,
+          agents: buildRoundRobinSnapshot(agents),
+        },
+      } as any,
+    },
+  });
+
+  return {
+    ok: true,
+    lead_id: lead.id,
+    attempt_id: attempt.id,
+    property: property.key,
+    selected_agent: {
+      human_agent_name: assignedAgent.name,
+      ghl_user_id: assignedAgent.ghlUserId,
+      transfer_number: assignedAgent.transferNumber,
+      round_robin_pool_size: agents.length,
+    },
+    vapi: data,
+  };
+}
+
+async function pushSuccessfulTransferToGhl(params: {
+  callId: string;
+  resultJson: Record<string, unknown> | null;
+  transferNumber: string | null;
+  transcript: string | null;
+}) {
+  const integration = asRecord(params.resultJson?.ghlIntegration);
+  if (!integration) return null;
+  const locationId = asString(integration.locationId);
+  const opportunityId = asString(integration.opportunityId);
+  const propertyKey = asString(integration.propertyKey);
+  if (!locationId || !opportunityId || !propertyKey) return null;
+
+  const property = findGhlProperty(locationId);
+  if (!property?.apiKey) {
+    return { ok: false, skipped: true, reason: 'missing_ghl_api_key', locationId, opportunityId };
+  }
+
+  const answeredAgent = findGhlAgentByTransferNumber(params.resultJson, params.transferNumber);
+  const answeredGhlUserId = asString(answeredAgent?.ghlUserId);
+  if (!answeredGhlUserId) {
+    return { ok: false, skipped: true, reason: 'answered_agent_not_mapped', transferNumber: params.transferNumber };
+  }
+
+  const connectedStageId = asString(integration.connectedStageId) ?? property.connectedStageId;
+  const transcriptCustomFieldId = asString(integration.transcriptCustomFieldId) ?? property.transcriptCustomFieldId;
+  if (!connectedStageId || !transcriptCustomFieldId) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'missing_ghl_stage_or_custom_field',
+      hasConnectedStageId: !!connectedStageId,
+      hasTranscriptCustomFieldId: !!transcriptCustomFieldId,
+    };
+  }
+
+  const updateBody = {
+    assignedTo: answeredGhlUserId,
+    pipelineStageId: connectedStageId,
+    customFields: [
+      {
+        id: transcriptCustomFieldId,
+        field_value: params.transcript ?? '',
+      },
+    ],
+  };
+
+  const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${property.apiKey}`,
+      Version: GHL_API_VERSION,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updateBody),
+  });
+  const data = await resp.json().catch(async () => ({ text: await resp.text().catch(() => '') }));
+
+  return {
+    ok: resp.ok,
+    status: resp.status,
+    locationId,
+    opportunityId,
+    assignedTo: answeredGhlUserId,
+    connectedStageId,
+    transcriptCustomFieldId,
+    data,
   };
 }
 
@@ -1119,6 +1686,37 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     },
   });
 
+  let ghlPush: HandlerResult | null = null;
+  if (confirmedTransfer) {
+    const attempt = await prisma.callAttempt.findFirst({
+      where: { providerId: callId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, leadId: true, resultJson: true },
+    });
+    const attemptResultJson = asRecord(attempt?.resultJson);
+    ghlPush = await pushSuccessfulTransferToGhl({
+      callId,
+      resultJson: attemptResultJson,
+      transferNumber: resolvedTransferNumber,
+      transcript: fullTranscript ?? transcript ?? null,
+    });
+    if (attempt?.leadId && ghlPush) {
+      await prisma.event.create({
+        data: {
+          leadId: attempt.leadId,
+          type: 'ghl_post_call_push',
+          detail: {
+            attemptId: attempt.id,
+            callId,
+            confirmedTransfer,
+            transferNumber: resolvedTransferNumber,
+            result: ghlPush,
+          } as any,
+        },
+      });
+    }
+  }
+
   return { 
     ok: true, 
     callId, 
@@ -1127,6 +1725,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     hasRecording: !!recordingUrl,
     durationSec: duration,
     postTransferDurationSec,
+    ghlPush,
   };
 }
 
@@ -1162,11 +1761,20 @@ async function processTransferUpdate(body: unknown): Promise<HandlerResult | nul
     asString(attemptResult?.transferNumber) ??
     asString(attemptResult?.transfer_number) ??
     asString(attemptRoundRobin?.selectedTransferNumber) ??
-    transferNumber ??
-    DEFAULT_ADVISOR_NUMBER;
+    transferNumber;
   const assistantId = extractAssistantId(call ?? {}, message);
   
   console.log(eventType + ':', { callId, transferNumber });
+
+  if (!resolvedTransferNumber) {
+    return {
+      ok: false,
+      error: 'missing_transfer_number',
+      message: 'No transfer destination configured for this call.',
+      callId,
+      eventType,
+    };
+  }
 
   // For transfer-destination-request, default behavior keeps Vapi happy by returning destination.
   // IMPORTANT: always return destination directly to Vapi for initial transfer.
@@ -1480,7 +2088,7 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
     
     // Find controlUrl in DB
     let controlUrl: string | null = null;
-    let transferNumber = transferNumberFromCall ?? DEFAULT_ADVISOR_NUMBER;
+    let transferNumber = transferNumberFromCall ?? null;
     
     try {
       const attempt = await prisma.callAttempt.findFirst({
@@ -1497,6 +2105,14 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
         asString(attemptResult?.transferNumber) ??
         asString(attemptResult?.transfer_number) ??
         transferNumber;
+      if (!transferNumber) {
+        return {
+          ok: false,
+          error: 'missing_transfer_number',
+          message: 'No transfer destination configured for auto-transfer.',
+          callId,
+        };
+      }
       
       // Fallback: get from VAPI API if not in DB
       if (!controlUrl && callId && VAPI_API_KEY) {
@@ -1546,6 +2162,26 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
   
   return { ok: true, ignored: true, reason: 'conditions-not-met' };
 }
+
+router.post('/gohighlevel', async (req, res) => {
+  try {
+    const parsed = ghlOpportunityAssignedSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'invalid_payload', issues: parsed.error.issues });
+    }
+
+    const result = await startVapiCallFromGhlWebhook(parsed.data);
+    if (asRecord(result)?.ok === false) {
+      const error = asString(asRecord(result)?.error);
+      const status = error === 'outside_business_hours' ? 400 : error === 'vapi_call_failed' || error === 'vapi_network_error' ? 502 : 400;
+      return res.status(status).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('GoHighLevel webhook error:', error);
+    return res.status(500).json({ error: 'Internal error', message: String(error) });
+  }
+});
 
 router.post('/vapi/metrics', async (req, res) => {
   try {

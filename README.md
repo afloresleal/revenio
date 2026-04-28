@@ -92,8 +92,7 @@ Variables comunes opcionales:
 # CORS
 DASHBOARD_URL=http://localhost:5173
 
-# Transfer
-TRANSFER_NUMBER=+52...
+# Round robin humano opcional (fallback final se manda por request como transfer_number)
 HUMAN_AGENT_NUMBERS=+5255...,+5255...,+5255...
 HUMAN_AGENT_NAMES=Ana,Luis,Sofia
 TRANSFER_CONNECTED_MIN_SEC=10
