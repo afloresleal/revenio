@@ -67,6 +67,19 @@ app.use('/api/metrics', metricsRouter);
 app.use('/api/jobs', jobsRouter);
 app.use('/webhooks', webhooksRouter);
 
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "revenio-api",
+    endpoints: {
+      health: "/health",
+      lab: "/lab",
+      metrics: "/api/metrics",
+      webhooks: "/webhooks",
+    },
+  });
+});
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "revenio-api" });
 });
