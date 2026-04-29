@@ -958,10 +958,10 @@ function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
 }
 
 const ghlOpportunityAssignedSchema = z.object({
-  type: z.string().min(1),
-  locationId: z.string().min(1),
-  id: z.string().min(1),
-  assignedTo: z.string().min(1),
+  type: z.string().min(1).optional(),
+  locationId: z.string().min(1).optional(),
+  id: z.string().min(1).optional(),
+  assignedTo: z.string().min(1).optional(),
   contactId: z.string().min(1).optional(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
@@ -990,11 +990,95 @@ const ghlOpportunityAssignedSchema = z.object({
   }).optional(),
 });
 
+type GhlOpportunityAssignedInput = z.infer<typeof ghlOpportunityAssignedSchema>;
+
+function pickFirstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const direct = asString(value);
+    if (direct) return direct;
+  }
+  return undefined;
+}
+
+function readPath(root: unknown, path: string[]): unknown {
+  let current: unknown = root;
+  for (const key of path) {
+    const rec = asRecord(current);
+    if (!rec) return undefined;
+    current = rec[key];
+  }
+  return current;
+}
+
+function normalizeGhlWorkflowPayload(body: unknown): GhlOpportunityAssignedInput {
+  const root = asRecord(body) ?? {};
+  const contact = asRecord(root.contact) ?? asRecord(root.Contact) ?? asRecord(root.contactData) ?? asRecord(root.contact_data);
+  const opportunity =
+    asRecord(root.opportunity) ??
+    asRecord(root.Opportunity) ??
+    asRecord(root.opportunityData) ??
+    asRecord(root.opportunity_data);
+  const customData =
+    asRecord(root.customData) ??
+    asRecord(root.custom_data) ??
+    asRecord(root.customValues) ??
+    asRecord(root.custom_values) ??
+    asRecord(root.data);
+
+  const type = pickFirstString(root.type, customData?.type) ?? 'OpportunityAssignedTo';
+  const locationId =
+    pickFirstString(root.locationId, root.location_id, customData?.locationId, customData?.location_id) ??
+    'dOlMhCyzBPIxKGO4CTDq';
+  const assignedTo =
+    pickFirstString(root.assignedTo, root.assigned_to, customData?.assignedTo, customData?.assigned_to, contact?.assignedTo, opportunity?.assignedTo) ??
+    'o6mW3ERlbWe49dW9rhKJ';
+
+  const contactId = pickFirstString(root.contactId, root.contact_id, customData?.contactId, customData?.contact_id, contact?.id);
+  const firstName = pickFirstString(root.firstName, root.first_name, customData?.firstName, customData?.first_name, contact?.firstName, contact?.first_name);
+  const lastName = pickFirstString(root.lastName, root.last_name, customData?.lastName, customData?.last_name, contact?.lastName, contact?.last_name);
+  const phone = pickFirstString(
+    root.phone,
+    root.phoneNumber,
+    root.phone_number,
+    customData?.phone,
+    customData?.phoneNumber,
+    customData?.phone_number,
+    contact?.phone,
+    contact?.phoneNumber,
+    contact?.phone_number,
+    readPath(root, ['standardData', 'phone']),
+    readPath(root, ['standard_data', 'phone']),
+  );
+  const email = pickFirstString(root.email, customData?.email, contact?.email);
+
+  return {
+    ...root,
+    type,
+    locationId,
+    id: pickFirstString(root.id, root.opportunityId, root.opportunity_id, customData?.id, customData?.opportunityId, customData?.opportunity_id, opportunity?.id) ?? `ghl-workflow-${Date.now()}`,
+    assignedTo,
+    contactId,
+    firstName,
+    lastName,
+    phone,
+    email,
+    pipelineId: pickFirstString(root.pipelineId, root.pipeline_id, customData?.pipelineId, customData?.pipeline_id, opportunity?.pipelineId) ?? 'y1d5iqHAz5WE5hdjpyia',
+    pipelineName: pickFirstString(root.pipelineName, root.pipeline_name, customData?.pipelineName, customData?.pipeline_name),
+    pipelineStageId: pickFirstString(root.pipelineStageId, root.pipeline_stage_id, customData?.pipelineStageId, customData?.pipeline_stage_id),
+    stageId: pickFirstString(root.stageId, root.stage_id, customData?.stageId, customData?.stage_id, opportunity?.stageId),
+    stageName: pickFirstString(root.stageName, root.stage_name, customData?.stageName, customData?.stage_name),
+  };
+}
+
 async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityAssignedSchema>) {
-  const property = findGhlProperty(input.locationId);
+  const locationId = input.locationId ?? 'dOlMhCyzBPIxKGO4CTDq';
+  const assignedTo = input.assignedTo ?? 'o6mW3ERlbWe49dW9rhKJ';
+  const eventType = input.type ?? 'OpportunityAssignedTo';
+  const opportunityId = input.id ?? `ghl-workflow-${Date.now()}`;
+
+  const property = findGhlProperty(locationId);
   if (!property) return { ok: true, ignored: true, reason: 'unknown_location' as const };
 
-  const eventType = input.type;
   if (eventType !== 'OpportunityAssignedTo' && eventType !== 'OpportunityAssignedToUpdate') {
     return { ok: true, ignored: true, reason: 'unsupported_ghl_event' as const, eventType };
   }
@@ -1032,7 +1116,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
       type: 'ghl_opportunity_assigned',
       detail: {
         path: ['opportunityId'],
-        equals: input.id,
+        equals: opportunityId,
       },
     },
     orderBy: { createdAt: 'desc' },
@@ -1045,10 +1129,10 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   const lastName = sanitizeName(input.contact?.lastName ?? input.lastName ?? asString(fetchedContact?.lastName) ?? asString(fetchedContact?.last_name) ?? '');
   const contactEmail = input.contact?.email ?? input.email ?? asString(fetchedContact?.email);
   const leadName = sanitizeName(`${firstName} ${lastName}`.trim() || contactEmail || 'Lead GHL');
-  const agents = buildGhlRoundRobinAgents(property, input.assignedTo);
-  const assignedAgent = agents.find((agent) => agent.ghlUserId === input.assignedTo) ?? null;
+  const agents = buildGhlRoundRobinAgents(property, assignedTo);
+  const assignedAgent = agents.find((agent) => agent.ghlUserId === assignedTo) ?? null;
   if (!assignedAgent) {
-    return { ok: false, error: 'assigned_agent_not_configured' as const, assignedTo: input.assignedTo, property: property.key };
+    return { ok: false, error: 'assigned_agent_not_configured' as const, assignedTo, property: property.key };
   }
 
   const lead = await prisma.lead.create({
@@ -1060,11 +1144,11 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
         create: {
           type: 'ghl_opportunity_assigned',
           detail: {
-            locationId: input.locationId,
+            locationId,
             propertyKey: property.key,
-            opportunityId: input.id,
+            opportunityId,
             contactId: contactId ?? null,
-            assignedTo: input.assignedTo,
+            assignedTo,
             assignedAgentName: assignedAgent.name,
             pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
             pipelineName: input.pipeline?.name ?? input.pipelineName ?? null,
@@ -1162,9 +1246,9 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
         transferNumber: assignedAgent.transferNumber,
         assistantId: VAPI_ASSISTANT_ID,
         ghlIntegration: {
-          locationId: input.locationId,
+          locationId,
           propertyKey: property.key,
-          opportunityId: input.id,
+          opportunityId,
           contactId: contactId ?? null,
           pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
           triggerStageId: stageId ?? null,
@@ -2197,7 +2281,8 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
 
 router.post('/gohighlevel', async (req, res) => {
   try {
-    const parsed = ghlOpportunityAssignedSchema.safeParse(req.body);
+    const normalizedBody = normalizeGhlWorkflowPayload(req.body);
+    const parsed = ghlOpportunityAssignedSchema.safeParse(normalizedBody);
     if (!parsed.success) {
       return res.status(400).json({ error: 'invalid_payload', issues: parsed.error.issues });
     }
