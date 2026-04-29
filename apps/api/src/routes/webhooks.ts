@@ -51,6 +51,17 @@ type GhlPropertyConfig = {
 
 const KRP_GHL_PROPERTIES: GhlPropertyConfig[] = [
   {
+    key: 'ghl_test',
+    name: 'GoHighLevel Test',
+    locationId: 'dOlMhCyzBPIxKGO4CTDq',
+    pipelineId: process.env.GHL_TEST_PIPELINE_ID ?? 'y1d5iqHAz5WE5hdjpyia',
+    triggerStageId: process.env.GHL_TEST_TRIGGER_STAGE_ID,
+    connectedStageId: process.env.GHL_TEST_CONNECTED_STAGE_ID,
+    transcriptCustomFieldId: process.env.GHL_TEST_TRANSCRIPT_FIELD_ID,
+    apiKey: process.env.GHL_TEST_API_KEY,
+    agents: parseEnvGhlAgents('GHL_TEST'),
+  },
+  {
     key: 'isla_blanca',
     name: 'Isla Blanca',
     locationId: 'V9kOoUXOU3jKjuvzg3sN',
@@ -88,6 +99,18 @@ const KRP_GHL_PROPERTIES: GhlPropertyConfig[] = [
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
+}
+
+function parseEnvGhlAgents(prefix: string): GhlAgentConfig[] {
+  const agents: GhlAgentConfig[] = [];
+  for (let index = 1; index <= MAX_ROUND_ROBIN_AGENTS; index += 1) {
+    const name = process.env[`${prefix}_AGENT_${index}_NAME`]?.trim();
+    const ghlUserId = process.env[`${prefix}_AGENT_${index}_GHL_USER_ID`]?.trim();
+    const transferNumber = process.env[`${prefix}_AGENT_${index}_PHONE`]?.trim();
+    if (!name || !ghlUserId || !transferNumber) continue;
+    agents.push({ name, ghlUserId, transferNumber, priority: index });
+  }
+  return agents;
 }
 
 function resolvePublicApiBaseUrl(): string {
