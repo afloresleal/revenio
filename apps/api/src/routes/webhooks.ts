@@ -963,8 +963,15 @@ const ghlOpportunityAssignedSchema = z.object({
   id: z.string().min(1),
   assignedTo: z.string().min(1),
   contactId: z.string().min(1).optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  phone: z.string().min(6).optional(),
+  email: z.string().optional(),
   pipelineId: z.string().min(1).optional(),
+  pipelineName: z.string().optional(),
   pipelineStageId: z.string().min(1).optional(),
+  stageId: z.string().min(1).optional(),
+  stageName: z.string().optional(),
   pipeline: z.object({
     id: z.string().min(1).optional(),
     name: z.string().optional(),
@@ -992,7 +999,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     return { ok: true, ignored: true, reason: 'unsupported_ghl_event' as const, eventType };
   }
 
-  const stageId = input.stage?.id ?? input.pipelineStageId;
+  const stageId = input.stage?.id ?? input.stageId ?? input.pipelineStageId;
   if (property.triggerStageId && stageId && stageId !== property.triggerStageId) {
     return { ok: true, ignored: true, reason: 'non_trigger_stage' as const, stageId };
   }
@@ -1001,6 +1008,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   const fetchedContact = !input.contact?.phone && contactId ? await fetchGhlContact(property, contactId) : null;
   const phone =
     input.contact?.phone ??
+    input.phone ??
     asString(fetchedContact?.phone) ??
     asString(fetchedContact?.phoneNumber) ??
     asString(fetchedContact?.['Phone']);
@@ -1033,9 +1041,9 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     return { ok: true, ignored: true, reason: 'duplicate_opportunity_event' as const, event_id: duplicate.id };
   }
 
-  const firstName = sanitizeName(input.contact?.firstName ?? asString(fetchedContact?.firstName) ?? asString(fetchedContact?.first_name) ?? '');
-  const lastName = sanitizeName(input.contact?.lastName ?? asString(fetchedContact?.lastName) ?? asString(fetchedContact?.last_name) ?? '');
-  const contactEmail = input.contact?.email ?? asString(fetchedContact?.email);
+  const firstName = sanitizeName(input.contact?.firstName ?? input.firstName ?? asString(fetchedContact?.firstName) ?? asString(fetchedContact?.first_name) ?? '');
+  const lastName = sanitizeName(input.contact?.lastName ?? input.lastName ?? asString(fetchedContact?.lastName) ?? asString(fetchedContact?.last_name) ?? '');
+  const contactEmail = input.contact?.email ?? input.email ?? asString(fetchedContact?.email);
   const leadName = sanitizeName(`${firstName} ${lastName}`.trim() || contactEmail || 'Lead GHL');
   const agents = buildGhlRoundRobinAgents(property, input.assignedTo);
   const assignedAgent = agents.find((agent) => agent.ghlUserId === input.assignedTo) ?? null;
@@ -1059,8 +1067,9 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
             assignedTo: input.assignedTo,
             assignedAgentName: assignedAgent.name,
             pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
+            pipelineName: input.pipeline?.name ?? input.pipelineName ?? null,
             stageId,
-            stageName: input.stage?.name ?? null,
+            stageName: input.stage?.name ?? input.stageName ?? null,
             payload: input,
             fetchedContact,
           } as any,
