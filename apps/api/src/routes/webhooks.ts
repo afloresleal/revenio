@@ -201,6 +201,91 @@ function buildAssistantOverrides(
   return overrides;
 }
 
+function parseDateValue(value: unknown): Date | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function extractVapiRecordingUrl(data: Record<string, unknown>): string | null {
+  const artifact = asRecord(data.artifact);
+  const recording = asRecord(artifact?.recording);
+  const mono = asRecord(recording?.mono);
+  return (
+    asString(data.recordingUrl) ??
+    asString(artifact?.recordingUrl) ??
+    asString(mono?.combinedUrl) ??
+    asString(data.stereoRecordingUrl) ??
+    asString(artifact?.stereoRecordingUrl) ??
+    null
+  );
+}
+
+async function upsertDashboardMetricFromVapiCall(params: {
+  data: Record<string, unknown>;
+  fallbackPhone: string;
+  fallbackAssistantId: string | null;
+  transferNumber: string | null;
+  lastEventType: string;
+}) {
+  const callId = asString(params.data.id);
+  if (!callId) return;
+
+  const customer = asRecord(params.data.customer);
+  const status = asString(params.data.status)?.toLowerCase() ?? null;
+  const endedReason = asString(params.data.endedReason) ?? null;
+  const startedAt = parseDateValue(params.data.startedAt) ?? parseDateValue(params.data.createdAt) ?? new Date();
+  const endedAt = parseDateValue(params.data.endedAt) ?? parseDateValue(params.data.updatedAt);
+  const isEnded = status === 'ended' || Boolean(endedReason || endedAt);
+  const duration = asNumber(params.data.duration);
+  const artifact = asRecord(params.data.artifact);
+  const transcript =
+    asString(params.data.transcript) ??
+    asString(artifact?.transcript) ??
+    buildTranscriptFromMessages(params.data.messages) ??
+    null;
+  const cost = asNumber(params.data.cost);
+
+  await prisma.callMetric.upsert({
+    where: { callId },
+    create: {
+      callId,
+      phoneNumber: asString(customer?.number) ?? params.fallbackPhone,
+      assistantId: asString(params.data.assistantId) ?? params.fallbackAssistantId,
+      transferNumber: params.transferNumber,
+      startedAt,
+      endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
+      durationSec: duration ? Math.max(0, Math.round(duration)) : undefined,
+      endedReason,
+      outcome: isEnded ? (endedReason === 'assistant-forwarded-call' ? 'transfer_success' : 'completed') : 'in_progress',
+      sentiment: isEnded ? 'neutral' : undefined,
+      transcript: transcript ?? undefined,
+      recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
+      cost,
+      inProgress: !isEnded,
+      lastEventType: params.lastEventType,
+      lastEventAt: new Date(),
+    },
+    update: {
+      phoneNumber: asString(customer?.number) ?? params.fallbackPhone,
+      assistantId: asString(params.data.assistantId) ?? params.fallbackAssistantId,
+      transferNumber: params.transferNumber,
+      startedAt,
+      endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
+      durationSec: duration ? Math.max(0, Math.round(duration)) : undefined,
+      endedReason,
+      outcome: isEnded ? (endedReason === 'assistant-forwarded-call' ? 'transfer_success' : 'completed') : 'in_progress',
+      sentiment: isEnded ? 'neutral' : undefined,
+      transcript: transcript ?? undefined,
+      recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
+      cost,
+      inProgress: !isEnded,
+      lastEventType: params.lastEventType,
+      lastEventAt: new Date(),
+    },
+  });
+}
+
 function findGhlProperty(locationId: string): GhlPropertyConfig | null {
   return KRP_GHL_PROPERTIES.find((property) => property.locationId === locationId) ?? null;
 }
@@ -1290,6 +1375,13 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
         },
       } as any,
     },
+  });
+  await upsertDashboardMetricFromVapiCall({
+    data,
+    fallbackPhone: phone,
+    fallbackAssistantId: VAPI_ASSISTANT_ID,
+    transferNumber: assignedAgent.transferNumber,
+    lastEventType: 'call-created',
   });
 
   return {

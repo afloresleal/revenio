@@ -1930,6 +1930,103 @@ function buildAssistantOverrides(
   return overrides;
 }
 
+function parseDateValue(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function pickVapiDate(data: Record<string, unknown>, keys: string[]): Date | null {
+  for (const key of keys) {
+    const date = parseDateValue(data[key]);
+    if (date) return date;
+  }
+  return null;
+}
+
+function extractVapiRecordingUrl(data: Record<string, unknown>): string | null {
+  const artifact = data.artifact && typeof data.artifact === "object" ? data.artifact as Record<string, unknown> : null;
+  const recording = artifact?.recording && typeof artifact.recording === "object" ? artifact.recording as Record<string, unknown> : null;
+  const mono = recording?.mono && typeof recording.mono === "object" ? recording.mono as Record<string, unknown> : null;
+  return (
+    (typeof data.recordingUrl === "string" && data.recordingUrl) ||
+    (typeof artifact?.recordingUrl === "string" && artifact.recordingUrl) ||
+    (typeof mono?.combinedUrl === "string" && mono.combinedUrl) ||
+    (typeof data.stereoRecordingUrl === "string" && data.stereoRecordingUrl) ||
+    (typeof artifact?.stereoRecordingUrl === "string" && artifact.stereoRecordingUrl) ||
+    null
+  );
+}
+
+async function upsertDashboardMetricFromVapiCall(params: {
+  data: Record<string, unknown>;
+  fallbackPhone: string;
+  fallbackAssistantId: string | null;
+  transferNumber: string | null;
+  lastEventType: string;
+}) {
+  const callId = typeof params.data.id === "string" ? params.data.id : null;
+  if (!callId) return;
+
+  const customer = params.data.customer && typeof params.data.customer === "object"
+    ? params.data.customer as Record<string, unknown>
+    : null;
+  const status = typeof params.data.status === "string" ? params.data.status.toLowerCase() : null;
+  const endedReason = typeof params.data.endedReason === "string" ? params.data.endedReason : null;
+  const startedAt = pickVapiDate(params.data, ["startedAt", "createdAt"]) ?? new Date();
+  const endedAt = pickVapiDate(params.data, ["endedAt", "updatedAt"]);
+  const isEnded = status === "ended" || Boolean(endedReason || endedAt);
+  const duration = typeof params.data.duration === "number" && Number.isFinite(params.data.duration)
+    ? Math.max(0, Math.round(params.data.duration))
+    : null;
+  const transcript =
+    (typeof params.data.transcript === "string" && params.data.transcript) ||
+    (params.data.artifact && typeof params.data.artifact === "object" && typeof (params.data.artifact as Record<string, unknown>).transcript === "string"
+      ? (params.data.artifact as Record<string, string>).transcript
+      : null) ||
+    buildTranscriptFromMessages(params.data.messages);
+  const cost = typeof params.data.cost === "number" && Number.isFinite(params.data.cost) ? params.data.cost : undefined;
+
+  await prisma.callMetric.upsert({
+    where: { callId },
+    create: {
+      callId,
+      phoneNumber: typeof customer?.number === "string" ? customer.number : params.fallbackPhone,
+      assistantId: typeof params.data.assistantId === "string" ? params.data.assistantId : params.fallbackAssistantId,
+      transferNumber: params.transferNumber,
+      startedAt,
+      endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
+      durationSec: duration,
+      endedReason,
+      outcome: isEnded ? (endedReason === "assistant-forwarded-call" ? "transfer_success" : "completed") : "in_progress",
+      sentiment: isEnded ? "neutral" : undefined,
+      transcript: transcript ?? undefined,
+      recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
+      cost,
+      inProgress: !isEnded,
+      lastEventType: params.lastEventType,
+      lastEventAt: new Date(),
+    },
+    update: {
+      phoneNumber: typeof customer?.number === "string" ? customer.number : params.fallbackPhone,
+      assistantId: typeof params.data.assistantId === "string" ? params.data.assistantId : params.fallbackAssistantId,
+      transferNumber: params.transferNumber,
+      startedAt,
+      endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
+      durationSec: duration ?? undefined,
+      endedReason,
+      outcome: isEnded ? (endedReason === "assistant-forwarded-call" ? "transfer_success" : "completed") : "in_progress",
+      sentiment: isEnded ? "neutral" : undefined,
+      transcript: transcript ?? undefined,
+      recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
+      cost,
+      inProgress: !isEnded,
+      lastEventType: params.lastEventType,
+      lastEventAt: new Date(),
+    },
+  });
+}
+
 app.post("/call/test/direct", async (req, res) => {
   const callWindow = canStartOutboundCall();
   if (!callWindow.allowed) {
@@ -2113,6 +2210,13 @@ app.post("/call/test/direct", async (req, res) => {
     attemptId: attempt.id,
     leadId: lead.id,
     vapiResponse: data,
+  });
+  await upsertDashboardMetricFromVapiCall({
+    data,
+    fallbackPhone: to_number,
+    fallbackAssistantId: resolvedVapiAssistantId,
+    transferNumber: selectedTransferNumber,
+    lastEventType: "call-created",
   });
 
   return res.json({ 
@@ -2374,6 +2478,13 @@ app.post("/call/vapi", async (req, res) => {
     leadId: lead.id,
     vapiResponse: data,
   });
+  await upsertDashboardMetricFromVapiCall({
+    data,
+    fallbackPhone: to_number,
+    fallbackAssistantId: selectedAssistantId,
+    transferNumber: selectedTransferNumber,
+    lastEventType: "call-created",
+  });
 
   return res.json({ 
     ok: true, 
@@ -2550,6 +2661,7 @@ app.post("/lab/settings/call-window", async (req, res) => {
 app.post("/lab/sync-attempt/:id", async (req, res) => {
   const attempt = await prisma.callAttempt.findUnique({
     where: { id: req.params.id },
+    include: { lead: true },
   });
 
   if (!attempt) {
@@ -2603,6 +2715,13 @@ app.post("/lab/sync-attempt/:id", async (req, res) => {
   await prisma.callAttempt.update({
     where: { id: attempt.id },
     data: { resultJson: detail as any },
+  });
+  await upsertDashboardMetricFromVapiCall({
+    data: detail as Record<string, unknown>,
+    fallbackPhone: attempt.lead.phone,
+    fallbackAssistantId: typeof detail?.assistantId === "string" ? detail.assistantId : null,
+    transferNumber: typeof detail?.forwardedPhoneNumber === "string" ? detail.forwardedPhoneNumber : null,
+    lastEventType: "lab-sync",
   });
 
   return res.json({
