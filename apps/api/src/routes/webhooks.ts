@@ -184,8 +184,19 @@ function buildAssistantOverrides(
   if (safeName) variableValues.name = safeName;
   if (transferNumber) variableValues.transfer_number = transferNumber;
   if (agentName) variableValues.agent_name = agentName;
-  if (Object.keys(variableValues).length) return { variableValues, metadata };
-  return { metadata };
+  const overrides: Record<string, unknown> = { metadata };
+  if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
+  if (transferNumber) {
+    overrides.model = {
+      tools: [
+        {
+          type: 'transferCall',
+          destinations: [{ type: 'number', number: transferNumber }],
+        },
+      ],
+    };
+  }
+  return overrides;
 }
 
 function findGhlProperty(locationId: string): GhlPropertyConfig | null {

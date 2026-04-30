@@ -1904,16 +1904,28 @@ function sanitizeName(name: string): string {
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
-  attemptId: string
+  attemptId: string,
+  transferNumber?: string | null,
+  agentName?: string | null,
 ): Record<string, unknown> {
   const metadata = { lead_id: leadId, attempt_id: attemptId };
-  if (safeName) {
-    return {
-      variableValues: { name: safeName },
-      metadata,
+  const variableValues: Record<string, string> = {};
+  if (safeName) variableValues.name = safeName;
+  if (transferNumber) variableValues.transfer_number = transferNumber;
+  if (agentName) variableValues.agent_name = agentName;
+  const overrides: Record<string, unknown> = { metadata };
+  if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
+  if (transferNumber) {
+    overrides.model = {
+      tools: [
+        {
+          type: "transferCall",
+          destinations: [{ type: "number", number: transferNumber }],
+        },
+      ],
     };
   }
-  return { metadata };
+  return overrides;
 }
 
 app.post("/call/test/direct", async (req, res) => {
@@ -2003,7 +2015,13 @@ app.post("/call/test/direct", async (req, res) => {
 
   // Build payload with assistantOverrides for personalized greeting (language-aware)
   const language = getLanguageForAssistant(resolvedVapiAssistantId);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id);
+  const assistantOverrides = buildAssistantOverrides(
+    safeName,
+    lead.id,
+    attempt.id,
+    selectedTransferNumber,
+    selectedAgentName,
+  );
   const payload = {
     phoneNumberId: resolvedVapiPhoneNumberId,
     assistantId: resolvedVapiAssistantId,
@@ -2252,7 +2270,13 @@ app.post("/call/vapi", async (req, res) => {
 
   // Build VAPI payload using shared helper (language-aware)
   const language = getLanguageForAssistant(selectedAssistantId);
-  const assistantOverrides = buildAssistantOverrides(safeName, lead.id, attempt.id);
+  const assistantOverrides = buildAssistantOverrides(
+    safeName,
+    lead.id,
+    attempt.id,
+    selectedTransferNumber,
+    selectedAgentName,
+  );
   const payload = {
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     assistantId: selectedAssistantId,
