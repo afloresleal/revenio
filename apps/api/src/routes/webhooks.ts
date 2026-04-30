@@ -172,14 +172,19 @@ function normalizePhoneForMatch(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '');
 }
 
-function buildAssistantOverrides(safeName: string | null, leadId: string, attemptId: string): Record<string, unknown> {
+function buildAssistantOverrides(
+  safeName: string | null,
+  leadId: string,
+  attemptId: string,
+  transferNumber?: string | null,
+  agentName?: string | null,
+): Record<string, unknown> {
   const metadata = { lead_id: leadId, attempt_id: attemptId };
-  if (safeName) {
-    return {
-      variableValues: { name: safeName },
-      metadata,
-    };
-  }
+  const variableValues: Record<string, string> = {};
+  if (safeName) variableValues.name = safeName;
+  if (transferNumber) variableValues.transfer_number = transferNumber;
+  if (agentName) variableValues.agent_name = agentName;
+  if (Object.keys(variableValues).length) return { variableValues, metadata };
   return { metadata };
 }
 
@@ -1168,7 +1173,13 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
       status: 'initiated',
     },
   });
-  const assistantOverrides = buildAssistantOverrides(leadName, lead.id, attempt.id);
+  const assistantOverrides = buildAssistantOverrides(
+    leadName,
+    lead.id,
+    attempt.id,
+    assignedAgent.transferNumber,
+    assignedAgent.name,
+  );
   const payload = {
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     assistantId: VAPI_ASSISTANT_ID,
