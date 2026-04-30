@@ -1917,6 +1917,8 @@ function buildAssistantOverrides(
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
   if (transferNumber) {
     overrides.model = {
+      provider: "openai",
+      model: "gpt-4o-mini",
       tools: [
         {
           type: "transferCall",
