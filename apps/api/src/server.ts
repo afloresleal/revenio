@@ -1922,7 +1922,11 @@ function buildAssistantOverrides(
       tools: [
         {
           type: "transferCall",
-          destinations: [{ type: "number", number: transferNumber }],
+          destinations: [{
+            type: "number",
+            number: transferNumber,
+            transferPlan: { mode: "blind-transfer" }
+          }],
         },
       ],
     };

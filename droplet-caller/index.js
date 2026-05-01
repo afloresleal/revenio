@@ -155,7 +155,10 @@ app.post('/call/vapi', authMiddleware, rateLimitMiddleware, async (req, res) => 
           }],
           destinations: [{
             type: "number",
-            number: transferNumber
+            number: transferNumber,
+            transferPlan: {
+              mode: "blind-transfer"
+            }
           }]
         }]
       }
