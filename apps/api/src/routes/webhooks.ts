@@ -197,7 +197,7 @@ function buildAssistantOverrides(
             {
               type: 'number',
               number: transferNumber,
-              transferPlan: { mode: 'blind-transfer' },
+              transferPlan: { mode: 'blind-transfer', sipVerb: 'dial' },
             },
           ],
         },
