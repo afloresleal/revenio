@@ -17,7 +17,15 @@ OpportunityAssignedTo
 OpportunityAssignedToUpdate
 ```
 
-El endpoint espera `locationId`, `id` de oportunidad, `assignedTo` y datos de contacto. Si el payload no trae `contact.phone`, intenta consultar `GET /contacts/:contactId` usando la API key de la propiedad.
+El endpoint espera `campaignId`, `locationId`, `id` de oportunidad, `assignedTo` y datos de contacto. Si el payload no trae `contact.phone`, intenta consultar `GET /contacts/:contactId` usando la API key de la propiedad.
+
+Para el demo multi-campaña, cada workflow de GHL debe mandar `campaignId` en Custom Data:
+
+```json
+{
+  "campaignId": "isla-blanca-es"
+}
+```
 
 ## Propiedades configuradas
 
@@ -30,6 +38,17 @@ Nikki Ocean: ftdXjrhF7nXY6EWVpWN1
 Los agentes del alcance quedaron cargados en `apps/api/src/routes/webhooks.ts`. Para Nikki Ocean se respetan los primeros 5 por prioridad porque el RR actual de Revenio limita el pool a 5 agentes.
 
 La cuenta `GoHighLevel Test` usa agentes configurables por variables de entorno para evitar hardcodear usuarios de prueba.
+
+## Campañas configuradas para demo
+
+```text
+isla-blanca-es -> Isla Blanca / assistant Vapi ES
+isla-blanca-en -> Isla Blanca / assistant Vapi EN
+nikki-ocean-es -> Nikki Ocean / assistant Vapi ES
+nikki-ocean-en -> Nikki Ocean / assistant Vapi EN
+```
+
+Si `campaignId` viene y hace match, Revenio usa el assistant Vapi y phone number configurados para esa campaña. Si falta `campaignId`, el sistema usa el flujo anterior por `locationId` y las variables globales `VAPI_ASSISTANT_ID` / `VAPI_PHONE_NUMBER_ID`.
 
 ## Variables requeridas
 
@@ -77,6 +96,32 @@ GHL_ISLA_BLANCA_TRIGGER_STAGE_ID=...
 GHL_NIKKI_OCEAN_TRIGGER_STAGE_ID=...
 ```
 
+Vapi por campaña:
+
+```bash
+GHL_CAMPAIGN_IB_ES_ID=isla-blanca-es
+GHL_CAMPAIGN_IB_ES_PROPERTY_KEY=isla_blanca
+GHL_CAMPAIGN_IB_ES_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_IB_ES_VAPI_PHONE_NUMBER_ID=...
+
+GHL_CAMPAIGN_IB_EN_ID=isla-blanca-en
+GHL_CAMPAIGN_IB_EN_PROPERTY_KEY=isla_blanca
+GHL_CAMPAIGN_IB_EN_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_IB_EN_VAPI_PHONE_NUMBER_ID=...
+
+GHL_CAMPAIGN_NO_ES_ID=nikki-ocean-es
+GHL_CAMPAIGN_NO_ES_PROPERTY_KEY=nikki_ocean
+GHL_CAMPAIGN_NO_ES_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_NO_ES_VAPI_PHONE_NUMBER_ID=...
+
+GHL_CAMPAIGN_NO_EN_ID=nikki-ocean-en
+GHL_CAMPAIGN_NO_EN_PROPERTY_KEY=nikki_ocean
+GHL_CAMPAIGN_NO_EN_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_NO_EN_VAPI_PHONE_NUMBER_ID=...
+```
+
+Los nombres/campaign IDs tienen defaults en código, pero en Railway conviene declararlos explícitamente para que el setup sea auditable.
+
 Horario pedido por alcance:
 
 ```bash
@@ -119,3 +164,5 @@ Si nadie contesta, no se empuja nada a GHL.
 - Para la cuenta test, configurar al menos un agente con `GHL_TEST_AGENT_1_*`.
 - Confirmar si Omar Sanchez queda fuera del pool de Nikki Ocean o si se amplia Revenio a mas de 5 agentes.
 - Confirmar payload real del webhook en producción.
+- Configurar `campaignId` en Custom Data para los 4 workflows de demo.
+- Cargar los 4 `GHL_CAMPAIGN_*_VAPI_ASSISTANT_ID` correctos en Railway.

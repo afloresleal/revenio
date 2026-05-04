@@ -49,6 +49,15 @@ type GhlPropertyConfig = {
   agents: GhlAgentConfig[];
 };
 
+type GhlCampaignConfig = {
+  key: string;
+  campaignId: string;
+  name: string;
+  propertyKey: string;
+  vapiAssistantId?: string;
+  vapiPhoneNumberId?: string;
+};
+
 const KRP_GHL_PROPERTIES: GhlPropertyConfig[] = [
   {
     key: 'ghl_test',
@@ -97,8 +106,46 @@ const KRP_GHL_PROPERTIES: GhlPropertyConfig[] = [
   },
 ];
 
+const KRP_GHL_CAMPAIGNS: GhlCampaignConfig[] = [
+  buildEnvGhlCampaign('IB_ES', {
+    key: 'ib_es',
+    campaignId: 'isla-blanca-es',
+    name: 'Isla Blanca ES',
+    propertyKey: 'isla_blanca',
+  }),
+  buildEnvGhlCampaign('IB_EN', {
+    key: 'ib_en',
+    campaignId: 'isla-blanca-en',
+    name: 'Isla Blanca EN',
+    propertyKey: 'isla_blanca',
+  }),
+  buildEnvGhlCampaign('NO_ES', {
+    key: 'no_es',
+    campaignId: 'nikki-ocean-es',
+    name: 'Nikki Ocean ES',
+    propertyKey: 'nikki_ocean',
+  }),
+  buildEnvGhlCampaign('NO_EN', {
+    key: 'no_en',
+    campaignId: 'nikki-ocean-en',
+    name: 'Nikki Ocean EN',
+    propertyKey: 'nikki_ocean',
+  }),
+];
+
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
+}
+
+function buildEnvGhlCampaign(code: string, defaults: GhlCampaignConfig): GhlCampaignConfig {
+  return {
+    key: process.env[`GHL_CAMPAIGN_${code}_KEY`]?.trim() || defaults.key,
+    campaignId: process.env[`GHL_CAMPAIGN_${code}_ID`]?.trim() || defaults.campaignId,
+    name: process.env[`GHL_CAMPAIGN_${code}_NAME`]?.trim() || defaults.name,
+    propertyKey: process.env[`GHL_CAMPAIGN_${code}_PROPERTY_KEY`]?.trim() || defaults.propertyKey,
+    vapiAssistantId: process.env[`GHL_CAMPAIGN_${code}_VAPI_ASSISTANT_ID`]?.trim(),
+    vapiPhoneNumberId: process.env[`GHL_CAMPAIGN_${code}_VAPI_PHONE_NUMBER_ID`]?.trim(),
+  };
 }
 
 function parseEnvGhlAgents(prefix: string): GhlAgentConfig[] {
@@ -294,6 +341,15 @@ async function upsertDashboardMetricFromVapiCall(params: {
 
 function findGhlProperty(locationId: string): GhlPropertyConfig | null {
   return KRP_GHL_PROPERTIES.find((property) => property.locationId === locationId) ?? null;
+}
+
+function findGhlPropertyByKey(propertyKey: string): GhlPropertyConfig | null {
+  return KRP_GHL_PROPERTIES.find((property) => property.key === propertyKey) ?? null;
+}
+
+function findGhlCampaign(campaignId: string | null | undefined): GhlCampaignConfig | null {
+  if (!campaignId) return null;
+  return KRP_GHL_CAMPAIGNS.find((campaign) => campaign.campaignId === campaignId) ?? null;
 }
 
 function getActiveGhlAgents(property: GhlPropertyConfig): GhlAgentConfig[] {
@@ -1068,6 +1124,7 @@ function normalizeMetricsEvent(body: unknown): NormalizedMetricEvent | null {
 
 const ghlOpportunityAssignedSchema = z.object({
   type: z.string().min(1).optional(),
+  campaignId: z.string().min(1).optional(),
   locationId: z.string().min(1).optional(),
   id: z.string().min(1).optional(),
   assignedTo: z.string().min(1).optional(),
@@ -1135,6 +1192,7 @@ function normalizeGhlWorkflowPayload(body: unknown): GhlOpportunityAssignedInput
     asRecord(root.data);
 
   const type = pickFirstString(root.type, customData?.type) ?? 'OpportunityAssignedTo';
+  const campaignId = pickFirstString(root.campaignId, root.campaign_id, customData?.campaignId, customData?.campaign_id);
   const locationId =
     pickFirstString(root.locationId, root.location_id, customData?.locationId, customData?.location_id) ??
     'dOlMhCyzBPIxKGO4CTDq';
@@ -1163,6 +1221,7 @@ function normalizeGhlWorkflowPayload(body: unknown): GhlOpportunityAssignedInput
   return {
     ...root,
     type,
+    campaignId,
     locationId,
     id: pickFirstString(root.id, root.opportunityId, root.opportunity_id, customData?.id, customData?.opportunityId, customData?.opportunity_id, opportunity?.id) ?? `ghl-workflow-${Date.now()}`,
     assignedTo,
@@ -1184,9 +1243,13 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   const assignedTo = input.assignedTo ?? 'o6mW3ERlbWe49dW9rhKJ';
   const eventType = input.type ?? 'OpportunityAssignedTo';
   const opportunityId = input.id ?? `ghl-workflow-${Date.now()}`;
+  const requestedCampaignId = input.campaignId;
+  const campaign = findGhlCampaign(requestedCampaignId);
 
-  const property = findGhlProperty(locationId);
+  const property = campaign ? findGhlPropertyByKey(campaign.propertyKey) : findGhlProperty(locationId);
   if (!property) return { ok: true, ignored: true, reason: 'unknown_location' as const };
+  const resolvedVapiAssistantId = campaign?.vapiAssistantId || VAPI_ASSISTANT_ID;
+  const resolvedVapiPhoneNumberId = campaign?.vapiPhoneNumberId || VAPI_PHONE_NUMBER_ID;
 
   if (eventType !== 'OpportunityAssignedTo' && eventType !== 'OpportunityAssignedToUpdate') {
     return { ok: true, ignored: true, reason: 'unsupported_ghl_event' as const, eventType };
@@ -1212,11 +1275,14 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     return { ok: false, error: 'outside_business_hours' as const, call_window: callWindow };
   }
 
-  if (!VAPI_API_KEY || !VAPI_PHONE_NUMBER_ID || !VAPI_ASSISTANT_ID) {
+  if (!VAPI_API_KEY || !resolvedVapiPhoneNumberId || !resolvedVapiAssistantId) {
     return {
       ok: false,
       error: 'missing_vapi_config' as const,
-      required: ['VAPI_API_KEY', 'VAPI_PHONE_NUMBER_ID', 'VAPI_ASSISTANT_ID'],
+      required: campaign
+        ? ['VAPI_API_KEY', 'campaign Vapi assistant ID or VAPI_ASSISTANT_ID', 'campaign Vapi phone number ID or VAPI_PHONE_NUMBER_ID']
+        : ['VAPI_API_KEY', 'VAPI_PHONE_NUMBER_ID', 'VAPI_ASSISTANT_ID'],
+      campaignId: requestedCampaignId ?? null,
     };
   }
 
@@ -1248,13 +1314,16 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     data: {
       name: leadName,
       phone,
-      source: `gohighlevel:${property.key}`,
+      source: `gohighlevel:${campaign?.campaignId ?? property.key}`,
       events: {
         create: {
           type: 'ghl_opportunity_assigned',
           detail: {
             locationId,
             propertyKey: property.key,
+            campaignId: campaign?.campaignId ?? requestedCampaignId ?? null,
+            campaignKey: campaign?.key ?? null,
+            campaignName: campaign?.name ?? null,
             opportunityId,
             contactId: contactId ?? null,
             assignedTo,
@@ -1285,8 +1354,8 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     assignedAgent.name,
   );
   const payload = {
-    phoneNumberId: VAPI_PHONE_NUMBER_ID,
-    assistantId: VAPI_ASSISTANT_ID,
+    phoneNumberId: resolvedVapiPhoneNumberId,
+    assistantId: resolvedVapiAssistantId,
     customer: { number: phone },
     assistantOverrides,
   };
@@ -1330,6 +1399,16 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
         response: data,
         status: resp.status,
         flow: 'gohighlevel',
+        campaign: campaign
+          ? {
+              id: campaign.campaignId,
+              key: campaign.key,
+              name: campaign.name,
+              propertyKey: campaign.propertyKey,
+              vapiAssistantId: resolvedVapiAssistantId,
+              vapiPhoneNumberId: resolvedVapiPhoneNumberId,
+            }
+          : null,
         roundRobin: {
           enabled: true,
           strategy: 'sequential_failover',
@@ -1359,10 +1438,13 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
       controlUrl: data?.monitor?.controlUrl ?? null,
       resultJson: {
         transferNumber: assignedAgent.transferNumber,
-        assistantId: VAPI_ASSISTANT_ID,
+        assistantId: resolvedVapiAssistantId,
         ghlIntegration: {
           locationId,
           propertyKey: property.key,
+          campaignId: campaign?.campaignId ?? requestedCampaignId ?? null,
+          campaignKey: campaign?.key ?? null,
+          campaignName: campaign?.name ?? null,
           opportunityId,
           contactId: contactId ?? null,
           pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
@@ -1385,7 +1467,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   await upsertDashboardMetricFromVapiCall({
     data,
     fallbackPhone: phone,
-    fallbackAssistantId: VAPI_ASSISTANT_ID,
+    fallbackAssistantId: resolvedVapiAssistantId,
     transferNumber: assignedAgent.transferNumber,
     lastEventType: 'call-created',
   });
@@ -1395,6 +1477,16 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     lead_id: lead.id,
     attempt_id: attempt.id,
     property: property.key,
+    campaign: campaign
+      ? {
+          id: campaign.campaignId,
+          key: campaign.key,
+          name: campaign.name,
+          propertyKey: campaign.propertyKey,
+          vapiAssistantId: resolvedVapiAssistantId,
+          vapiPhoneNumberId: resolvedVapiPhoneNumberId,
+        }
+      : null,
     selected_agent: {
       human_agent_name: assignedAgent.name,
       ghl_user_id: assignedAgent.ghlUserId,

@@ -1,8 +1,9 @@
 # VAPI Config Producción — Revenio Voice Agent
 
 > Nota de handoff técnico (2026-04-08): ver [CALL-TRANSFER-HANDOFF-2026-04-08.md](./CALL-TRANSFER-HANDOFF-2026-04-08.md) para reglas de no-regresión del flujo Vapi+Twilio.
+> Nota de staging GHL (2026-05-03): ver [GHL-DEMO-HANDOFF-2026-05-03.md](./GHL-DEMO-HANDOFF-2026-05-03.md) para la configuración validada de Brenda + GoHighLevel.
 
-> **Última actualización:** 2026-03-04
+> **Última actualización:** 2026-05-03
 > **Optimizado por:** Julia + Marina (canal #revenio-mvp-voice-agent)
 > **Brand:** Caribbean Luxury Homes (Riviera Maya)
 > **North Star:** Transfer exitoso con confirmación inteligente
@@ -25,7 +26,29 @@
 |---------|-----|
 | Phone Number ID | `56a80999-3361-4501-ae74-f23beaea1c41` |
 | Twilio Number | `+13502169412` |
-| Número destino transfer | `+525527326714` |
+| Número destino transfer | Dinámico desde Revenio / GHL round robin |
+
+### Webhook por ambiente
+
+| Ambiente | Vapi Assistant Server URL |
+|----------|---------------------------|
+| Staging | `https://revenioapi-staging.up.railway.app/webhooks/vapi/events` |
+| Production | `https://revenioapi-production.up.railway.app/webhooks/vapi/events` |
+
+Regla operativa: si la llamada se crea desde staging, el assistant usado en Vapi debe apuntar al webhook staging. Si apunta a production, los eventos de transferencia se procesan en el backend equivocado y Vapi puede usar fallback/config vieja.
+
+### Checklist Vapi para pruebas GHL staging
+
+- Assistant correcto: `Brenda - EN - Caribbean Luxury` (`5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`).
+- Railway staging: `VAPI_ASSISTANT_ID=5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`.
+- Para multi-campaña, usar `GHL_CAMPAIGN_*_VAPI_ASSISTANT_ID` en lugar de cambiar `VAPI_ASSISTANT_ID` manualmente entre pruebas.
+- Server URL: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
+- Timeout recomendado: `10` a `30` segundos.
+- Server Messages:
+  - Activar: `transfer-update`, `transfer-destination-request`, `speech-update`, `tool-calls`, `end-of-call-report`.
+  - Desactivar: `phone-call-control`.
+- No dejar `Forwarding Phone Number` / fallback advisor hardcodeado para el flujo GHL.
+- No asignar un segundo tool nativo `Transfer Call` con destino hardcodeado. Revenio manda el `transferCall` y el asesor dinamicamente en `assistantOverrides`.
 
 ---
 
@@ -183,7 +206,75 @@ Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propieda
 
 ---
 
-## 10. Transfer Fallback Behavior (2026-03-05)
+## 10. Transfer dinamico desde Revenio / GHL (2026-05-03)
+
+Para el flujo GHL, Vapi no debe ser la fuente del numero del asesor. Revenio selecciona el asesor humano por round robin y crea la llamada con:
+
+```json
+{
+  "assistantOverrides": {
+    "model": {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "tools": [
+        {
+          "type": "transferCall",
+          "destinations": [
+            {
+              "type": "number",
+              "number": "+52...",
+              "transferPlan": {
+                "mode": "blind-transfer",
+                "sipVerb": "dial"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "variableValues": {
+      "name": "...",
+      "agent_name": "...",
+      "transfer_number": "+52..."
+    }
+  }
+}
+```
+
+La evidencia esperada en un log exitoso:
+
+- `assistantId` corresponde al assistant configurado en Railway.
+- `endedReason = assistant-forwarded-call`.
+- `forwardedPhoneNumber` coincide con `assistantOverrides.variableValues.transfer_number`.
+- `forwardedPhoneNumber` no debe ser el numero del lead ni un fallback viejo.
+
+### Multi-campaña MVP
+
+GHL debe enviar `campaignId` en Custom Data. Revenio lo usa para elegir el assistant Vapi:
+
+| Campaign ID | Codigo Railway | Propiedad |
+|-------------|----------------|-----------|
+| `isla-blanca-es` | `IB_ES` | Isla Blanca |
+| `isla-blanca-en` | `IB_EN` | Isla Blanca |
+| `nikki-ocean-es` | `NO_ES` | Nikki Ocean |
+| `nikki-ocean-en` | `NO_EN` | Nikki Ocean |
+
+Variables por campaña:
+
+```bash
+GHL_CAMPAIGN_IB_ES_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_IB_ES_VAPI_PHONE_NUMBER_ID=...
+GHL_CAMPAIGN_IB_EN_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_IB_EN_VAPI_PHONE_NUMBER_ID=...
+GHL_CAMPAIGN_NO_ES_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_NO_ES_VAPI_PHONE_NUMBER_ID=...
+GHL_CAMPAIGN_NO_EN_VAPI_ASSISTANT_ID=...
+GHL_CAMPAIGN_NO_EN_VAPI_PHONE_NUMBER_ID=...
+```
+
+Si una variable por campaña no existe, Revenio usa el fallback global `VAPI_ASSISTANT_ID` / `VAPI_PHONE_NUMBER_ID`.
+
+## 11. Transfer Fallback Behavior historico (2026-03-05)
 
 Cuando la transferencia al vendedor falla (no contesta, ocupado, timeout), el sistema NO corta la llamada abruptamente. En su lugar:
 
@@ -216,7 +307,7 @@ Cliente contesta → Bot saluda → Transfer iniciado
 | `request-start` | "Please hold while I connect you with a property specialist." |
 | `request-failed` | "I apologize, our property specialists are currently assisting other clients. We have your contact information and someone will call you back within the next 30 minutes. Thank you for your interest in Caribbean Luxury Homes!" |
 
-### Tool Structure (VAPI)
+### Tool Structure historico (VAPI)
 
 ```json
 {
@@ -229,12 +320,15 @@ Cliente contesta → Bot saluda → Transfer iniciado
 }
 ```
 
+Nota: esta estructura con destino fijo no debe usarse para el flujo GHL staging validado el 2026-05-03. Para GHL, el destino lo inyecta Revenio por llamada.
+
 ---
 
-## 11. Historial de Cambios
+## 12. Historial de Cambios
 
 | Fecha | Cambio | Autor |
 |-------|--------|-------|
+| 2026-05-03 | Documentado flujo GHL staging con Brenda, Server URL staging, `phone-call-control` off y transferencia dinamica desde Revenio | Codex + Ale |
 | 2026-03-05 | Fix {{name}} interpolación + Transfer fallback behavior | Julia |
 | 2026-03-04 | Rebrand a Caribbean Luxury Homes, nuevos scripts Brenda/Bella | Julia |
 | 2026-03-04 | Edge cases para Bella (negativo, timeout, ambiguo) | Julia |
