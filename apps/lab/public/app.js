@@ -67,6 +67,18 @@ if (!$('api_base').value) {
       : "https://revenioapi-production.up.railway.app";
 }
 
+const adminLink = $("admin_link");
+if (adminLink) {
+  const hostname = window.location.hostname;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    adminLink.href = "http://127.0.0.1:5175/";
+  } else if (hostname.includes("staging")) {
+    adminLink.href = "https://revenio-admin-staging.up.railway.app";
+  } else {
+    adminLink.href = "https://revenio-admin-production.up.railway.app";
+  }
+}
+
 const out = $("out");
 const callWindowStatus = $("cw_status");
 const agentsStatus = $("agents_status");
