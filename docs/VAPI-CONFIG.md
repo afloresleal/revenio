@@ -2,6 +2,7 @@
 
 > Nota de handoff técnico (2026-04-08): ver [CALL-TRANSFER-HANDOFF-2026-04-08.md](./CALL-TRANSFER-HANDOFF-2026-04-08.md) para reglas de no-regresión del flujo Vapi+Twilio.
 > Nota de staging GHL (2026-05-03): ver [GHL-DEMO-HANDOFF-2026-05-03.md](./GHL-DEMO-HANDOFF-2026-05-03.md) para la configuración validada de Brenda + GoHighLevel.
+> Nota Admin (2026-05-06): para demos nuevos con GHL, los `Vapi Assistant ID` y `Vapi Phone Number ID` por campaña se configuran en Admin/BD, no con variables `GHL_CAMPAIGN_*` en Railway.
 
 > **Última actualización:** 2026-05-03
 > **Optimizado por:** Julia + Marina (canal #revenio-mvp-voice-agent)
@@ -41,7 +42,7 @@ Regla operativa: si la llamada se crea desde staging, el assistant usado en Vapi
 
 - Assistant correcto: `Brenda - EN - Caribbean Luxury` (`5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`).
 - Railway staging: `VAPI_ASSISTANT_ID=5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`.
-- Para multi-campaña, usar `GHL_CAMPAIGN_*_VAPI_ASSISTANT_ID` en lugar de cambiar `VAPI_ASSISTANT_ID` manualmente entre pruebas.
+- Para multi-campaña nueva, usar Admin para guardar el `Vapi Assistant ID` por campaña. Las variables `GHL_CAMPAIGN_*_VAPI_ASSISTANT_ID` quedaron como referencia histórica del demo anterior.
 - Server URL: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
 - Timeout recomendado: `10` a `30` segundos.
 - Server Messages:

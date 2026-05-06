@@ -1,5 +1,7 @@
 # GHL Demo Handoff - 2026-05-03
 
+> **Estado 2026-05-06:** documento histórico. El demo actual debe configurarse desde Admin/BD. No agregar variables `GHL_CAMPAIGN_*` en Railway para campañas nuevas; Admin genera el entregable de webhook de GHL campo por campo.
+
 ## Start here if opening a new Codex chat
 
 Current branch/workflow:

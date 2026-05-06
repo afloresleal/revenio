@@ -281,7 +281,7 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
 async function resolveGhlRoundRobinAgents(
   property: GhlPropertyConfig,
   campaign: GhlCampaignConfig | null,
-  assignedTo: string,
+  assignedTo: string | null | undefined,
 ): Promise<{
   agents: GhlAgentConfig[];
   fallbackName: string | null;
@@ -306,7 +306,7 @@ async function resolveGhlRoundRobinAgents(
     .filter((agent) => agent.name && agent.ghlUserId && agent.transferNumber)
     .sort((a, b) => a.priority - b.priority)
     .slice(0, MAX_ROUND_ROBIN_AGENTS);
-  const agents = orderGhlAgentsForAssignment(activeAgents, assignedTo);
+  const agents = assignedTo ? orderGhlAgentsForAssignment(activeAgents, assignedTo) : activeAgents;
 
   const campaignSetting = campaign
     ? await prisma.ghlAgentPoolSetting.findFirst({
@@ -1203,7 +1203,6 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   const opportunityId = input.id ?? `ghl-workflow-${Date.now()}`;
   const requestedCampaignId = input.campaignId;
   if (!requestedCampaignId) return { ok: false, error: 'missing_campaign_id' as const };
-  if (!assignedTo) return { ok: false, error: 'missing_assigned_to' as const, campaignId: requestedCampaignId };
   const campaign = await resolveGhlCampaign(requestedCampaignId);
   if (!campaign) return { ok: false, error: 'campaign_not_configured' as const, campaignId: requestedCampaignId };
   if (campaign) {
@@ -1281,9 +1280,30 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   const leadName = sanitizeName(`${firstName} ${lastName}`.trim() || contactEmail || 'Lead GHL');
   const transferConfig = await resolveGhlRoundRobinAgents(property, campaign, assignedTo);
   const agents = transferConfig.agents;
-  const assignedAgent = agents.find((agent) => agent.ghlUserId === assignedTo) ?? null;
-  if (!assignedAgent) {
-    return { ok: false, error: 'assigned_agent_not_configured' as const, assignedTo, property: property.key };
+  const assignedAgent = assignedTo ? agents.find((agent) => agent.ghlUserId === assignedTo) ?? null : null;
+  const selectedAgent = assignedAgent ?? agents[0] ?? null;
+  const selectedAgentIndex = selectedAgent
+    ? agents.findIndex((agent) => agent.ghlUserId === selectedAgent.ghlUserId)
+    : agents.length;
+  const selectedTransfer = selectedAgent
+    ? {
+        name: selectedAgent.name,
+        ghlUserId: selectedAgent.ghlUserId,
+        transferNumber: selectedAgent.transferNumber,
+        source: 'agent' as const,
+        selectedAgentIndex,
+      }
+    : transferConfig.fallbackTransferNumber
+      ? {
+          name: transferConfig.fallbackName ?? 'Fallback final',
+          ghlUserId: transferConfig.fallbackGhlUserId,
+          transferNumber: transferConfig.fallbackTransferNumber,
+          source: 'fallback' as const,
+          selectedAgentIndex,
+        }
+      : null;
+  if (!selectedTransfer) {
+    return { ok: false, error: 'missing_transfer_config' as const, campaignId: campaign.campaignId };
   }
 
   const lead = await prisma.lead.create({
@@ -1303,7 +1323,8 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
             opportunityId,
             contactId: contactId ?? null,
             assignedTo,
-            assignedAgentName: assignedAgent.name,
+            selectedTransferName: selectedTransfer.name,
+            selectedTransferSource: selectedTransfer.source,
             pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
             pipelineName: input.pipeline?.name ?? input.pipelineName ?? null,
             stageId,
@@ -1326,8 +1347,8 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     leadName,
     lead.id,
     attempt.id,
-    assignedAgent.transferNumber,
-    assignedAgent.name,
+    selectedTransfer.transferNumber,
+    selectedTransfer.name,
   );
   const payload = {
     phoneNumberId: resolvedVapiPhoneNumberId,
@@ -1388,9 +1409,10 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
         roundRobin: {
           enabled: true,
           strategy: 'sequential_failover',
-          selectedAgentIndex: 0,
-          selectedAgentName: assignedAgent.name,
-          selectedTransferNumber: assignedAgent.transferNumber,
+          selectedAgentIndex: selectedTransfer.selectedAgentIndex,
+          selectedAgentName: selectedTransfer.name,
+          selectedTransferNumber: selectedTransfer.transferNumber,
+          selectedTransferSource: selectedTransfer.source,
           poolSize: agents.length,
           fallbackAgentName: transferConfig.fallbackName,
           fallbackGhlUserId: transferConfig.fallbackGhlUserId,
@@ -1416,7 +1438,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
       providerId: typeof data.id === 'string' ? data.id : null,
       controlUrl: data?.monitor?.controlUrl ?? null,
       resultJson: {
-        transferNumber: assignedAgent.transferNumber,
+        transferNumber: selectedTransfer.transferNumber,
         assistantId: resolvedVapiAssistantId,
         ghlIntegration: {
           locationId,
@@ -1434,9 +1456,10 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
         roundRobin: {
           enabled: true,
           strategy: 'sequential_failover',
-          selectedAgentIndex: 0,
-          selectedAgentName: assignedAgent.name,
-          selectedTransferNumber: assignedAgent.transferNumber,
+          selectedAgentIndex: selectedTransfer.selectedAgentIndex,
+          selectedAgentName: selectedTransfer.name,
+          selectedTransferNumber: selectedTransfer.transferNumber,
+          selectedTransferSource: selectedTransfer.source,
           poolSize: agents.length,
           fallbackAgentName: transferConfig.fallbackName,
           fallbackGhlUserId: transferConfig.fallbackGhlUserId,
@@ -1450,7 +1473,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     data,
     fallbackPhone: phone,
     fallbackAssistantId: resolvedVapiAssistantId,
-    transferNumber: assignedAgent.transferNumber,
+    transferNumber: selectedTransfer.transferNumber,
     lastEventType: 'call-created',
   });
 
@@ -1470,9 +1493,10 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
         }
       : null,
     selected_agent: {
-      human_agent_name: assignedAgent.name,
-      ghl_user_id: assignedAgent.ghlUserId,
-      transfer_number: assignedAgent.transferNumber,
+      human_agent_name: selectedTransfer.name,
+      ghl_user_id: selectedTransfer.ghlUserId,
+      transfer_number: selectedTransfer.transferNumber,
+      source: selectedTransfer.source,
       fallback_transfer_number: transferConfig.fallbackTransferNumber,
       round_robin_pool_size: agents.length,
     },

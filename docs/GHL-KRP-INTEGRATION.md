@@ -1,6 +1,8 @@
 # Integracion GoHighLevel - KRP Estate Group
 
-Estado: MVP tecnico para conectar GHL con el flujo actual de Revenio.
+> **Estado 2026-05-06:** documento histórico. El flujo operativo actual usa Admin/BD para campañas, vendedores humanos y fallback final. No configurar `GHL_TEST_*`, `GHL_ISLA_*`, `GHL_NIKKI_*` ni `GHL_CAMPAIGN_*` en Railway para demos nuevos.
+
+Estado histórico: MVP tecnico para conectar GHL con el flujo anterior de Revenio.
 
 ## Entrada desde GHL
 

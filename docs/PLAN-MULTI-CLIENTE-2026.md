@@ -1,9 +1,11 @@
 # Plan de Crecimiento: Arquitectura Multi-Cliente
 ## Revenio — Mayo 2026
 
-> **Estado actual:** Sistema funcional en producción para un solo cliente (Caribbean Luxury Homes / Casalba).
-> **Objetivo:** Evolucionar el sistema para soportar múltiples clientes y campañas, con un panel de administración para el equipo de marketing.
-> **Prioridad inmediata:** dejar listo un Admin separado de Lab para demos con GHL, sin depender de Railway ni cambios de código.
+> **Estado actual:** Admin operativo en `apps/admin` para crear campañas GHL, configurar vendedores humanos, fallback final y generar el entregable de webhook para marketing.
+> **Objetivo:** terminar la transición multi-cliente/multi-campaña sin que el equipo tenga que tocar Railway ni código para operar demos.
+> **Prioridad inmediata:** validar el demo GHL en staging con campañas creadas desde Admin y mantener Lab como herramienta técnica interna.
+
+Guía operativa vigente: [ADMIN-GHL-CAMPAIGNS.md](./ADMIN-GHL-CAMPAIGNS.md)
 
 ---
 
@@ -16,9 +18,9 @@ Revenio es un sistema de llamadas outbound con IA. El flujo actual:
 3. La llamada llega a un agente humano de ventas
 4. Se registran métricas: duración, resultado, sentimiento, transcripción
 
-**El problema:** parte de la configuración del sistema todavía vive en variables de entorno o en código. Para demos con clientes, eso no escala: Marina y su equipo deben poder crear campañas, seleccionar asistentes de Vapi, cargar vendedores humanos y configurar fallback desde un Admin operativo, sin pedir cambios técnicos.
+**Decisión actual:** la configuración operativa de campañas GHL ya no debe vivir en variables de entorno ni en código. Marina y su equipo deben crear campañas, seleccionar asistentes de Vapi, cargar vendedores humanos y configurar fallback desde Admin.
 
-**Avance ya iniciado:** la administración de vendedores humanos para GHL ya empezó a moverse a BD y a una interfaz temporal en Lab. La siguiente pieza crítica es crear un Admin separado, orientado al equipo de marketing, y mover ahí campañas, vendedores y fallback.
+**Avance actual:** Admin ya existe separado de Lab. Lab queda para monitoreo técnico, pruebas manuales y debugging; Admin queda como interfaz operativa para marketing.
 
 ---
 
@@ -30,9 +32,22 @@ Para demos con clientes, Revenio debe tener una sola fuente de verdad operativa:
 - **GHL:** manda `campaignId`, lead y, cuando ya exista, `assignedTo`.
 - **Revenio Admin/BD:** guarda campañas, IDs de Vapi, vendedores humanos y fallback final.
 - **Revenio Lab:** queda para monitoreo, soporte interno, pruebas manuales y debugging.
-- **Railway:** solo conserva secretos y configuración de infraestructura, no operación diaria de campañas.
+- **Railway:** solo conserva secretos y configuración de infraestructura, no operación diaria de campañas ni datos de vendedores.
 
 Esto evita que el equipo tenga que entrar a Railway para cambiar números o agregar campañas, y evita que el equipo de marketing vea JSONs o herramientas técnicas.
+
+### Estado después del Admin
+
+- Las campañas se crean en Admin y se guardan en BD.
+- Cada campaña guarda `campaignId`, cliente, nombre, idioma, `GHL Location ID`, `Vapi Assistant ID`, `Vapi Phone Number ID`, status activa/pausada y, si aplica, configuración avanzada de GHL.
+- Los vendedores humanos y el fallback final se guardan por campaña en BD.
+- El webhook de GHL debe enviar `campaignId`; Revenio usa ese valor para resolver la campaña desde BD.
+- Si la campaña está pausada, Revenio ignora el webhook sin lanzar llamada.
+- Si GHL manda `assignedTo` y coincide con un `GHL User ID`, ese vendedor se intenta primero.
+- Si `assignedTo` viene vacío o no coincide, Revenio empieza con el primer vendedor activo del pool de la campaña.
+- Si no hay vendedores activos, Revenio usa el fallback final si está configurado.
+- No debe haber datos de clientes, campañas, vendedores ni teléfonos hardcodeados en `apps/api/src/routes/webhooks.ts`.
+- Admin apunta a staging para demos mientras terminamos pruebas: `https://revenioapi-staging.up.railway.app`.
 
 ---
 
@@ -110,27 +125,29 @@ Admin no debe mostrar JSONs como interfaz principal. Debe usar formularios, tabl
 
 ---
 
-## MVP recomendado antes del demo
+## MVP actual antes del demo
 
-Antes de hacer el modelo completo de clientes, conviene cerrar un MVP operativo en Admin:
+Antes de hacer el modelo completo de clientes, el MVP operativo en Admin queda así:
 
 1. **Campañas en BD**
-   - Crear/editar campañas desde Admin.
-   - Guardar `campaignId`, nombre, cliente, Vapi Assistant ID, Vapi Phone Number ID, idioma y status.
-   - Activar/pausar campaña sin borrarla. Si está pausada, el webhook no debe disparar llamadas.
-   - Guardar configuración GHL por campaña: Location ID como dato principal; API key secreta, Pipeline ID y Stage ID como datos avanzados cuando aplique el push post-llamada a GHL.
-   - El webhook GHL debe buscar campañas en BD antes de usar variables/código.
+   - Crear/editar campañas desde Admin. Implementado para el demo.
+   - Guardar `campaignId`, nombre, cliente, Vapi Assistant ID, Vapi Phone Number ID, idioma y status. Implementado.
+   - Activar/pausar campaña sin borrarla. Implementado; si está pausada, el webhook no debe disparar llamadas.
+   - Guardar configuración GHL por campaña: Location ID como dato principal; Pipeline ID, Stage ID, API key y transcript custom field como datos avanzados cuando aplique el push post-llamada a GHL.
+   - El webhook GHL busca campañas en BD. No debe usar variables/código para datos de campañas nuevas.
 
 2. **Agentes GHL en BD**
-   - Ya iniciado.
+   - Implementado en Admin.
    - Cada campaña tiene hasta 5 vendedores humanos.
    - Cada vendedor tiene nombre, `GHL User ID`, teléfono, prioridad y activo/inactivo.
-   - Cada pool tiene fallback final, normalmente gerente de marketing.
+   - Cada pool tiene fallback final, normalmente gerente de marketing, con `GHL User ID` opcional.
    - Si GHL manda `assignedTo`, el vendedor con ese `GHL User ID` se intenta primero; despues siguen los demas vendedores activos.
+   - Si GHL no manda `assignedTo` o no coincide, Revenio empieza por el pool de vendedores de esa campaña y termina en fallback final.
 
-3. **Test de llamada por campaña**
-   - En Admin, elegir una campaña y llamar a un lead de prueba.
-   - El usuario no debe pegar Assistant ID ni Phone Number ID cada vez.
+3. **Historial y exportación**
+   - Admin muestra datos de llamadas por campaña.
+   - La exportación CSV queda como formato operativo inicial.
+   - La pestaña de prueba queda oculta por ahora; las pruebas se lanzan desde GHL.
 
 4. **Checklist visible para operación**
    - Campaña activa.
@@ -263,17 +280,9 @@ La visión completa agrega estos modelos. Para el MVP de demo podemos implementa
 
 ---
 
-### 2. API — Nuevos endpoints
+### 2. API — Endpoints actuales
 
 Para el MVP de Admin se recomienda usar endpoints propios de admin. Lab puede seguir usando sus endpoints técnicos actuales.
-
-**Clientes:**
-```
-GET    /api/admin/clients                     → Listar clientes
-POST   /api/admin/clients                     → Crear cliente
-GET    /api/admin/clients/:clientSlug         → Detalle del cliente
-PUT    /api/admin/clients/:clientSlug         → Editar nombre/status
-```
 
 **Campañas:**
 ```
@@ -281,13 +290,7 @@ GET    /api/admin/ghl-campaigns                  → Listar campañas
 POST   /api/admin/ghl-campaigns                  → Crear campaña
 PUT    /api/admin/ghl-campaigns/:id              → Editar campaña
 GET    /api/admin/ghl-campaigns/:id              → Detalle de campaña
-```
-
-**Configuración VAPI de una campaña:**
-```
-GET    /api/admin/ghl-campaigns/:id/config       → Obtener configuración
-PUT    /api/admin/ghl-campaigns/:id/config       → Guardar configuración
-POST   /api/admin/ghl-campaigns/:id/validate     → Validar Assistant ID + Phone Number ID
+GET    /api/admin/ghl-campaigns/:id/calls.csv    → Descargar llamadas de la campaña en CSV
 ```
 
 **Agentes humanos de una campaña:**
@@ -296,19 +299,24 @@ GET    /api/admin/ghl-agents                     → Listar agentes + fallback p
 PUT    /api/admin/ghl-agents                     → Guardar pool completo + fallback final
 ```
 
-**Cambio en endpoints de llamada (retrocompatible):**
+**Prueba operativa por campaña:**
+```
+POST   /api/admin/ghl-campaigns/:id/test-call    → Existe, pero la pestaña está oculta en Admin mientras las pruebas salen desde GHL
+```
+
+**Pendiente para la fase multi-cliente formal:**
+```
+GET    /api/admin/clients
+POST   /api/admin/clients
+GET    /api/admin/clients/:clientSlug
+PUT    /api/admin/clients/:clientSlug
+```
+
+**Webhook de GHL:**
 
 El webhook de GHL debe aceptar `campaignId` y resolver la campaña desde BD:
 
 ```json
-// Antes (sigue funcionando)
-{
-  "vapi_api_key": "...",
-  "vapi_assistant_id": "...",
-  "round_robin_agents": [...]
-}
-
-// Después (nuevo flujo)
 {
   "campaignId": "isla-blanca-es",
   "assignedTo": "ghl-user-id-del-vendedor",
@@ -316,7 +324,7 @@ El webhook de GHL debe aceptar `campaignId` y resolver la campaña desde BD:
 }
 ```
 
-Si viene `campaignId`, la API carga la configuración desde BD. Si no existe en BD, puede usar el fallback actual de variables/código durante transición, pero el objetivo del demo es no depender de ese fallback.
+`campaignId` es obligatorio para demos nuevos. Si no existe en BD, Revenio no debe inferir cliente/campaña desde código.
 
 Si viene `assignedTo`, la API ordena el pool de transferencia poniendo primero al vendedor asignado por GHL. Si ese vendedor no contesta, el failover continua con el resto del pool y finalmente con fallback.
 
@@ -324,7 +332,9 @@ Si viene `assignedTo`, la API ordena el pool de transferencia poniendo primero a
 
 ### 3. Autenticación del panel admin
 
-Para el MVP interno de demo puede seguir el mismo acceso operativo del Lab. Cuando se abra a más usuarios, se implementa autenticación simple por API key en los endpoints `/api/admin/*`:
+Para el MVP interno de demo, Admin sigue el mismo acceso operativo del Lab: no hay login propio ni `ADMIN_API_KEY`.
+
+Cuando se abra a más usuarios, se implementará autenticación simple por API key en los endpoints `/api/admin/*`:
 
 - El panel envía el header `X-Admin-Key: <valor>`
 - El valor se configura en una variable de entorno `ADMIN_API_KEY`
@@ -337,90 +347,69 @@ Para el MVP interno de demo puede seguir el mismo acceso operativo del Lab. Cuan
 
 Lab se mantiene como herramienta de testing y monitoreo interno. Admin será una aplicación separada, con la misma base de datos y API, pero con una interfaz pensada para marketing y operaciones.
 
-**Tecnología MVP:** crear `apps/admin/` como aplicación separada. Puede ser HTML/JS simple o React/Vite, pero debe quedar separada de Lab desde el principio.
+**Tecnología MVP actual:** `apps/admin/` es una aplicación separada en HTML/JS simple, con el mismo look and feel oscuro de Lab/Dashboard.
 
-**Recomendación:** React + Vite si el tiempo lo permite, porque Admin crecerá a clientes, roles, historial avanzado y filtros multi-campaña. Si hay presión de demo, HTML/JS separado también es aceptable.
+**Evolución futura:** si Admin crece a roles, permisos, filtros complejos y múltiples clientes formales, conviene migrarlo a React/Vite. Para el demo, mantenerlo simple reduce riesgo.
 
 **Pantallas:**
 
-#### Pantalla 1: Lista de clientes
-- Tabla con todos los clientes: nombre, número de campañas activas, fecha de creación
-- Botón "Nuevo cliente"
-- Click en un cliente abre su detalle
+#### Pantalla actual: Campañas
+- Crear/editar campaña.
+- Capturar cliente, nombre, `campaignId`, `GHL Location ID`, IDs de Vapi, idioma y status.
+- Capturar configuración avanzada de GHL cuando aplique el push post-llamada.
+- Generar entregable de webhook para GHL.
 
-#### Pantalla 2: Detalle del cliente
-- Información general del cliente (nombre, status)
-- Lista de campañas con su status y métricas básicas (llamadas hoy, tasa de transferencia)
-- Botón "Nueva campaña"
-
-#### Pantalla 3: Detalle de campaña (sub-navegación)
-Con cuatro tabs:
-
-**Tab: Configuración VAPI**
-- Formulario: Assistant ID, Phone Number ID, idioma y status
-- Toggle activa/pausada. Si una campaña está pausada, Revenio ignora los webhooks de esa campaña.
-- Campos GHL: Location ID, Pipeline ID, Stage ID y API key.
-- La API key de GHL se puede pegar/actualizar, pero después solo se muestra como "API key configurada".
-- Botón "Cargar desde VAPI" → llena los dropdowns con los asistentes y números disponibles
-- Botón "Validar credenciales" → confirma que la config funciona antes de guardar
-- Indicador de último guardado
-
-**Tab: Agentes Humanos**
+#### Pantalla actual: Agentes Humanos
 - Lista editable del pool de transferencia con nombre, `GHL User ID`, número y activo/inactivo
 - Fallback final separado para gerente de marketing
 - Agregar / editar / desactivar agentes
 - Orden/prioridad simple de 1 a 5 para el MVP
 
-**Tab: Historial de llamadas**
-- Tabla de llamadas de esta campaña (equivalente al Histórico del Lab actual)
-- Filtros por resultado, sentimiento, fecha
-- Detalle con transcripción y grabación
+#### Pantalla actual: Historial de llamadas
+- Tabla de llamadas de la campaña.
+- Datos operativos principales: vendedor seleccionado, teléfono, duración, tiempos y resultado.
+- Exportación CSV.
 
-**Tab: Ajustes**
-- Nombre de la campaña, slug, status (activa / pausada / inactiva)
+#### Pantalla oculta: Prueba
+- Existe soporte de API para test-call por campaña.
+- La pestaña queda oculta mientras las pruebas se ejecutan desde GHL.
 
-#### Pantalla 4: Test de llamada
-- Reemplaza la necesidad de usar Lab para pruebas operativas
-- Selector de campaña (dropdown)
-- Al seleccionar una campaña, carga su configuración automáticamente
-- Solo requiere ingresar: teléfono del lead y nombre
-- Botón "Llamar" → lanza la llamada de prueba
-- Panel de resultado en tiempo real
-
-#### Pantalla 5: Historial global
-- Vista agregada de todas las llamadas de todas las campañas
-- Misma funcionalidad que el Histórico actual del Lab
+#### Futuro: Clientes
+- Tabla formal de clientes.
+- Detalle de cliente con campañas, status y métricas agregadas.
+- Filtros por cliente/campaña en historial global.
 
 ---
 
 ## Fases de implementación ajustadas
 
-### Fase 0 — Ya iniciado: Agentes GHL
+### Fase 0 — Completada: Agentes GHL
 - Crear tabla de vendedores humanos GHL.
 - Crear setting de fallback final por campaña.
-- Agregar vista temporal **Agentes GHL** en Lab.
-- Webhook GHL lee vendedores/fallback desde BD antes de usar fallback de código.
+- Agregar fallback final con `GHL User ID` opcional.
+- Webhook GHL lee vendedores/fallback desde BD.
 - Webhook GHL ordena el pool con `assignedTo` primero cuando hay match contra `GHL User ID`.
+- Si no hay `assignedTo` o no hay match, el webhook usa el pool de la campaña y luego fallback final.
 
-### Fase 1 — Admin de campañas para demo
+### Fase 1 — Completada para demo: Admin de campañas
 - Crear tabla de campañas GHL.
 - Crear app separada `apps/admin/`.
 - Agregar vista **Campañas** en Admin.
 - Guardar `campaignId`, cliente, nombre, idioma, Assistant ID, Phone Number ID y status.
 - Agregar toggle Activa/Pausada y hacer que el webhook respete campañas pausadas.
-- Guardar GHL Location ID, Pipeline ID, Stage ID y API key secreta por campaña.
+- Guardar GHL Location ID, Pipeline ID, Stage ID, transcript field y API key secreta por campaña.
 - Agregar vista **Agentes GHL** en Admin.
 - Agregar fallback final en Admin.
 - Generar entregable GHL por campaña.
 - Webhook GHL resuelve campaña desde BD.
-- En **Agentes GHL**, seleccionar campañas cargadas desde BD.
-- Mantener agentes y fallback aislados por campaña: cambiar de campaña debe cargar su propio pool.
+- Mantener agentes y fallback aislados por campaña: cambiar de campaña carga su propio pool.
+- Admin apunta a staging por default fuera de local mientras validamos demo.
 
-### Fase 2 — Test de llamada por campaña
-- En Admin, agregar selector de campaña en prueba operativa.
-- Al elegir campaña, el API usa Assistant ID y Phone Number ID desde BD.
-- El operador solo captura teléfono/nombre del lead.
-- Permitir prueba de routing con un `assignedTo` simulado para validar "asignado primero -> RR -> fallback".
+### Fase 2 — Parcial: Historial por campaña y CSV
+- Admin muestra historial por campaña.
+- Admin descarga CSV por campaña.
+- La prueba de llamada por campaña existe en API, pero queda oculta en Admin porque por ahora las pruebas salen desde GHL.
+- Cuando haya un cliente sin CRM, se puede volver a mostrar la pestaña de prueba.
 
 ### Fase 3 — Migración del cliente actual
 - Crear el cliente "Caribbean Luxury Homes" en el nuevo sistema
@@ -462,23 +451,17 @@ Con cuatro tabs:
 
 ---
 
-## Checklist para mañana
+## Checklist para el demo en staging
 
-1. Confirmar campos mínimos de campaña:
-   - nombre
-   - `campaignId`
-   - idioma
-   - Vapi Assistant ID
-   - Vapi Phone Number ID
-   - status
-2. Crear tabla/migración de campañas.
-3. Crear `apps/admin/` separado de Lab.
-4. Crear endpoints Admin para campañas.
-5. Agregar pantalla **Campañas** en Admin.
-6. Generar entregable GHL por campaña con Method, URL y tabla de Custom Data.
-7. Mover/replicar **Agentes GHL** en Admin con vendedores + fallback.
-8. Conectar webhook GHL para buscar campaña en BD.
-9. Conectar **Agentes GHL** al selector de campañas de BD.
-10. Validar routing por campaña: agentes guardados en campañas distintas no se mezclan.
-11. Probar una llamada GHL con campaña creada desde Admin.
-12. Probar caso `assignedTo`: vendedor asignado primero, resto del RR despues, fallback al final.
+1. Crear campaña desde Admin.
+2. Confirmar que la campaña queda activa.
+3. Capturar `GHL Location ID`.
+4. Capturar `Vapi Assistant ID` y `Vapi Phone Number ID`.
+5. Capturar vendedores humanos con teléfono E.164 y `GHL User ID` cuando exista.
+6. Capturar fallback final con teléfono E.164 y `GHL User ID` opcional.
+7. Copiar el entregable de GHL desde Admin.
+8. Configurar el webhook en GHL con URL staging y Custom Data campo por campo.
+9. Probar una llamada GHL con campaña creada desde Admin.
+10. Probar caso con `assignedTo`: vendedor asignado primero, resto del RR despues, fallback al final.
+11. Probar caso sin `assignedTo`: primer vendedor activo del pool, resto del RR despues, fallback al final.
+12. Descargar CSV de la campaña y validar que aparezcan llamada, vendedor seleccionado, duración y transcripción cuando esté disponible.

@@ -28,6 +28,8 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
 ```
 
 ### Round Robin (hasta 5 agentes)
+
+> Nota 2026-05-06: este endpoint directo puede seguir usando agentes en request o ENV para pruebas técnicas. Para campañas GHL nuevas, la fuente de verdad de vendedores y fallback es Admin/BD.
 - Activar con `round_robin_enabled: true`.
 - Definir agentes humanos en request con `round_robin_agents` (1..5).
 - Si no mandas `round_robin_agents`, el API puede usar ENV:
