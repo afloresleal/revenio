@@ -57,6 +57,7 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
       <nav class="inline-flex gap-2 p-1 rounded-xl border border-slate-800 bg-slate-900/60" aria-label="Vistas del Lab">
         <button id="tab_ops" class="tab-button is-active" data-tab-target="ops">Operación</button>
+        <button id="tab_agents" class="tab-button" data-tab-target="agents">Agentes GHL</button>
         <button id="tab_response" class="tab-button" data-tab-target="response">Respuesta</button>
         <button id="tab_history" class="tab-button" data-tab-target="history">Histórico</button>
       </nav>
@@ -166,7 +167,7 @@
             </div>
           </div>
 
-          <div class="subsection">
+          <div class="subsection" style="display:none;">
             <p class="subsection-title">Round Robin · Agentes Humanos (Transfer)</p>
             <div class="rr-header">
               <label class="inline-flex items-center gap-2 text-sm text-slate-300">
@@ -265,6 +266,164 @@
                 <button id="btn_call" class="primary cta-btn">Crear lead + Llamar</button>
               </div>
             </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="panel_agents" class="tab-panel space-y-4">
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+            <div>
+              <h3 class="section-title">Agentes GHL</h3>
+              <p class="section-help">Lista operativa que Revenio usa para transferir llamadas de GHL sin tocar Railway ni Vapi.</p>
+            </div>
+            <div class="actions actions-row">
+              <button id="btn_agents_load" class="ghost compact-btn" type="button">Cargar</button>
+              <button id="btn_agents_save" class="secondary compact-btn" type="button">Guardar</button>
+            </div>
+          </div>
+
+          <div class="subsection">
+            <p class="subsection-title">Alcance</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="field-label">Propiedad</label>
+                <select id="agent_property_key" class="field-input">
+                  <option value="ghl_test">GoHighLevel Test</option>
+                  <option value="isla_blanca">Isla Blanca</option>
+                  <option value="nikki_ocean">Nikki Ocean</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Campaña específica (opcional)</label>
+                <select id="agent_campaign_id" class="field-input">
+                  <option value="">Toda la propiedad</option>
+                  <option value="isla-blanca-es">Isla Blanca ES</option>
+                  <option value="isla-blanca-en">Isla Blanca EN</option>
+                  <option value="nikki-ocean-es">Nikki Ocean ES</option>
+                  <option value="nikki-ocean-en">Nikki Ocean EN</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="subsection">
+            <p class="subsection-title">Pool de transferencia</p>
+            <p class="text-xs text-slate-500 mt-2">Captura hasta 5 asesores. El GHL User ID debe coincidir con el valor `assignedTo` que manda GHL.</p>
+            <div class="rr-agents mt-3">
+              <div class="stored-agent-row">
+                <div class="rr-agent-index">Agente 1</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="stored_agent_name_1" class="field-input" placeholder="Ana" />
+                </div>
+                <div>
+                  <label class="field-label">GHL User ID</label>
+                  <input id="stored_agent_ghl_user_id_1" class="field-input" placeholder="abc123" />
+                </div>
+                <div>
+                  <label class="field-label">Teléfono</label>
+                  <input id="stored_agent_phone_1" class="field-input" placeholder="+5255..." />
+                </div>
+                <label class="agent-active-toggle">
+                  <input id="stored_agent_active_1" type="checkbox" checked />
+                  Activo
+                </label>
+              </div>
+              <div class="stored-agent-row">
+                <div class="rr-agent-index">Agente 2</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="stored_agent_name_2" class="field-input" placeholder="Luis" />
+                </div>
+                <div>
+                  <label class="field-label">GHL User ID</label>
+                  <input id="stored_agent_ghl_user_id_2" class="field-input" placeholder="abc123" />
+                </div>
+                <div>
+                  <label class="field-label">Teléfono</label>
+                  <input id="stored_agent_phone_2" class="field-input" placeholder="+5255..." />
+                </div>
+                <label class="agent-active-toggle">
+                  <input id="stored_agent_active_2" type="checkbox" checked />
+                  Activo
+                </label>
+              </div>
+              <div class="stored-agent-row">
+                <div class="rr-agent-index">Agente 3</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="stored_agent_name_3" class="field-input" placeholder="Sofía" />
+                </div>
+                <div>
+                  <label class="field-label">GHL User ID</label>
+                  <input id="stored_agent_ghl_user_id_3" class="field-input" placeholder="abc123" />
+                </div>
+                <div>
+                  <label class="field-label">Teléfono</label>
+                  <input id="stored_agent_phone_3" class="field-input" placeholder="+5255..." />
+                </div>
+                <label class="agent-active-toggle">
+                  <input id="stored_agent_active_3" type="checkbox" checked />
+                  Activo
+                </label>
+              </div>
+              <div class="stored-agent-row">
+                <div class="rr-agent-index">Agente 4</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="stored_agent_name_4" class="field-input" placeholder="Carlos" />
+                </div>
+                <div>
+                  <label class="field-label">GHL User ID</label>
+                  <input id="stored_agent_ghl_user_id_4" class="field-input" placeholder="abc123" />
+                </div>
+                <div>
+                  <label class="field-label">Teléfono</label>
+                  <input id="stored_agent_phone_4" class="field-input" placeholder="+5255..." />
+                </div>
+                <label class="agent-active-toggle">
+                  <input id="stored_agent_active_4" type="checkbox" checked />
+                  Activo
+                </label>
+              </div>
+              <div class="stored-agent-row">
+                <div class="rr-agent-index">Agente 5</div>
+                <div>
+                  <label class="field-label">Nombre</label>
+                  <input id="stored_agent_name_5" class="field-input" placeholder="María" />
+                </div>
+                <div>
+                  <label class="field-label">GHL User ID</label>
+                  <input id="stored_agent_ghl_user_id_5" class="field-input" placeholder="abc123" />
+                </div>
+                <div>
+                  <label class="field-label">Teléfono</label>
+                  <input id="stored_agent_phone_5" class="field-input" placeholder="+5255..." />
+                </div>
+                <label class="agent-active-toggle">
+                  <input id="stored_agent_active_5" type="checkbox" checked />
+                  Activo
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="subsection">
+            <p class="subsection-title">Fallback final</p>
+            <p class="text-xs text-slate-500 mt-2">Este numero no participa en la rotacion normal. Solo se usa si ningun vendedor del pool contesta.</p>
+            <div class="stored-agent-row stored-agent-row--fallback mt-3">
+              <div class="rr-agent-index">Fallback</div>
+              <div>
+                <label class="field-label">Nombre</label>
+                <input id="stored_fallback_name" class="field-input" placeholder="Gerente de marketing" />
+              </div>
+              <div>
+                <label class="field-label">Telefono</label>
+                <input id="stored_fallback_phone" class="field-input" placeholder="+5255..." />
+              </div>
+            </div>
+            <pre id="agents_status" class="mt-4">Sin cargar.</pre>
           </div>
         </section>
       </section>

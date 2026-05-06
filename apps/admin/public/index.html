@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Revenio Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Revenio</p>
+        <h1>Admin</h1>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <h2>Campañas</h2>
+          <button id="btn_new_campaign" type="button">Nueva</button>
+        </div>
+        <div id="campaign_list" class="campaign-list">Cargando...</div>
+      </aside>
+
+      <section class="workspace">
+        <nav class="tabs" aria-label="Secciones">
+          <button class="tab is-active" data-panel="campaign">Campaña</button>
+          <button class="tab" data-panel="agents">Agentes</button>
+          <button class="tab" data-panel="handoff">GHL</button>
+          <button class="tab" data-panel="calls">Llamadas</button>
+          <button class="tab is-hidden" data-panel="test" hidden>Prueba</button>
+        </nav>
+
+        <section id="panel_campaign" class="panel is-active">
+          <div class="panel-title">
+            <div>
+              <div class="title-row">
+                <h2 id="campaign_form_title">Nueva campaña</h2>
+                <span id="campaign_mode_badge" class="mode-badge">Creando</span>
+              </div>
+              <p>Datos que Revenio usará para seleccionar el assistant y número de Vapi.</p>
+            </div>
+            <button id="btn_save_campaign" type="button">Guardar campaña</button>
+          </div>
+          <div id="campaign_feedback" class="feedback" hidden></div>
+
+          <div class="form-grid">
+            <label>
+              Cliente
+              <input id="client_name" placeholder="Caribbean Luxury Homes" />
+            </label>
+            <label>
+              Nombre de la campaña
+              <input id="campaign_name" placeholder="Isla Blanca ES" />
+            </label>
+            <label>
+              Campaign ID
+              <input id="campaign_id" placeholder="isla-blanca-es" />
+            </label>
+              <label>
+              GHL Location ID
+              <input id="ghl_location_id" placeholder="location-id" />
+            </label>
+            
+            <input id="property_key" type="hidden" />
+            <label>
+              Vapi Assistant ID
+              <input id="vapi_assistant_id" placeholder="assistant-id" />
+            </label>
+            <label>
+              Vapi Phone Number ID
+              <input id="vapi_phone_number_id" placeholder="phone-number-id" />
+            </label>
+            <label>
+              Idioma
+              <select id="language">
+                <option value="es">Español</option>
+                <option value="en">Inglés</option>
+              </select>
+            </label>
+          
+            <label class="toggle-row">
+              <input id="campaign_active" type="checkbox" checked />
+              <span id="campaign_active_label">Campaña activa</span>
+            </label>
+          </div>
+
+          <details class="advanced-fields">
+            <summary>Integración GHL post-llamada</summary>
+            <p>Solo se usa si Revenio actualizará la oportunidad en GHL después de que conteste un vendedor.</p>
+            <div class="form-grid">
+              <label>
+                GHL API key
+                <input id="ghl_api_key" type="password" autocomplete="new-password" placeholder="Pegar nueva key para guardar/actualizar" />
+                <span id="ghl_api_key_status" class="label-muted">No configurada</span>
+              </label>
+              <label>
+                GHL Pipeline ID
+                <input id="ghl_pipeline_id" placeholder="pipeline-id" />
+              </label>
+              <label>
+                GHL Stage ID
+                <input id="ghl_stage_id" placeholder="stage-id" />
+              </label>
+            </div>
+          </details>
+        </section>
+
+        <section id="panel_agents" class="panel">
+          <div class="panel-title">
+            <div>
+              <h2>Agentes GHL</h2>
+              <p>Hasta 5 vendedores y un fallback final para gerente de marketing.</p>
+            </div>
+            <button id="btn_save_agents" type="button">Guardar agentes</button>
+          </div>
+          <div id="agents_feedback" class="feedback" hidden></div>
+
+          <div id="agent_rows" class="agent-list"></div>
+
+          <div class="fallback-box">
+            <h3>Fallback final</h3>
+            <p>Solo se usa si ningún vendedor contesta.</p>
+            <div class="form-grid two">
+              <label>
+                Nombre
+                <input id="fallback_name" placeholder="Gerente de marketing" />
+              </label>
+              <label>
+                GHL User ID <span class="label-muted">opcional</span>
+                <input id="fallback_user_id" placeholder="Se puede dejar vacio" />
+              </label>
+              <label>
+                Teléfono
+                <input id="fallback_phone" placeholder="+5255..." />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section id="panel_handoff" class="panel">
+          <div class="panel-title">
+            <div>
+              <h2>Entregable para GHL</h2>
+              <p>Instrucciones para configurar la acción Webhook del workflow.</p>
+            </div>
+            <button id="btn_copy_handoff" type="button">Copiar instrucciones</button>
+          </div>
+
+          <div class="handoff-section">
+            <h3>Webhook</h3>
+            <table>
+              <tbody id="webhook_table"></tbody>
+            </table>
+          </div>
+
+          <div class="handoff-section">
+            <h3>Custom Data</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody id="custom_data_table"></tbody>
+            </table>
+          </div>
+
+          <div class="handoff-section">
+            <h3>Validaciones</h3>
+            <ul id="validation_list" class="checklist"></ul>
+          </div>
+        </section>
+
+        <section id="panel_calls" class="panel">
+          <div class="panel-title">
+            <div>
+              <h2>Llamadas de la campaña</h2>
+              <p>Exporta los registros operativos de la campaña seleccionada.</p>
+            </div>
+            <button id="btn_download_calls_csv" type="button">Descargar CSV</button>
+          </div>
+          <div id="calls_feedback" class="feedback" hidden></div>
+          <div class="notice">El CSV incluye vendedor intentado, vendedor que contestó cuando exista, duración, transferencia, transcript y recording URL.</div>
+        </section>
+
+        <section id="panel_test" class="panel is-hidden" hidden>
+          <div class="panel-title">
+            <div>
+              <h2>Prueba operativa</h2>
+              <p>Prueba rápida por campaña. No reemplaza el monitoreo técnico de Lab.</p>
+            </div>
+          </div>
+          <div class="form-grid two">
+            <label>
+              Teléfono del lead
+              <input id="test_phone" placeholder="+5255..." />
+            </label>
+            <label>
+              Nombre del lead
+              <input id="test_name" placeholder="Lead de prueba" />
+            </label>
+          </div>
+          <div class="actions-row">
+            <button id="btn_test_call" type="button">Lanzar prueba</button>
+          </div>
+          <div class="notice">Usa la campaña seleccionada, el primer vendedor activo y el fallback final configurado.</div>
+        </section>
+
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

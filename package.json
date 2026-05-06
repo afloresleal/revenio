@@ -11,7 +11,8 @@
     "dev": "npm -w apps/api run dev",
     "build": "npm -w apps/api run build",
     "start": "npm -w apps/api run start",
-    "lab": "npm -w apps/lab run dev"
+    "lab": "npm -w apps/lab run dev",
+    "admin": "npm -w apps/admin run dev"
   },
   "keywords": [],
   "author": "",

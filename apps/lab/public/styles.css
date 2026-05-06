@@ -89,6 +89,35 @@ body {
   background: rgb(15 23 42 / 0.45);
 }
 
+.stored-agent-row {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) 84px;
+  gap: 0.75rem;
+  align-items: end;
+  border: 1px solid rgb(30 41 59 / 0.85);
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+  background: rgb(15 23 42 / 0.45);
+}
+
+.stored-agent-row--fallback {
+  grid-template-columns: 100px minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.agent-active-toggle {
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: rgb(203 213 225);
+}
+
+.agent-active-toggle input {
+  width: 1rem;
+  height: 1rem;
+}
+
 .rr-agent-index {
   font-size: 0.82rem;
   font-weight: 600;
@@ -98,6 +127,14 @@ body {
 
 @media (max-width: 960px) {
   .rr-agent-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stored-agent-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stored-agent-row--fallback {
     grid-template-columns: 1fr;
   }
 

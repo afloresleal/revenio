@@ -15,6 +15,12 @@ import {
 import metricsRouter from "./routes/metrics.js";
 import webhooksRouter from "./routes/webhooks.js";
 import jobsRouter from "./routes/jobs.js";
+import {
+  buildCampaignCallsCsv,
+  buildGhlWebhookInstructions,
+  normalizeStoredGhlCampaign,
+  selectCampaignTestTransfer,
+} from "./lib/ghl-campaigns.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -47,8 +53,10 @@ app.use(cors({
   origin: [
     'http://localhost:3001',
     'http://localhost:5173',
+    'http://localhost:5175',
     'http://127.0.0.1:3001',
     'http://127.0.0.1:5173',
+    'http://127.0.0.1:5175',
     'https://revenio.austack.app',
     // Railway domains
     'https://revenioapi-production.up.railway.app',
@@ -2618,6 +2626,111 @@ const callWindowSettingsSchema = z.object({
   reset: z.boolean().optional(),
 });
 
+const labGhlAgentScopeSchema = z.object({
+  propertyKey: z.string().min(1).max(80),
+  campaignId: z.string().min(1).max(120).optional(),
+});
+
+const labGhlAgentsSaveSchema = labGhlAgentScopeSchema.extend({
+  agents: z.array(z.object({
+    name: z.string().min(1).max(120),
+    ghlUserId: z.string().min(1).max(120),
+    transferNumber: z.string().min(6).max(32),
+    priority: z.number().int().min(1).max(5),
+    active: z.boolean().optional(),
+  })).max(5),
+  fallback: z.object({
+    name: z.string().max(120).optional(),
+    ghlUserId: z.string().max(120).optional(),
+    transferNumber: z.string().max(32).optional(),
+  }).optional(),
+});
+
+const adminGhlCampaignSchema = z.object({
+  campaignId: z.string().min(1).max(120),
+  clientName: z.string().max(160).optional(),
+  propertyKey: z.string().min(1).max(80),
+  name: z.string().min(1).max(140),
+  language: z.enum(["es", "en"]).default("es"),
+  vapiAssistantId: z.string().min(6).max(160),
+  vapiPhoneNumberId: z.string().min(6).max(160),
+  ghlLocationId: z.string().max(160).optional(),
+  ghlApiKey: z.string().max(500).optional(),
+  ghlPipelineId: z.string().max(160).optional(),
+  ghlStageId: z.string().max(160).optional(),
+  active: z.boolean().default(true),
+});
+
+const adminCampaignTestCallSchema = z.object({
+  toNumber: z.string().min(6),
+  leadName: z.string().min(1).max(80).optional(),
+});
+
+function serializeGhlCampaign(campaign: {
+  id: string;
+  campaignId: string;
+  clientName?: string | null;
+  propertyKey: string;
+  name: string;
+  language: string;
+  vapiAssistantId: string;
+  vapiPhoneNumberId: string;
+  ghlLocationId?: string | null;
+  ghlApiKey?: string | null;
+  ghlPipelineId?: string | null;
+  ghlStageId?: string | null;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) {
+  const normalized = normalizeStoredGhlCampaign(campaign);
+  return {
+    ...campaign,
+    ghlApiKey: undefined,
+    ghlApiKeyConfigured: Boolean(campaign.ghlApiKey),
+    webhookInstructions: normalized ? buildGhlWebhookInstructions(normalized) : null,
+  };
+}
+
+function adminRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function adminString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function adminNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function adminDiffSeconds(start?: Date | null, end?: Date | null): number | null {
+  if (!start || !end) return null;
+  const seconds = Math.round((end.getTime() - start.getTime()) / 1000);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+function adminCsvFilename(campaignId: string): string {
+  const safeCampaignId = campaignId.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "campaign";
+  const dateKey = new Date().toISOString().slice(0, 10);
+  return `revenio-${safeCampaignId}-calls-${dateKey}.csv`;
+}
+
+function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSchema>, options: { preserveEmptyApiKey: boolean }) {
+  const normalized = {
+    ...data,
+    clientName: adminString(data.clientName),
+    ghlLocationId: adminString(data.ghlLocationId),
+    ghlPipelineId: adminString(data.ghlPipelineId),
+    ghlStageId: adminString(data.ghlStageId),
+    ghlApiKey: adminString(data.ghlApiKey),
+  };
+  if (options.preserveEmptyApiKey && !normalized.ghlApiKey) {
+    delete (normalized as Partial<typeof normalized>).ghlApiKey;
+  }
+  return normalized;
+}
+
 app.get("/lab/settings/call-window", (_req, res) => {
   const settings = getCallWindowSettings();
   const startEval = canStartOutboundCall();
@@ -2661,6 +2774,444 @@ app.post("/lab/settings/call-window", async (req, res) => {
     },
   });
 });
+
+app.get("/api/admin/ghl-campaigns", async (_req, res) => {
+  const campaigns = await prisma.ghlCampaign.findMany({
+    orderBy: [{ active: "desc" }, { propertyKey: "asc" }, { name: "asc" }],
+  });
+  return res.json({ ok: true, campaigns: campaigns.map(serializeGhlCampaign) });
+});
+
+app.post("/api/admin/ghl-campaigns", async (req, res) => {
+  const parsed = adminGhlCampaignSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  try {
+    const campaign = await prisma.ghlCampaign.create({
+      data: normalizeAdminGhlCampaignData(parsed.data, { preserveEmptyApiKey: false }),
+    });
+    return res.status(201).json({ ok: true, campaign: serializeGhlCampaign(campaign) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Unique constraint")) {
+      return res.status(409).json({ error: "campaign_id_exists", campaignId: parsed.data.campaignId });
+    }
+    throw error;
+  }
+});
+
+app.get("/api/admin/ghl-campaigns/:id", async (req, res) => {
+  const campaign = await prisma.ghlCampaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) return res.status(404).json({ error: "not_found" });
+  return res.json({ ok: true, campaign: serializeGhlCampaign(campaign) });
+});
+
+app.get("/api/admin/ghl-campaigns/:id/calls.csv", async (req, res) => {
+  const campaign = await prisma.ghlCampaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) return res.status(404).json({ error: "not_found" });
+
+  const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? "1000"), 10) || 1000, 1), 5000);
+  const attempts = await prisma.callAttempt.findMany({
+    where: {
+      providerId: { not: null },
+      OR: [
+        { resultJson: { path: ["ghlIntegration", "campaignId"], equals: campaign.campaignId } },
+        { resultJson: { path: ["campaignId"], equals: campaign.campaignId } },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: { lead: true },
+  });
+
+  const callIds = attempts
+    .map((attempt) => attempt.providerId)
+    .filter((callId): callId is string => Boolean(callId));
+  const metrics = callIds.length
+    ? await prisma.callMetric.findMany({
+        where: { callId: { in: callIds } },
+        orderBy: [{ startedAt: "desc" }, { createdAt: "desc" }],
+      })
+    : [];
+  const metricsByCallId = new Map(metrics.map((metric) => [metric.callId, metric]));
+
+  const rows = attempts.map((attempt) => {
+    const result = adminRecord(attempt.resultJson);
+    const integration = adminRecord(result?.ghlIntegration);
+    const roundRobin = adminRecord(result?.roundRobin);
+    const selectedAgent = adminRecord(result?.selected_agent);
+    const metric = attempt.providerId ? metricsByCallId.get(attempt.providerId) : null;
+    const startedAt = metric?.startedAt ?? attempt.createdAt;
+    const transferNumber =
+      metric?.transferNumber ??
+      adminString(selectedAgent?.transfer_number) ??
+      adminString(roundRobin?.selectedTransferNumber) ??
+      adminString(result?.transferNumber);
+    const durationSec = metric?.durationSec ?? adminNumber(result?.durationSec);
+    const timeToTransferSec = adminDiffSeconds(metric?.startedAt, metric?.transferredAt);
+    const sellerTalkSec =
+      metric?.postTransferDurationSec ??
+      adminDiffSeconds(metric?.transferredAt, metric?.endedAt);
+
+    return {
+      campaignName: adminString(integration?.campaignName) ?? campaign.name,
+      campaignId: adminString(integration?.campaignId) ?? campaign.campaignId,
+      startedAt,
+      phone: attempt.lead?.phone ?? metric?.phoneNumber ?? "",
+      outcome: metric?.outcome ?? attempt.status,
+      sentiment: metric?.sentiment ?? "",
+      assignedTo: adminString(integration?.assignedTo) ?? adminString(result?.assignedTo) ?? "",
+      firstAgentName:
+        adminString(roundRobin?.firstAgentName) ??
+        adminString(roundRobin?.selectedAgentName) ??
+        adminString(selectedAgent?.human_agent_name) ??
+        "",
+      answeredAgentName: adminString(roundRobin?.answeredAgentName) ?? "",
+      transferNumber,
+      durationSec,
+      timeToTransferSec,
+      sellerTalkSec,
+      transcript: metric?.fullTranscript ?? metric?.transferTranscript ?? metric?.transcript ?? "",
+      recordingUrl: metric?.transferRecordingUrl ?? metric?.recordingUrl ?? "",
+    };
+  });
+
+  const csv = buildCampaignCallsCsv(rows);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${adminCsvFilename(campaign.campaignId)}"`);
+  return res.send(csv);
+});
+
+app.put("/api/admin/ghl-campaigns/:id", async (req, res) => {
+  const parsed = adminGhlCampaignSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  try {
+    const campaign = await prisma.ghlCampaign.update({
+      where: { id: req.params.id },
+      data: normalizeAdminGhlCampaignData(parsed.data, { preserveEmptyApiKey: true }),
+    });
+    return res.json({ ok: true, campaign: serializeGhlCampaign(campaign) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Record to update not found")) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    if (message.includes("Unique constraint")) {
+      return res.status(409).json({ error: "campaign_id_exists", campaignId: parsed.data.campaignId });
+    }
+    throw error;
+  }
+});
+
+app.post("/api/admin/ghl-campaigns/:id/test-call", async (req, res) => {
+  const callWindow = canStartOutboundCall();
+  if (!callWindow.allowed) {
+    return res.status(400).json({
+      error: "outside_business_hours",
+      message: "Llamadas fuera de horario habilitado",
+      call_window: callWindow,
+    });
+  }
+
+  const parsed = adminCampaignTestCallSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const campaign = await prisma.ghlCampaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) return res.status(404).json({ error: "campaign_not_found" });
+  if (!campaign.active) return res.status(400).json({ error: "campaign_inactive" });
+  if (!VAPI_API_KEY) {
+    return res.status(400).json({ error: "missing_vapi_config", required: ["VAPI_API_KEY"] });
+  }
+
+  const agents = await prisma.ghlHumanAgent.findMany({
+    where: { propertyKey: campaign.propertyKey, campaignId: campaign.campaignId },
+    orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+  });
+  const setting = await prisma.ghlAgentPoolSetting.findFirst({
+    where: { propertyKey: campaign.propertyKey, campaignId: campaign.campaignId },
+    orderBy: { updatedAt: "desc" },
+  });
+  const transfer = selectCampaignTestTransfer({
+    agents,
+    fallback: {
+      name: setting?.fallbackName,
+      ghlUserId: setting?.fallbackGhlUserId,
+      transferNumber: setting?.fallbackTransferNumber,
+    },
+  });
+  if (!transfer) {
+    return res.status(400).json({
+      error: "missing_transfer_config",
+      message: "Configura al menos un vendedor activo o fallback final en Admin.",
+    });
+  }
+
+  const safeName = parsed.data.leadName ? sanitizeName(parsed.data.leadName) : "Lead de prueba";
+  const lead = await prisma.lead.create({
+    data: {
+      name: safeName,
+      phone: parsed.data.toNumber,
+      source: `admin-test:${campaign.campaignId}`,
+      events: {
+        create: {
+          type: "lead_received",
+          detail: { source: `admin-test:${campaign.campaignId}` },
+        },
+      },
+    },
+  });
+
+  const attempt = await prisma.callAttempt.create({
+    data: {
+      leadId: lead.id,
+      status: "initiated",
+    },
+  });
+
+  const configuredAgents = agents
+    .filter((agent) => agent.active !== false)
+    .slice(0, MAX_ROUND_ROBIN_AGENTS)
+    .map((agent) => ({ name: agent.name, transferNumber: agent.transferNumber }));
+  const selectedAgentIndex = transfer.source === "agent" ? 0 : configuredAgents.length;
+  const assistantOverrides = buildAssistantOverrides(
+    safeName,
+    lead.id,
+    attempt.id,
+    transfer.transferNumber,
+    transfer.name,
+  );
+  const payload = {
+    phoneNumberId: campaign.vapiPhoneNumberId,
+    assistantId: campaign.vapiAssistantId,
+    customer: { number: parsed.data.toNumber },
+    assistantOverrides,
+  };
+
+  let resp: Response;
+  let data: any = {};
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    resp = await fetch("https://api.vapi.ai/call/phone", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${VAPI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    data = await resp.json().catch(() => ({}));
+  } catch (error) {
+    await prisma.callAttempt.update({ where: { id: attempt.id }, data: { status: "failed" } });
+    return res.status(502).json({
+      error: "vapi_network_error",
+      message: error instanceof Error ? error.message : String(error),
+      lead_id: lead.id,
+      attempt_id: attempt.id,
+    });
+  }
+
+  await prisma.event.create({
+    data: {
+      leadId: lead.id,
+      type: "vapi_call_request",
+      detail: {
+        request: payload,
+        response: data,
+        status: resp.status,
+        flow: "admin-campaign-test",
+        campaign: {
+          id: campaign.campaignId,
+          name: campaign.name,
+          propertyKey: campaign.propertyKey,
+        },
+        roundRobin: {
+          enabled: configuredAgents.length > 0,
+          strategy: "sequential_failover",
+          selectedAgentIndex,
+          selectedAgentName: transfer.name,
+          selectedTransferNumber: transfer.transferNumber,
+          fallbackAgentName: setting?.fallbackName ?? null,
+          fallbackTransferNumber: setting?.fallbackTransferNumber ?? null,
+          poolSize: configuredAgents.length,
+          agents: buildRoundRobinAgentsSnapshot(configuredAgents),
+          fallbackGhlUserId: setting?.fallbackGhlUserId ?? null,
+        },
+      } as any,
+    },
+  });
+
+  if (!resp.ok) {
+    await prisma.callAttempt.update({ where: { id: attempt.id }, data: { status: "failed" } });
+    return res.status(502).json({ error: "vapi_call_failed", status: resp.status, data, lead_id: lead.id, attempt_id: attempt.id });
+  }
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: {
+      status: "sent",
+      providerId: typeof data.id === "string" ? data.id : null,
+      controlUrl: data?.monitor?.controlUrl ?? null,
+      resultJson: {
+        transferNumber: transfer.transferNumber,
+        fallbackTransferNumber: setting?.fallbackTransferNumber ?? null,
+        assistantId: campaign.vapiAssistantId,
+        ghlIntegration: {
+          propertyKey: campaign.propertyKey,
+          campaignId: campaign.campaignId,
+          campaignName: campaign.name,
+        },
+        roundRobin: {
+          enabled: configuredAgents.length > 0,
+          strategy: "sequential_failover",
+          selectedAgentIndex,
+          selectedAgentName: transfer.name,
+          selectedTransferNumber: transfer.transferNumber,
+          fallbackAgentName: setting?.fallbackName ?? null,
+          fallbackGhlUserId: setting?.fallbackGhlUserId ?? null,
+          fallbackTransferNumber: setting?.fallbackTransferNumber ?? null,
+          poolSize: configuredAgents.length,
+          agents: buildRoundRobinAgentsSnapshot(configuredAgents),
+        },
+      } as any,
+    },
+  });
+  await linkAttemptWithTwilioParentSid({
+    vapiCallId: typeof data.id === "string" ? data.id : null,
+    attemptId: attempt.id,
+    leadId: lead.id,
+    vapiResponse: data,
+  });
+  await upsertDashboardMetricFromVapiCall({
+    data,
+    fallbackPhone: parsed.data.toNumber,
+    fallbackAssistantId: campaign.vapiAssistantId,
+    transferNumber: transfer.transferNumber,
+    lastEventType: "call-created",
+  });
+
+  return res.json({
+    ok: true,
+    lead_id: lead.id,
+    attempt_id: attempt.id,
+    campaign: serializeGhlCampaign(campaign),
+    selected_agent: {
+      human_agent_name: transfer.name,
+      ghl_user_id: transfer.ghlUserId,
+      transfer_number: transfer.transferNumber,
+      source: transfer.source,
+      round_robin_pool_size: configuredAgents.length,
+      fallback_transfer_number: setting?.fallbackTransferNumber ?? null,
+    },
+    vapi: data,
+  });
+});
+
+async function handleGetGhlAgents(req: express.Request, res: express.Response) {
+  const parsed = labGhlAgentScopeSchema.safeParse({
+    propertyKey: req.query.propertyKey,
+    campaignId: req.query.campaignId || undefined,
+  });
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", issues: parsed.error.issues });
+  }
+
+  const { propertyKey, campaignId } = parsed.data;
+  const agents = await prisma.ghlHumanAgent.findMany({
+    where: { propertyKey, campaignId: campaignId ?? null },
+    orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+  });
+  const setting = await prisma.ghlAgentPoolSetting.findFirst({
+    where: { propertyKey, campaignId: campaignId ?? null },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  return res.json({
+    ok: true,
+    propertyKey,
+    campaignId: campaignId ?? null,
+    agents,
+    fallback: {
+      name: setting?.fallbackName ?? "",
+      ghlUserId: setting?.fallbackGhlUserId ?? "",
+      transferNumber: setting?.fallbackTransferNumber ?? "",
+    },
+  });
+}
+
+async function handlePutGhlAgents(req: express.Request, res: express.Response) {
+  const parsed = labGhlAgentsSaveSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const { propertyKey, campaignId, agents, fallback } = parsed.data;
+  const fallbackName = fallback?.name?.trim() || null;
+  const fallbackGhlUserId = fallback?.ghlUserId?.trim() || null;
+  const fallbackTransferNumber = fallback?.transferNumber?.trim() || null;
+  const normalizedAgents = agents.map((agent, index) => ({
+    propertyKey,
+    campaignId: campaignId ?? null,
+    name: agent.name.trim(),
+    ghlUserId: agent.ghlUserId.trim(),
+    transferNumber: agent.transferNumber.trim(),
+    priority: agent.priority || index + 1,
+    active: agent.active ?? true,
+  }));
+
+  const savedAgents = await prisma.$transaction(async (tx) => {
+    await tx.ghlHumanAgent.deleteMany({
+      where: { propertyKey, campaignId: campaignId ?? null },
+    });
+    await tx.ghlAgentPoolSetting.deleteMany({
+      where: { propertyKey, campaignId: campaignId ?? null },
+    });
+    for (const agent of normalizedAgents) {
+      await tx.ghlHumanAgent.create({ data: agent });
+    }
+    if (fallbackName || fallbackGhlUserId || fallbackTransferNumber) {
+      await tx.ghlAgentPoolSetting.create({
+        data: {
+          propertyKey,
+          campaignId: campaignId ?? null,
+          fallbackName,
+          fallbackGhlUserId,
+          fallbackTransferNumber,
+        },
+      });
+    }
+    return tx.ghlHumanAgent.findMany({
+      where: { propertyKey, campaignId: campaignId ?? null },
+      orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+    });
+  });
+
+  return res.json({
+    ok: true,
+    propertyKey,
+    campaignId: campaignId ?? null,
+    agents: savedAgents,
+    fallback: {
+      name: fallbackName ?? "",
+      ghlUserId: fallbackGhlUserId ?? "",
+      transferNumber: fallbackTransferNumber ?? "",
+    },
+  });
+}
+
+app.get("/lab/ghl-agents", handleGetGhlAgents);
+app.put("/lab/ghl-agents", handlePutGhlAgents);
+app.get("/api/admin/ghl-agents", handleGetGhlAgents);
+app.put("/api/admin/ghl-agents", handlePutGhlAgents);
 
 app.post("/lab/sync-attempt/:id", async (req, res) => {
   const attempt = await prisma.callAttempt.findUnique({

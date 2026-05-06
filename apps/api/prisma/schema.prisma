@@ -112,3 +112,59 @@ model TwilioCallLink {
   @@index([attemptId])
   @@index([childCallSid])
 }
+
+model GhlCampaign {
+  id                String   @id @default(uuid())
+  campaignId        String   @unique @map("campaign_id")
+  clientName        String?  @map("client_name")
+  propertyKey       String   @map("property_key")
+  name              String
+  language          String   @default("es")
+  vapiAssistantId   String   @map("vapi_assistant_id")
+  vapiPhoneNumberId String   @map("vapi_phone_number_id")
+  ghlLocationId     String?  @map("ghl_location_id")
+  ghlApiKey         String?  @map("ghl_api_key")
+  ghlPipelineId     String?  @map("ghl_pipeline_id")
+  ghlStageId        String?  @map("ghl_stage_id")
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("ghl_campaign")
+  @@index([propertyKey])
+  @@index([active])
+}
+
+model GhlHumanAgent {
+  id             String   @id @default(uuid())
+  propertyKey    String   @map("property_key")
+  campaignId     String?  @map("campaign_id")
+  name           String
+  ghlUserId      String   @map("ghl_user_id")
+  transferNumber String   @map("transfer_number")
+  priority       Int      @default(1)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("ghl_human_agent")
+  @@index([propertyKey])
+  @@index([campaignId])
+  @@index([propertyKey, priority])
+  @@unique([propertyKey, campaignId, ghlUserId])
+}
+
+model GhlAgentPoolSetting {
+  id                     String   @id @default(uuid())
+  propertyKey            String   @map("property_key")
+  campaignId             String?  @map("campaign_id")
+  fallbackName           String?  @map("fallback_name")
+  fallbackGhlUserId      String?  @map("fallback_ghl_user_id")
+  fallbackTransferNumber String?  @map("fallback_transfer_number")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("ghl_agent_pool_setting")
+  @@index([propertyKey])
+  @@index([campaignId])
+}

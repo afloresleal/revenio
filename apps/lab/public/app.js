@@ -11,6 +11,8 @@ const fields = [
   "lead_source",
   "lead_id",
   "round_robin_enabled",
+  "agent_property_key",
+  "agent_campaign_id",
   "rr_agent_name_1",
   "rr_agent_number_1",
   "rr_agent_name_2",
@@ -67,6 +69,7 @@ if (!$('api_base').value) {
 
 const out = $("out");
 const callWindowStatus = $("cw_status");
+const agentsStatus = $("agents_status");
 const historyEl = $("history");
 const assistantSelect = $("assistant_select");
 const phoneSelect = $("phone_select");
@@ -75,6 +78,7 @@ const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
 let lastHistory = null;
 let retryLastAction = null;
 let historyLoaded = false;
+let agentsLoaded = false;
 const CDMX_TIMEZONE = "America/Mexico_City";
 
 function setupDatePickerBehavior() {
@@ -101,12 +105,17 @@ function setActiveTab(tabName) {
     button.classList.toggle("is-active", isActive);
   });
   const opsPanel = $("panel_ops");
+  const agentsPanel = $("panel_agents");
   const responsePanel = $("panel_response");
   const historyPanel = $("panel_history");
   if (opsPanel) opsPanel.classList.toggle("is-active", tabName === "ops");
+  if (agentsPanel) agentsPanel.classList.toggle("is-active", tabName === "agents");
   if (responsePanel) responsePanel.classList.toggle("is-active", tabName === "response");
   if (historyPanel) historyPanel.classList.toggle("is-active", tabName === "history");
 
+  if (tabName === "agents" && !agentsLoaded) {
+    loadStoredAgents().catch(() => {});
+  }
   if (tabName === "history" && !historyLoaded) {
     loadHistory().catch(() => {});
   }
@@ -204,8 +213,107 @@ async function post(path, body) {
   return requestWithRetry("POST", path, body);
 }
 
+async function put(path, body) {
+  return requestWithRetry("PUT", path, body);
+}
+
 async function get(path) {
   return requestWithRetry("GET", path);
+}
+
+function storedAgentScopeQuery() {
+  const propertyKey = $("agent_property_key")?.value || "ghl_test";
+  const campaignId = $("agent_campaign_id")?.value || "";
+  const params = new URLSearchParams({ propertyKey });
+  if (campaignId) params.set("campaignId", campaignId);
+  return params.toString();
+}
+
+function clearStoredAgentRows() {
+  for (let i = 1; i <= 5; i += 1) {
+    const nameEl = $(`stored_agent_name_${i}`);
+    const userEl = $(`stored_agent_ghl_user_id_${i}`);
+    const phoneEl = $(`stored_agent_phone_${i}`);
+    const activeEl = $(`stored_agent_active_${i}`);
+    if (nameEl) nameEl.value = "";
+    if (userEl) userEl.value = "";
+    if (phoneEl) phoneEl.value = "";
+    if (activeEl) activeEl.checked = true;
+  }
+  if ($("stored_fallback_name")) $("stored_fallback_name").value = "";
+  if ($("stored_fallback_phone")) $("stored_fallback_phone").value = "";
+}
+
+function applyStoredAgentsToForm(agents = [], fallback = {}) {
+  clearStoredAgentRows();
+  agents.slice(0, 5).forEach((agent, index) => {
+    const row = index + 1;
+    const nameEl = $(`stored_agent_name_${row}`);
+    const userEl = $(`stored_agent_ghl_user_id_${row}`);
+    const phoneEl = $(`stored_agent_phone_${row}`);
+    const activeEl = $(`stored_agent_active_${row}`);
+    if (nameEl) nameEl.value = agent.name ?? "";
+    if (userEl) userEl.value = agent.ghlUserId ?? agent.ghl_user_id ?? "";
+    if (phoneEl) phoneEl.value = agent.transferNumber ?? agent.transfer_number ?? "";
+    if (activeEl) activeEl.checked = agent.active !== false;
+  });
+  if ($("stored_fallback_name")) $("stored_fallback_name").value = fallback.name ?? "";
+  if ($("stored_fallback_phone")) $("stored_fallback_phone").value = fallback.transferNumber ?? fallback.transfer_number ?? "";
+}
+
+function collectStoredAgents() {
+  const agents = [];
+  for (let i = 1; i <= 5; i += 1) {
+    const name = $(`stored_agent_name_${i}`)?.value.trim();
+    const ghlUserId = $(`stored_agent_ghl_user_id_${i}`)?.value.trim();
+    const transferNumber = $(`stored_agent_phone_${i}`)?.value.trim();
+    const active = $(`stored_agent_active_${i}`)?.checked ?? true;
+    if (!name && !ghlUserId && !transferNumber) continue;
+    agents.push({
+      name,
+      ghlUserId,
+      transferNumber,
+      priority: i,
+      active,
+    });
+  }
+  return agents;
+}
+
+async function loadStoredAgents() {
+  if (!agentsStatus) return;
+  agentsStatus.textContent = "Cargando agentes...";
+  const result = await get(`/lab/ghl-agents?${storedAgentScopeQuery()}`);
+  agentsLoaded = true;
+  if (result.status !== 200 || !Array.isArray(result.data?.agents)) {
+    agentsStatus.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
+  applyStoredAgentsToForm(result.data.agents, result.data.fallback);
+  agentsStatus.textContent = JSON.stringify(result.data, null, 2);
+}
+
+async function saveStoredAgents() {
+  if (!agentsStatus) return;
+  agentsStatus.textContent = "Guardando agentes...";
+  const payload = {
+    propertyKey: $("agent_property_key")?.value || "ghl_test",
+    campaignId: $("agent_campaign_id")?.value || undefined,
+    agents: collectStoredAgents(),
+    fallback: {
+      name: $("stored_fallback_name")?.value.trim() || undefined,
+      transferNumber: $("stored_fallback_phone")?.value.trim() || undefined,
+    },
+  };
+  const result = await put("/lab/ghl-agents", payload);
+  if (result.status !== 200 || !Array.isArray(result.data?.agents)) {
+    agentsStatus.textContent = JSON.stringify(result, null, 2);
+    out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
+  applyStoredAgentsToForm(result.data.agents, result.data.fallback);
+  agentsStatus.textContent = JSON.stringify(result.data, null, 2);
+  out.textContent = JSON.stringify(result, null, 2);
 }
 
 function collectRoundRobinAgents() {
@@ -454,6 +562,26 @@ if ($("btn_cw_reset")) {
     await resetCallWindowSettings();
   });
 }
+
+if ($("btn_agents_load")) {
+  $("btn_agents_load").addEventListener("click", async () => {
+    await loadStoredAgents();
+  });
+}
+
+if ($("btn_agents_save")) {
+  $("btn_agents_save").addEventListener("click", async () => {
+    await saveStoredAgents();
+  });
+}
+
+["agent_property_key", "agent_campaign_id"].forEach((id) => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener("change", async () => {
+    await loadStoredAgents();
+  });
+});
 
 $("btn_load").addEventListener("click", async () => {
   setActiveTab("history");

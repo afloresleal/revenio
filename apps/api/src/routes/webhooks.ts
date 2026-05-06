@@ -10,6 +10,12 @@ import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
 import { canRunRoundRobinFailover, canStartOutboundCall } from '../lib/call-window.js';
+import {
+  type GhlAgentConfig,
+  mergeDbAgentsWithFallbackAgents,
+  orderGhlAgentsForAssignment,
+} from '../lib/ghl-agents.js';
+import { getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
 
 const router = Router();
 
@@ -30,13 +36,6 @@ const GHL_API_BASE_URL = normalizeBaseUrl(process.env.GHL_API_BASE_URL ?? 'https
 const GHL_API_VERSION = process.env.GHL_API_VERSION ?? '2021-07-28';
 const MAX_ROUND_ROBIN_AGENTS = 5;
 
-type GhlAgentConfig = {
-  name: string;
-  ghlUserId: string;
-  transferNumber: string;
-  priority: number;
-};
-
 type GhlPropertyConfig = {
   key: string;
   name: string;
@@ -56,6 +55,12 @@ type GhlCampaignConfig = {
   propertyKey: string;
   vapiAssistantId?: string;
   vapiPhoneNumberId?: string;
+  ghlLocationId?: string | null;
+  ghlApiKey?: string | null;
+  ghlPipelineId?: string | null;
+  ghlStageId?: string | null;
+  active?: boolean;
+  source?: 'db' | 'env';
 };
 
 const KRP_GHL_PROPERTIES: GhlPropertyConfig[] = [
@@ -347,9 +352,58 @@ function findGhlPropertyByKey(propertyKey: string): GhlPropertyConfig | null {
   return KRP_GHL_PROPERTIES.find((property) => property.key === propertyKey) ?? null;
 }
 
-function findGhlCampaign(campaignId: string | null | undefined): GhlCampaignConfig | null {
+function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConfig | null {
+  if (!campaign.ghlLocationId) return null;
+  return {
+    key: campaign.propertyKey,
+    name: campaign.name,
+    locationId: campaign.ghlLocationId,
+    pipelineId: campaign.ghlPipelineId ?? undefined,
+    triggerStageId: campaign.ghlStageId ?? undefined,
+    apiKey: campaign.ghlApiKey ?? undefined,
+    agents: [],
+  };
+}
+
+function applyCampaignGhlOverrides(property: GhlPropertyConfig | null, campaign: GhlCampaignConfig | null): GhlPropertyConfig | null {
+  if (!campaign) return property;
+  const base = property ?? buildPropertyFromCampaign(campaign);
+  if (!base) return null;
+  return {
+    ...base,
+    locationId: campaign.ghlLocationId || base.locationId,
+    pipelineId: campaign.ghlPipelineId || base.pipelineId,
+    triggerStageId: campaign.ghlStageId || base.triggerStageId,
+    apiKey: campaign.ghlApiKey || base.apiKey,
+  };
+}
+
+function findEnvGhlCampaign(campaignId: string | null | undefined): GhlCampaignConfig | null {
   if (!campaignId) return null;
   return KRP_GHL_CAMPAIGNS.find((campaign) => campaign.campaignId === campaignId) ?? null;
+}
+
+async function resolveGhlCampaign(campaignId: string | null | undefined): Promise<GhlCampaignConfig | null> {
+  if (!campaignId) return null;
+  const dbCampaign = await prisma.ghlCampaign.findUnique({ where: { campaignId } });
+  if (dbCampaign) {
+    return {
+      key: dbCampaign.campaignId,
+      campaignId: dbCampaign.campaignId,
+      name: dbCampaign.name,
+      propertyKey: dbCampaign.propertyKey,
+      vapiAssistantId: dbCampaign.vapiAssistantId,
+      vapiPhoneNumberId: dbCampaign.vapiPhoneNumberId,
+      ghlLocationId: dbCampaign.ghlLocationId,
+      ghlApiKey: dbCampaign.ghlApiKey,
+      ghlPipelineId: dbCampaign.ghlPipelineId,
+      ghlStageId: dbCampaign.ghlStageId,
+      active: dbCampaign.active,
+      source: 'db',
+    };
+  }
+  const envCampaign = findEnvGhlCampaign(campaignId);
+  return envCampaign ? { ...envCampaign, active: true, source: 'env' } : null;
 }
 
 function getActiveGhlAgents(property: GhlPropertyConfig): GhlAgentConfig[] {
@@ -358,14 +412,54 @@ function getActiveGhlAgents(property: GhlPropertyConfig): GhlAgentConfig[] {
     .sort((a, b) => a.priority - b.priority);
 }
 
-function buildGhlRoundRobinAgents(property: GhlPropertyConfig, assignedTo: string): GhlAgentConfig[] {
-  const agents = getActiveGhlAgents(property);
-  const assignedAgent = agents.find((agent) => agent.ghlUserId === assignedTo);
-  if (!assignedAgent) return agents;
-  return [
-    assignedAgent,
-    ...agents.filter((agent) => agent.ghlUserId !== assignedTo),
-  ].slice(0, MAX_ROUND_ROBIN_AGENTS);
+async function resolveGhlRoundRobinAgents(
+  property: GhlPropertyConfig,
+  campaign: GhlCampaignConfig | null,
+  assignedTo: string,
+): Promise<{
+  agents: GhlAgentConfig[];
+  fallbackName: string | null;
+  fallbackGhlUserId: string | null;
+  fallbackTransferNumber: string | null;
+}> {
+  const campaignAgents = campaign
+    ? await prisma.ghlHumanAgent.findMany({
+        where: { propertyKey: property.key, campaignId: campaign.campaignId },
+        orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      })
+    : [];
+
+  const propertyAgents = campaignAgents.length
+    ? []
+    : await prisma.ghlHumanAgent.findMany({
+        where: { propertyKey: property.key, campaignId: null },
+        orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      });
+
+  const dbAgents = campaignAgents.length ? campaignAgents : propertyAgents;
+  const mergedAgents = mergeDbAgentsWithFallbackAgents(dbAgents, getActiveGhlAgents(property));
+  const agents = orderGhlAgentsForAssignment(mergedAgents, assignedTo);
+
+  const campaignSetting = campaign
+    ? await prisma.ghlAgentPoolSetting.findFirst({
+        where: { propertyKey: property.key, campaignId: campaign.campaignId },
+        orderBy: { updatedAt: 'desc' },
+      })
+    : null;
+  const propertySetting = campaignSetting
+    ? null
+    : await prisma.ghlAgentPoolSetting.findFirst({
+        where: { propertyKey: property.key, campaignId: null },
+        orderBy: { updatedAt: 'desc' },
+      });
+  const setting = campaignSetting ?? propertySetting;
+
+  return {
+    agents,
+    fallbackName: asString(setting?.fallbackName) ?? null,
+    fallbackGhlUserId: asString(setting?.fallbackGhlUserId) ?? null,
+    fallbackTransferNumber: asString(setting?.fallbackTransferNumber) ?? null,
+  };
 }
 
 function buildRoundRobinSnapshot(agents: GhlAgentConfig[]) {
@@ -1244,9 +1338,21 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   const eventType = input.type ?? 'OpportunityAssignedTo';
   const opportunityId = input.id ?? `ghl-workflow-${Date.now()}`;
   const requestedCampaignId = input.campaignId;
-  const campaign = findGhlCampaign(requestedCampaignId);
+  const campaign = await resolveGhlCampaign(requestedCampaignId);
+  if (campaign) {
+    const campaignStatus = getGhlCampaignRuntimeStatus({ active: campaign.active !== false });
+    if (!campaignStatus.allowed) {
+      return {
+        ok: true,
+        ignored: true,
+        reason: campaignStatus.reason,
+        campaignId: campaign.campaignId,
+      } as const;
+    }
+  }
 
-  const property = campaign ? findGhlPropertyByKey(campaign.propertyKey) : findGhlProperty(locationId);
+  const baseProperty = campaign ? findGhlPropertyByKey(campaign.propertyKey) : findGhlProperty(locationId);
+  const property = applyCampaignGhlOverrides(baseProperty, campaign);
   if (!property) return { ok: true, ignored: true, reason: 'unknown_location' as const };
   const resolvedVapiAssistantId = campaign?.vapiAssistantId || VAPI_ASSISTANT_ID;
   const resolvedVapiPhoneNumberId = campaign?.vapiPhoneNumberId || VAPI_PHONE_NUMBER_ID;
@@ -1304,7 +1410,8 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   const lastName = sanitizeName(input.contact?.lastName ?? input.lastName ?? asString(fetchedContact?.lastName) ?? asString(fetchedContact?.last_name) ?? '');
   const contactEmail = input.contact?.email ?? input.email ?? asString(fetchedContact?.email);
   const leadName = sanitizeName(`${firstName} ${lastName}`.trim() || contactEmail || 'Lead GHL');
-  const agents = buildGhlRoundRobinAgents(property, assignedTo);
+  const transferConfig = await resolveGhlRoundRobinAgents(property, campaign, assignedTo);
+  const agents = transferConfig.agents;
   const assignedAgent = agents.find((agent) => agent.ghlUserId === assignedTo) ?? null;
   if (!assignedAgent) {
     return { ok: false, error: 'assigned_agent_not_configured' as const, assignedTo, property: property.key };
@@ -1416,6 +1523,9 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
           selectedAgentName: assignedAgent.name,
           selectedTransferNumber: assignedAgent.transferNumber,
           poolSize: agents.length,
+          fallbackAgentName: transferConfig.fallbackName,
+          fallbackGhlUserId: transferConfig.fallbackGhlUserId,
+          fallbackTransferNumber: transferConfig.fallbackTransferNumber,
           agents: buildRoundRobinSnapshot(agents),
         },
       } as any,
@@ -1459,6 +1569,9 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
           selectedAgentName: assignedAgent.name,
           selectedTransferNumber: assignedAgent.transferNumber,
           poolSize: agents.length,
+          fallbackAgentName: transferConfig.fallbackName,
+          fallbackGhlUserId: transferConfig.fallbackGhlUserId,
+          fallbackTransferNumber: transferConfig.fallbackTransferNumber,
           agents: buildRoundRobinSnapshot(agents),
         },
       } as any,
@@ -1491,6 +1604,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
       human_agent_name: assignedAgent.name,
       ghl_user_id: assignedAgent.ghlUserId,
       transfer_number: assignedAgent.transferNumber,
+      fallback_transfer_number: transferConfig.fallbackTransferNumber,
       round_robin_pool_size: agents.length,
     },
     vapi: data,
