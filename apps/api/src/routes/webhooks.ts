@@ -12,7 +12,6 @@ import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-r
 import { canRunRoundRobinFailover, canStartOutboundCall } from '../lib/call-window.js';
 import {
   type GhlAgentConfig,
-  mergeDbAgentsWithFallbackAgents,
   orderGhlAgentsForAssignment,
 } from '../lib/ghl-agents.js';
 import { getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
@@ -45,7 +44,6 @@ type GhlPropertyConfig = {
   connectedStageId?: string;
   transcriptCustomFieldId?: string;
   apiKey?: string;
-  agents: GhlAgentConfig[];
 };
 
 type GhlCampaignConfig = {
@@ -60,109 +58,11 @@ type GhlCampaignConfig = {
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
   active?: boolean;
-  source?: 'db' | 'env';
+  source?: 'db';
 };
-
-const KRP_GHL_PROPERTIES: GhlPropertyConfig[] = [
-  {
-    key: 'ghl_test',
-    name: 'GoHighLevel Test',
-    locationId: 'dOlMhCyzBPIxKGO4CTDq',
-    pipelineId: process.env.GHL_TEST_PIPELINE_ID ?? 'y1d5iqHAz5WE5hdjpyia',
-    triggerStageId: process.env.GHL_TEST_TRIGGER_STAGE_ID,
-    connectedStageId: process.env.GHL_TEST_CONNECTED_STAGE_ID,
-    transcriptCustomFieldId: process.env.GHL_TEST_TRANSCRIPT_FIELD_ID,
-    apiKey: process.env.GHL_TEST_API_KEY,
-    agents: parseEnvGhlAgents('GHL_TEST'),
-  },
-  {
-    key: 'isla_blanca',
-    name: 'Isla Blanca',
-    locationId: 'V9kOoUXOU3jKjuvzg3sN',
-    pipelineId: process.env.GHL_ISLA_BLANCA_PIPELINE_ID,
-    triggerStageId: process.env.GHL_ISLA_BLANCA_TRIGGER_STAGE_ID,
-    connectedStageId: process.env.GHL_ISLA_BLANCA_CONNECTED_STAGE_ID,
-    transcriptCustomFieldId: process.env.GHL_ISLA_BLANCA_TRANSCRIPT_FIELD_ID,
-    apiKey: process.env.GHL_ISLA_BLANCA_API_KEY,
-    agents: [
-      { name: 'Alexis Ivanob Cruz Velazquez', ghlUserId: 'lehYCDR8fuQgONaFKO00', transferNumber: '+525532380202', priority: 1 },
-      { name: 'Maria Jose Hernandez', ghlUserId: 'Sxd59pSKaAcR1AAVl9MC', transferNumber: '+529984808749', priority: 2 },
-      { name: 'Monica Perez', ghlUserId: 'p2lGezwhgKL6DldEPUsQ', transferNumber: '+529981475316', priority: 3 },
-    ],
-  },
-  {
-    key: 'nikki_ocean',
-    name: 'Nikki Ocean',
-    locationId: 'ftdXjrhF7nXY6EWVpWN1',
-    pipelineId: process.env.GHL_NIKKI_OCEAN_PIPELINE_ID,
-    triggerStageId: process.env.GHL_NIKKI_OCEAN_TRIGGER_STAGE_ID,
-    connectedStageId: process.env.GHL_NIKKI_OCEAN_CONNECTED_STAGE_ID,
-    transcriptCustomFieldId: process.env.GHL_NIKKI_OCEAN_TRANSCRIPT_FIELD_ID,
-    apiKey: process.env.GHL_NIKKI_OCEAN_API_KEY,
-    agents: [
-      { name: 'Victoria Belen Herrera', ghlUserId: 'rqNpk7iQRDnqfyDgoah5', transferNumber: '+529841381972', priority: 1 },
-      { name: 'Emilse Salgado', ghlUserId: '7ds2JoaMldvrHVd1bWkf', transferNumber: '+529845262391', priority: 2 },
-      { name: 'Ileana Macedo', ghlUserId: 'Z76JHKRfG2JycRBXRXs1', transferNumber: '+529843174525', priority: 3 },
-      { name: 'Mariela Romero', ghlUserId: 'yuXmQ88zfEsy57xIzitB', transferNumber: '+529934764642', priority: 4 },
-      { name: 'Matias Fernandez', ghlUserId: 'dNzZ7z2Ok1Sc4dFmyRXT', transferNumber: '+529841679017', priority: 5 },
-      // Omar Sanchez queda fuera del pool MVP porque Revenio limita RR a 5 agentes.
-      { name: 'Omar Sanchez', ghlUserId: '3cZNGTYoEnjLd2VsYrYs', transferNumber: '+529933934009', priority: 6 },
-    ],
-  },
-];
-
-const KRP_GHL_CAMPAIGNS: GhlCampaignConfig[] = [
-  buildEnvGhlCampaign('IB_ES', {
-    key: 'ib_es',
-    campaignId: 'isla-blanca-es',
-    name: 'Isla Blanca ES',
-    propertyKey: 'isla_blanca',
-  }),
-  buildEnvGhlCampaign('IB_EN', {
-    key: 'ib_en',
-    campaignId: 'isla-blanca-en',
-    name: 'Isla Blanca EN',
-    propertyKey: 'isla_blanca',
-  }),
-  buildEnvGhlCampaign('NO_ES', {
-    key: 'no_es',
-    campaignId: 'nikki-ocean-es',
-    name: 'Nikki Ocean ES',
-    propertyKey: 'nikki_ocean',
-  }),
-  buildEnvGhlCampaign('NO_EN', {
-    key: 'no_en',
-    campaignId: 'nikki-ocean-en',
-    name: 'Nikki Ocean EN',
-    propertyKey: 'nikki_ocean',
-  }),
-];
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
-}
-
-function buildEnvGhlCampaign(code: string, defaults: GhlCampaignConfig): GhlCampaignConfig {
-  return {
-    key: process.env[`GHL_CAMPAIGN_${code}_KEY`]?.trim() || defaults.key,
-    campaignId: process.env[`GHL_CAMPAIGN_${code}_ID`]?.trim() || defaults.campaignId,
-    name: process.env[`GHL_CAMPAIGN_${code}_NAME`]?.trim() || defaults.name,
-    propertyKey: process.env[`GHL_CAMPAIGN_${code}_PROPERTY_KEY`]?.trim() || defaults.propertyKey,
-    vapiAssistantId: process.env[`GHL_CAMPAIGN_${code}_VAPI_ASSISTANT_ID`]?.trim(),
-    vapiPhoneNumberId: process.env[`GHL_CAMPAIGN_${code}_VAPI_PHONE_NUMBER_ID`]?.trim(),
-  };
-}
-
-function parseEnvGhlAgents(prefix: string): GhlAgentConfig[] {
-  const agents: GhlAgentConfig[] = [];
-  for (let index = 1; index <= MAX_ROUND_ROBIN_AGENTS; index += 1) {
-    const name = process.env[`${prefix}_AGENT_${index}_NAME`]?.trim();
-    const ghlUserId = process.env[`${prefix}_AGENT_${index}_GHL_USER_ID`]?.trim();
-    const transferNumber = process.env[`${prefix}_AGENT_${index}_PHONE`]?.trim();
-    if (!name || !ghlUserId || !transferNumber) continue;
-    agents.push({ name, ghlUserId, transferNumber, priority: index });
-  }
-  return agents;
 }
 
 function resolvePublicApiBaseUrl(): string {
@@ -344,14 +244,6 @@ async function upsertDashboardMetricFromVapiCall(params: {
   });
 }
 
-function findGhlProperty(locationId: string): GhlPropertyConfig | null {
-  return KRP_GHL_PROPERTIES.find((property) => property.locationId === locationId) ?? null;
-}
-
-function findGhlPropertyByKey(propertyKey: string): GhlPropertyConfig | null {
-  return KRP_GHL_PROPERTIES.find((property) => property.key === propertyKey) ?? null;
-}
-
 function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConfig | null {
   if (!campaign.ghlLocationId) return null;
   return {
@@ -361,26 +253,7 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
     pipelineId: campaign.ghlPipelineId ?? undefined,
     triggerStageId: campaign.ghlStageId ?? undefined,
     apiKey: campaign.ghlApiKey ?? undefined,
-    agents: [],
   };
-}
-
-function applyCampaignGhlOverrides(property: GhlPropertyConfig | null, campaign: GhlCampaignConfig | null): GhlPropertyConfig | null {
-  if (!campaign) return property;
-  const base = property ?? buildPropertyFromCampaign(campaign);
-  if (!base) return null;
-  return {
-    ...base,
-    locationId: campaign.ghlLocationId || base.locationId,
-    pipelineId: campaign.ghlPipelineId || base.pipelineId,
-    triggerStageId: campaign.ghlStageId || base.triggerStageId,
-    apiKey: campaign.ghlApiKey || base.apiKey,
-  };
-}
-
-function findEnvGhlCampaign(campaignId: string | null | undefined): GhlCampaignConfig | null {
-  if (!campaignId) return null;
-  return KRP_GHL_CAMPAIGNS.find((campaign) => campaign.campaignId === campaignId) ?? null;
 }
 
 async function resolveGhlCampaign(campaignId: string | null | undefined): Promise<GhlCampaignConfig | null> {
@@ -402,14 +275,7 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       source: 'db',
     };
   }
-  const envCampaign = findEnvGhlCampaign(campaignId);
-  return envCampaign ? { ...envCampaign, active: true, source: 'env' } : null;
-}
-
-function getActiveGhlAgents(property: GhlPropertyConfig): GhlAgentConfig[] {
-  return property.agents
-    .filter((agent) => agent.priority >= 1 && agent.priority <= MAX_ROUND_ROBIN_AGENTS)
-    .sort((a, b) => a.priority - b.priority);
+  return null;
 }
 
 async function resolveGhlRoundRobinAgents(
@@ -429,16 +295,18 @@ async function resolveGhlRoundRobinAgents(
       })
     : [];
 
-  const propertyAgents = campaignAgents.length
-    ? []
-    : await prisma.ghlHumanAgent.findMany({
-        where: { propertyKey: property.key, campaignId: null },
-        orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
-      });
-
-  const dbAgents = campaignAgents.length ? campaignAgents : propertyAgents;
-  const mergedAgents = mergeDbAgentsWithFallbackAgents(dbAgents, getActiveGhlAgents(property));
-  const agents = orderGhlAgentsForAssignment(mergedAgents, assignedTo);
+  const activeAgents = campaignAgents
+    .filter((agent) => agent.active !== false)
+    .map((agent) => ({
+      name: agent.name.trim(),
+      ghlUserId: agent.ghlUserId.trim(),
+      transferNumber: agent.transferNumber.trim(),
+      priority: agent.priority,
+    }))
+    .filter((agent) => agent.name && agent.ghlUserId && agent.transferNumber)
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, MAX_ROUND_ROBIN_AGENTS);
+  const agents = orderGhlAgentsForAssignment(activeAgents, assignedTo);
 
   const campaignSetting = campaign
     ? await prisma.ghlAgentPoolSetting.findFirst({
@@ -1287,12 +1155,8 @@ function normalizeGhlWorkflowPayload(body: unknown): GhlOpportunityAssignedInput
 
   const type = pickFirstString(root.type, customData?.type) ?? 'OpportunityAssignedTo';
   const campaignId = pickFirstString(root.campaignId, root.campaign_id, customData?.campaignId, customData?.campaign_id);
-  const locationId =
-    pickFirstString(root.locationId, root.location_id, customData?.locationId, customData?.location_id) ??
-    'dOlMhCyzBPIxKGO4CTDq';
-  const assignedTo =
-    pickFirstString(root.assignedTo, root.assigned_to, customData?.assignedTo, customData?.assigned_to, contact?.assignedTo, opportunity?.assignedTo) ??
-    'o6mW3ERlbWe49dW9rhKJ';
+  const locationId = pickFirstString(root.locationId, root.location_id, customData?.locationId, customData?.location_id);
+  const assignedTo = pickFirstString(root.assignedTo, root.assigned_to, customData?.assignedTo, customData?.assigned_to, contact?.assignedTo, opportunity?.assignedTo);
 
   const contactId = pickFirstString(root.contactId, root.contact_id, customData?.contactId, customData?.contact_id, contact?.id);
   const firstName = pickFirstString(root.firstName, root.first_name, customData?.firstName, customData?.first_name, contact?.firstName, contact?.first_name);
@@ -1324,7 +1188,7 @@ function normalizeGhlWorkflowPayload(body: unknown): GhlOpportunityAssignedInput
     lastName,
     phone,
     email,
-    pipelineId: pickFirstString(root.pipelineId, root.pipeline_id, customData?.pipelineId, customData?.pipeline_id, opportunity?.pipelineId) ?? 'y1d5iqHAz5WE5hdjpyia',
+    pipelineId: pickFirstString(root.pipelineId, root.pipeline_id, customData?.pipelineId, customData?.pipeline_id, opportunity?.pipelineId),
     pipelineName: pickFirstString(root.pipelineName, root.pipeline_name, customData?.pipelineName, customData?.pipeline_name),
     pipelineStageId: pickFirstString(root.pipelineStageId, root.pipeline_stage_id, customData?.pipelineStageId, customData?.pipeline_stage_id),
     stageId: pickFirstString(root.stageId, root.stage_id, customData?.stageId, customData?.stage_id, opportunity?.stageId),
@@ -1333,12 +1197,15 @@ function normalizeGhlWorkflowPayload(body: unknown): GhlOpportunityAssignedInput
 }
 
 async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityAssignedSchema>) {
-  const locationId = input.locationId ?? 'dOlMhCyzBPIxKGO4CTDq';
-  const assignedTo = input.assignedTo ?? 'o6mW3ERlbWe49dW9rhKJ';
+  const locationId = input.locationId;
+  const assignedTo = input.assignedTo;
   const eventType = input.type ?? 'OpportunityAssignedTo';
   const opportunityId = input.id ?? `ghl-workflow-${Date.now()}`;
   const requestedCampaignId = input.campaignId;
+  if (!requestedCampaignId) return { ok: false, error: 'missing_campaign_id' as const };
+  if (!assignedTo) return { ok: false, error: 'missing_assigned_to' as const, campaignId: requestedCampaignId };
   const campaign = await resolveGhlCampaign(requestedCampaignId);
+  if (!campaign) return { ok: false, error: 'campaign_not_configured' as const, campaignId: requestedCampaignId };
   if (campaign) {
     const campaignStatus = getGhlCampaignRuntimeStatus({ active: campaign.active !== false });
     if (!campaignStatus.allowed) {
@@ -1351,9 +1218,11 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     }
   }
 
-  const baseProperty = campaign ? findGhlPropertyByKey(campaign.propertyKey) : findGhlProperty(locationId);
-  const property = applyCampaignGhlOverrides(baseProperty, campaign);
-  if (!property) return { ok: true, ignored: true, reason: 'unknown_location' as const };
+  const property = buildPropertyFromCampaign(campaign);
+  if (!property) return { ok: false, error: 'missing_campaign_location_id' as const, campaignId: campaign.campaignId };
+  if (locationId && locationId !== property.locationId) {
+    return { ok: true, ignored: true, reason: 'location_campaign_mismatch' as const, locationId, campaignId: campaign.campaignId };
+  }
   const resolvedVapiAssistantId = campaign?.vapiAssistantId || VAPI_ASSISTANT_ID;
   const resolvedVapiPhoneNumberId = campaign?.vapiPhoneNumberId || VAPI_PHONE_NUMBER_ID;
 
@@ -1621,10 +1490,11 @@ async function pushSuccessfulTransferToGhl(params: {
   if (!integration) return null;
   const locationId = asString(integration.locationId);
   const opportunityId = asString(integration.opportunityId);
-  const propertyKey = asString(integration.propertyKey);
-  if (!locationId || !opportunityId || !propertyKey) return null;
+  const campaignId = asString(integration.campaignId);
+  if (!locationId || !opportunityId || !campaignId) return null;
 
-  const property = findGhlProperty(locationId);
+  const campaign = await resolveGhlCampaign(campaignId);
+  const property = campaign ? buildPropertyFromCampaign(campaign) : null;
   if (!property?.apiKey) {
     return { ok: false, skipped: true, reason: 'missing_ghl_api_key', locationId, opportunityId };
   }

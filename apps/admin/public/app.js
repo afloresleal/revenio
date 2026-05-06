@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const LOCAL_API_BASE_URL = "http://localhost:3000";
-const RAILWAY_API_BASE_URL = "https://revenioapi-production.up.railway.app";
+const RAILWAY_API_BASE_URL = "https://revenioapi-staging.up.railway.app";
 
 const fields = [
   "client_name",
