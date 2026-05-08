@@ -18,10 +18,6 @@ import { getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
 
 const router = Router();
 
-const AUTO_TRANSFER_TRIGGER_STATUS =
-  (process.env.AUTO_TRANSFER_TRIGGER_STATUS ?? process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'stopped').toLowerCase() === 'started'
-    ? 'started'
-    : 'stopped';
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
 const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
 const TRANSFER_CONNECTED_STATUSES = new Set(['in-progress', 'answered', 'completed']);
@@ -123,6 +119,29 @@ function normalizePhoneForMatch(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '');
 }
 
+function buildImmediateTransferHook(transferNumber: string): Record<string, unknown> {
+  return {
+    on: 'call.timeElapsed',
+    options: { seconds: 1 },
+    do: [
+      {
+        type: 'tool',
+        tool: {
+          type: 'transferCall',
+          destinations: [
+            {
+              type: 'number',
+              number: transferNumber,
+              message: '',
+              transferPlan: { mode: 'blind-transfer', sipVerb: 'dial' },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
@@ -138,22 +157,7 @@ function buildAssistantOverrides(
   const overrides: Record<string, unknown> = { metadata };
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
   if (transferNumber) {
-    overrides.model = {
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      tools: [
-        {
-          type: 'transferCall',
-          destinations: [
-            {
-              type: 'number',
-              number: transferNumber,
-              transferPlan: { mode: 'blind-transfer', sipVerb: 'dial' },
-            },
-          ],
-        },
-      ],
-    };
+    overrides.hooks = [buildImmediateTransferHook(transferNumber)];
   }
   return overrides;
 }
@@ -2386,210 +2390,6 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
   return { ok: true, action: 'recording-failed', callId, error };
 }
 
-async function executeAutoTransfer(params: {
-  callId?: string | null;
-  assistantId?: string | null;
-  attemptId?: string | null;
-  transferNumber?: string | null;
-  source: 'status-update' | 'assistant-started' | 'speech-update';
-}): Promise<HandlerResult> {
-  let callId = params.callId ?? null;
-  let controlUrl: string | null = null;
-  let transferNumber = params.transferNumber ?? null;
-
-  try {
-    const attemptWhere = [
-      callId ? { providerId: callId } : null,
-      params.attemptId ? { id: params.attemptId } : null,
-    ].filter((where): where is { providerId: string } | { id: string } => !!where);
-    const attempt = attemptWhere.length
-      ? await prisma.callAttempt.findFirst({
-          where: { OR: attemptWhere },
-          orderBy: { createdAt: 'desc' },
-        })
-      : null;
-
-    if (attempt?.status === 'auto-transferred' || attempt?.status === 'auto-transferred-failover') {
-      return { ok: true, ignored: true, reason: 'already-transferred', callId };
-    }
-
-    callId = callId ?? attempt?.providerId ?? null;
-    controlUrl = attempt?.controlUrl ?? null;
-    const attemptResult = asRecord(attempt?.resultJson);
-    transferNumber =
-      asString(attemptResult?.transferNumber) ??
-      asString(attemptResult?.transfer_number) ??
-      transferNumber;
-    if (!transferNumber) {
-      return {
-        ok: true,
-        ignored: true,
-        reason: 'missing-transfer-number',
-        callId,
-      };
-    }
-
-    // Fallback: get from VAPI API if not in DB
-    if (!controlUrl && callId && VAPI_API_KEY) {
-      const callData = await fetch(`https://api.vapi.ai/call/${callId}`, {
-        headers: { 'Authorization': `Bearer ${VAPI_API_KEY}` }
-      }).then(r => r.json()).catch(() => null);
-      controlUrl = callData?.monitor?.controlUrl ?? null;
-    }
-
-    if (!controlUrl) {
-      console.error('No controlUrl available for auto-transfer:', { callId, source: params.source });
-      return { ok: false, error: 'no_control_url', callId, source: params.source };
-    }
-
-    const transferResp = await fetch(controlUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'transfer',
-        destination: { type: 'number', number: transferNumber }
-      })
-    });
-
-    console.log('Auto-transfer destination:', transferNumber);
-    console.log('Auto-transfer source:', params.source);
-    console.log('Auto-transfer trigger status:', AUTO_TRANSFER_TRIGGER_STATUS);
-    console.log('Auto-transfer response:', transferResp.status);
-    if (!transferResp.ok) {
-      const transferBody = await transferResp.text().catch(() => '');
-      console.error('Auto-transfer response body:', transferBody);
-      return {
-        ok: false,
-        error: 'transfer_command_failed',
-        callId,
-        source: params.source,
-        transferStatus: transferResp.status,
-        body: transferBody,
-      };
-    }
-
-    if (attempt) {
-      await prisma.callAttempt.update({
-        where: { id: attempt.id },
-        data: { status: 'auto-transferred' }
-      });
-    }
-
-    return { ok: true, action: 'auto-transfer', callId, source: params.source, transferStatus: transferResp.status };
-  } catch (e) {
-    console.error('Auto-transfer failed:', e);
-    return { ok: false, error: 'transfer_failed', callId, source: params.source, message: String(e) };
-  }
-}
-
-function extractTransferContextFromMessage(message: Record<string, unknown>) {
-  const call = asRecord(message?.call);
-  const callMetadata = asRecord(call?.metadata);
-  const messageMetadata = asRecord(message?.metadata);
-  const callAssistantOverrides = asRecord(call?.assistantOverrides);
-  const messageAssistantOverrides = asRecord(message?.assistantOverrides);
-  const overrideMetadata =
-    asRecord(callAssistantOverrides?.metadata) ??
-    asRecord(messageAssistantOverrides?.metadata);
-  const metadata = callMetadata ?? messageMetadata ?? overrideMetadata;
-  return {
-    call,
-    assistantId: asString(call?.assistantId),
-    callId: asString(call?.id),
-    attemptId:
-      asString(metadata?.attempt_id) ??
-      asString(metadata?.attemptId),
-    transferNumber:
-      asString(callMetadata?.transfer_number) ??
-      asString(callMetadata?.transferNumber) ??
-      asString(messageMetadata?.transfer_number) ??
-      asString(messageMetadata?.transferNumber),
-  };
-}
-
-/**
- * Auto-transfer handler for Vapi calls with a configured transfer number.
- * Triggers transfer as soon as Vapi reports the call is active.
- */
-async function processActiveStatusUpdate(body: unknown): Promise<HandlerResult | null> {
-  const root = asRecord(body);
-  const message = asRecord(root?.message) || root;
-  if (!message) return null;
-  if (asString(message?.type) !== 'status-update') return null;
-
-  const status = asString(message?.status)?.toLowerCase();
-  if (status !== 'in-progress' && status !== 'answered') return null;
-
-  const { assistantId, callId, attemptId, transferNumber } = extractTransferContextFromMessage(message);
-  console.log('status-update auto-transfer trigger:', { status, assistantId, callId, attemptId });
-  return executeAutoTransfer({
-    callId,
-    assistantId,
-    attemptId,
-    transferNumber,
-    source: 'status-update',
-  });
-}
-
-/**
- * Auto-transfer handler for Vapi calls with a configured transfer number.
- * Triggers transfer as soon as the assistant session starts.
- */
-async function processAssistantStarted(body: unknown): Promise<HandlerResult | null> {
-  const root = asRecord(body);
-  const message = asRecord(root?.message) || root;
-  if (!message) return null;
-  if (asString(message?.type) !== 'assistant.started') return null;
-
-  const { assistantId, callId, attemptId, transferNumber } = extractTransferContextFromMessage(message);
-  console.log('assistant.started:', { assistantId, callId, attemptId });
-  return executeAutoTransfer({
-    callId,
-    assistantId,
-    attemptId,
-    transferNumber,
-    source: 'assistant-started',
-  });
-}
-
-/**
- * Backup auto-transfer handler for assistants that do not send assistant.started.
- * Triggers after the assistant speech reaches the configured status.
- */
-async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null> {
-  const root = asRecord(body);
-  const message = asRecord(root?.message) || root;
-  if (!message) return null;
-  if (asString(message?.type) !== 'speech-update') return null;
-
-  const status = asString(message?.status);
-  const role = asString(message?.role);
-  const turn = asNumber(message?.turn);
-  const { assistantId, callId, attemptId, transferNumber } = extractTransferContextFromMessage(message);
-  console.log('speech-update:', { status, role, turn, assistantId, callId });
-
-  // Auto-transfer conditions:
-  // 1. Assistant speech reached configured trigger status.
-  // 2. It's the assistant speaking.
-  // 3. This call has a runtime transfer destination configured by Revenio.
-  // NOTE: do not gate by "turn" because Vapi turn numbering can vary by transport/config.
-  if (
-    status === AUTO_TRANSFER_TRIGGER_STATUS &&
-    role === 'assistant'
-  ) {
-    console.log('Auto-transfer trigger matched:', { callId, assistantId });
-    return executeAutoTransfer({
-      callId,
-      assistantId,
-      attemptId,
-      transferNumber,
-      source: 'speech-update',
-    });
-  }
-
-  return { ok: true, ignored: true, reason: 'conditions-not-met' };
-}
-
 router.post('/gohighlevel', async (req, res) => {
   try {
     const normalizedBody = normalizeGhlWorkflowPayload(req.body);
@@ -2697,35 +2497,6 @@ router.post('/vapi/events', async (req, res) => {
         return res.json({ ...transferRecording, via: 'transfer-update-recording' });
       }
       // If ignored, continue processing other event types
-    }
-
-    // Auto-transfer as early as possible, before the assistant waits for user input.
-    const activeStatus = await processActiveStatusUpdate(req.body);
-    if (activeStatus) {
-      const action = asRecord(activeStatus)?.action;
-      if (action === 'auto-transfer' || asRecord(activeStatus)?.ok === false) {
-        return res.json({ ...activeStatus, via: 'status-update-auto-transfer' });
-      }
-      // If ignored, continue with normal transfer/metrics handlers.
-    }
-
-    const assistantStarted = await processAssistantStarted(req.body);
-    if (assistantStarted) {
-      const action = asRecord(assistantStarted)?.action;
-      if (action === 'auto-transfer' || asRecord(assistantStarted)?.ok === false) {
-        return res.json({ ...assistantStarted, via: 'assistant-started' });
-      }
-      // If ignored, continue with normal transfer/metrics handlers.
-    }
-
-    // Backup auto-transfer via speech-update if assistant.started is not enabled.
-    const speechUpdate = await processSpeechUpdate(req.body);
-    if (speechUpdate) {
-      const action = asRecord(speechUpdate)?.action;
-      if (action === 'auto-transfer' || asRecord(speechUpdate)?.ok === false) {
-        return res.json({ ...speechUpdate, via: 'speech-update' });
-      }
-      // If ignored, continue with normal transfer/metrics handlers.
     }
 
     const endOfCall = await processEndOfCallReport(req.body);

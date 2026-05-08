@@ -1909,6 +1909,29 @@ function sanitizeName(name: string): string {
  * IMPORTANT: Keep behavior 100% VAPI-configured.
  * Do not send firstMessage/model/tools overrides from backend.
  */
+function buildImmediateTransferHook(transferNumber: string): Record<string, unknown> {
+  return {
+    on: "call.timeElapsed",
+    options: { seconds: 1 },
+    do: [
+      {
+        type: "tool",
+        tool: {
+          type: "transferCall",
+          destinations: [
+            {
+              type: "number",
+              number: transferNumber,
+              message: "",
+              transferPlan: { mode: "blind-transfer", sipVerb: "dial" },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
@@ -1924,20 +1947,7 @@ function buildAssistantOverrides(
   const overrides: Record<string, unknown> = { metadata };
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
   if (transferNumber) {
-    overrides.model = {
-      provider: "openai",
-      model: "gpt-4o-mini",
-      tools: [
-        {
-          type: "transferCall",
-          destinations: [{
-            type: "number",
-            number: transferNumber,
-            transferPlan: { mode: "blind-transfer" }
-          }],
-        },
-      ],
-    };
+    overrides.hooks = [buildImmediateTransferHook(transferNumber)];
   }
   return overrides;
 }
