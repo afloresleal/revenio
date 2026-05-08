@@ -52,6 +52,8 @@ type GhlCampaignConfig = {
   ghlApiKey?: string | null;
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
+  ghlConnectedStageId?: string | null;
+  ghlTranscriptFieldId?: string | null;
   active?: boolean;
   source?: 'db';
 };
@@ -255,6 +257,8 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
     locationId: campaign.ghlLocationId,
     pipelineId: campaign.ghlPipelineId ?? undefined,
     triggerStageId: campaign.ghlStageId ?? undefined,
+    connectedStageId: campaign.ghlConnectedStageId ?? undefined,
+    transcriptCustomFieldId: campaign.ghlTranscriptFieldId ?? undefined,
     apiKey: campaign.ghlApiKey ?? undefined,
   };
 }
@@ -274,6 +278,8 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       ghlApiKey: dbCampaign.ghlApiKey,
       ghlPipelineId: dbCampaign.ghlPipelineId,
       ghlStageId: dbCampaign.ghlStageId,
+      ghlConnectedStageId: dbCampaign.ghlConnectedStageId,
+      ghlTranscriptFieldId: dbCampaign.ghlTranscriptFieldId,
       active: dbCampaign.active,
       source: 'db',
     };
@@ -1573,6 +1579,7 @@ async function pushSuccessfulTransferToGhl(params: {
     assignedTo: answeredGhlUserId,
     connectedStageId,
     transcriptCustomFieldId,
+    request: updateBody,
     data,
   };
 }

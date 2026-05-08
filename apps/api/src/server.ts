@@ -2668,6 +2668,8 @@ const adminGhlCampaignSchema = z.object({
   ghlApiKey: z.string().max(500).optional(),
   ghlPipelineId: z.string().max(160).optional(),
   ghlStageId: z.string().max(160).optional(),
+  ghlConnectedStageId: z.string().max(160).optional(),
+  ghlTranscriptFieldId: z.string().max(160).optional(),
   active: z.boolean().default(true),
 });
 
@@ -2689,6 +2691,8 @@ function serializeGhlCampaign(campaign: {
   ghlApiKey?: string | null;
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
+  ghlConnectedStageId?: string | null;
+  ghlTranscriptFieldId?: string | null;
   active: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -2733,6 +2737,8 @@ function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSche
     ghlLocationId: adminString(data.ghlLocationId),
     ghlPipelineId: adminString(data.ghlPipelineId),
     ghlStageId: adminString(data.ghlStageId),
+    ghlConnectedStageId: adminString(data.ghlConnectedStageId),
+    ghlTranscriptFieldId: adminString(data.ghlTranscriptFieldId),
     ghlApiKey: adminString(data.ghlApiKey),
   };
   if (options.preserveEmptyApiKey && !normalized.ghlApiKey) {

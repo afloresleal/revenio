@@ -19,12 +19,16 @@ const campaign = normalizeStoredGhlCampaign({
   ghlLocationId: "location-123",
   ghlPipelineId: "pipeline-123",
   ghlStageId: "stage-123",
+  ghlConnectedStageId: "connected-stage-123",
+  ghlTranscriptFieldId: "transcript-field-123",
   active: true,
 });
 
 assert.equal(campaign?.campaignId, "isla-blanca-es");
 assert.equal(campaign?.clientName, "Caribbean Luxury Homes");
 assert.equal(campaign?.vapiAssistantId, "assistant-123");
+assert.equal(campaign?.ghlConnectedStageId, "connected-stage-123");
+assert.equal(campaign?.ghlTranscriptFieldId, "transcript-field-123");
 assert.deepEqual(getGhlCampaignRuntimeStatus(campaign!), { allowed: true });
 
 const pausedCampaign = normalizeStoredGhlCampaign({

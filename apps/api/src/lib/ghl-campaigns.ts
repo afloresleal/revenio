@@ -11,6 +11,8 @@ export type GhlCampaignConfig = {
   ghlApiKey?: string | null;
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
+  ghlConnectedStageId?: string | null;
+  ghlTranscriptFieldId?: string | null;
   active: boolean;
 };
 
@@ -97,6 +99,8 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlApiKey: asString(value.ghlApiKey),
     ghlPipelineId: asString(value.ghlPipelineId),
     ghlStageId: asString(value.ghlStageId),
+    ghlConnectedStageId: asString(value.ghlConnectedStageId),
+    ghlTranscriptFieldId: asString(value.ghlTranscriptFieldId),
     active: value.active !== false,
   };
 }
