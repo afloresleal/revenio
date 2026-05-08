@@ -1,6 +1,6 @@
 /**
  * Revenio Caller - Servicio standalone para llamadas VAPI
- * Deploy: Droplet Marina (138.68.28.244:3003)
+ * Deploy: Droplet Marina (<DROPLET_IP>:3003)
  * 
  * Validado por Codex: 2026-02-18
  * 

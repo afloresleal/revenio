@@ -14,7 +14,7 @@ import {
   type GhlAgentConfig,
   orderGhlAgentsForAssignment,
 } from '../lib/ghl-agents.js';
-import { getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
+import { buildGhlOpportunityUpdateBody, getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
 
 const router = Router();
 
@@ -1538,26 +1538,22 @@ async function pushSuccessfulTransferToGhl(params: {
 
   const connectedStageId = asString(integration.connectedStageId) ?? property.connectedStageId;
   const transcriptCustomFieldId = asString(integration.transcriptCustomFieldId) ?? property.transcriptCustomFieldId;
-  if (!connectedStageId || !transcriptCustomFieldId) {
+  if (!connectedStageId) {
     return {
       ok: false,
       skipped: true,
-      reason: 'missing_ghl_stage_or_custom_field',
+      reason: 'missing_ghl_connected_stage',
       hasConnectedStageId: !!connectedStageId,
       hasTranscriptCustomFieldId: !!transcriptCustomFieldId,
     };
   }
 
-  const updateBody = {
+  const updateBody = buildGhlOpportunityUpdateBody({
     assignedTo: answeredGhlUserId,
-    pipelineStageId: connectedStageId,
-    customFields: [
-      {
-        id: transcriptCustomFieldId,
-        field_value: params.transcript ?? '',
-      },
-    ],
-  };
+    connectedStageId,
+    transcriptCustomFieldId,
+    transcript: params.transcript,
+  });
 
   const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
     method: 'PUT',

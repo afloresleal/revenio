@@ -17,16 +17,16 @@
 
 | Agente | ID | Idioma | Nombre | Comportamiento |
 |--------|-----|--------|--------|----------------|
-| **1-ES-F** | `675d2cb2-7047-4949-8735-bedb29351991` | Español | Marina | Transfer inmediato |
-| **2-EN-F** | `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7` | English | **Brenda** | Transfer inmediato (sin confirmación) |
-| **3-EN-F** | `6b9e8a41-43f5-4439-b14c-6c842fee7d66` | English | **Bella** | Con confirmación antes de transfer |
+| **1-ES-F** | `<VAPI_ASSISTANT_ID_MARINA>` | Español | Marina | Transfer inmediato |
+| **2-EN-F** | `<VAPI_ASSISTANT_ID_BRENDA>` | English | **Brenda** | Transfer inmediato (sin confirmación) |
+| **3-EN-F** | `<VAPI_ASSISTANT_ID_BELLA>` | English | **Bella** | Con confirmación antes de transfer |
 
 ### Infraestructura Compartida
 
 | Recurso | ID |
 |---------|-----|
-| Phone Number ID | `56a80999-3361-4501-ae74-f23beaea1c41` |
-| Twilio Number | `+13502169412` |
+| Phone Number ID | `<VAPI_PHONE_NUMBER_ID>` |
+| Twilio Number | `<TWILIO_PHONE_NUMBER>` |
 | Número destino transfer | Dinámico desde Revenio / GHL round robin |
 
 ### Webhook por ambiente
@@ -40,8 +40,8 @@ Regla operativa: si la llamada se crea desde staging, el assistant usado en Vapi
 
 ### Checklist Vapi para pruebas GHL staging
 
-- Assistant correcto: `Brenda - EN - Caribbean Luxury` (`5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`).
-- Railway staging: `VAPI_ASSISTANT_ID=5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`.
+- Assistant correcto: `Brenda - EN - Caribbean Luxury` (`<VAPI_ASSISTANT_ID_BRENDA>`).
+- Railway staging: `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_BRENDA>`.
 - Para multi-campaña nueva, usar Admin para guardar el `Vapi Assistant ID` por campaña. Las variables `GHL_CAMPAIGN_*_VAPI_ASSISTANT_ID` quedaron como referencia histórica del demo anterior.
 - Server URL: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
 - Timeout recomendado: `10` a `30` segundos.
@@ -140,7 +140,7 @@ Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propieda
 {
   "provider": "11labs",
   "model": "eleven_turbo_v2_5",
-  "voiceId": "m7yTemJqdIqrcNleANfX",
+  "voiceId": "<ELEVENLABS_VOICE_ID_MARINA>",
   "speed": 1.15,
   "stability": 0.5,
   "similarityBoost": 0.75
@@ -150,9 +150,9 @@ Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propieda
 ### Voice IDs por Agente
 | Agente | Voice ID | Descripción |
 |--------|----------|-------------|
-| Marina | `m7yTemJqdIqrcNleANfX` | ElevenLabs mujer ES |
-| Brenda (Rachel) | `21m00Tcm4TlvDq8ikWAM` | ElevenLabs Rachel EN |
-| Bella | `EXAVITQu4vr4xnSDxMaL` | ElevenLabs Bella EN |
+| Marina | `<ELEVENLABS_VOICE_ID_MARINA>` | ElevenLabs mujer ES |
+| Brenda (Rachel) | `<ELEVENLABS_VOICE_ID_RACHEL>` | ElevenLabs Rachel EN |
+| Bella | `<ELEVENLABS_VOICE_ID_BELLA>` | ElevenLabs Bella EN |
 
 ---
 
@@ -313,7 +313,7 @@ Cliente contesta → Bot saluda → Transfer iniciado
 ```json
 {
   "type": "transferCall",
-  "destinations": [{"type": "number", "number": "+525527326714"}],
+  "destinations": [{"type": "number", "number": "<LEGACY_FALLBACK_PHONE>"}],
   "messages": [
     {"type": "request-start", "content": "Please hold..."},
     {"type": "request-failed", "content": "I apologize..."}

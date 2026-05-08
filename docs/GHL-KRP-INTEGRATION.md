@@ -32,9 +32,9 @@ Para el demo multi-campaña, cada workflow de GHL debe mandar `campaignId` en Cu
 ## Propiedades configuradas
 
 ```text
-GoHighLevel Test: dOlMhCyzBPIxKGO4CTDq
-Isla Blanca: V9kOoUXOU3jKjuvzg3sN
-Nikki Ocean: ftdXjrhF7nXY6EWVpWN1
+GoHighLevel Test: <GHL_TEST_LOCATION_ID>
+Isla Blanca: <GHL_ISLA_BLANCA_LOCATION_ID>
+Nikki Ocean: <GHL_NIKKI_OCEAN_LOCATION_ID>
 ```
 
 Los agentes del alcance quedaron cargados en `apps/api/src/routes/webhooks.ts`. Para Nikki Ocean se respetan los primeros 5 por prioridad porque el RR actual de Revenio limita el pool a 5 agentes.

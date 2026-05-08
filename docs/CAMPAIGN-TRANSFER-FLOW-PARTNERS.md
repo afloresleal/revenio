@@ -58,10 +58,10 @@ Para este flujo, Vapi no debe ser la fuente de verdad del asesor humano.
 No dejar fijo en Vapi:
 
 - Un `Forwarding Phone Number` viejo.
-- Un destino hardcodeado como `+525527326714`.
+- Un destino hardcodeado como `<LEGACY_FALLBACK_PHONE>`.
 - Un segundo `Transfer Call` tool creado manualmente con un numero fijo.
 
-El numero `+525527326714` viene de configuraciones viejas/fallbacks. Si aparece en logs como `forwardedPhoneNumber`, es senal de que Vapi esta usando una configuracion vieja o un fallback, no el asesor seleccionado por Revenio.
+El numero `<LEGACY_FALLBACK_PHONE>` viene de configuraciones viejas/fallbacks. Si aparece en logs como `forwardedPhoneNumber`, es senal de que Vapi esta usando una configuracion vieja o un fallback, no el asesor seleccionado por Revenio.
 
 ## Donde vive la verdad
 
@@ -106,7 +106,7 @@ En nuestro flujo:
 1. El assistant correcto existe en Vapi y esta publicado.
 2. El assistant usa Server URL de staging:
    `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
-3. El assistant no tiene un forwarding/fallback fijo hacia `+525527326714`.
+3. El assistant no tiene un forwarding/fallback fijo hacia `<LEGACY_FALLBACK_PHONE>`.
 4. No hay un segundo `Transfer Call` tool con destino hardcodeado.
 5. Railway staging tiene el Assistant ID y Phone Number ID de esa campana.
 6. GHL manda el `campaignId` correcto en el webhook.

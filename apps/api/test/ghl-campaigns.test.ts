@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  buildGhlOpportunityUpdateBody,
   buildCampaignCallsCsv,
   buildGhlWebhookInstructions,
   getGhlCampaignRuntimeStatus,
@@ -73,6 +74,37 @@ assert.equal(
 assert.equal(
   instructions.validations[0],
   "campaignId debe coincidir exactamente con la campana creada en Admin.",
+);
+
+assert.deepEqual(
+  buildGhlOpportunityUpdateBody({
+    assignedTo: "agent-ghl",
+    connectedStageId: "connected-stage-123",
+    transcriptCustomFieldId: "transcript-field-123",
+    transcript: "Hola mundo",
+  }),
+  {
+    assignedTo: "agent-ghl",
+    pipelineStageId: "connected-stage-123",
+    customFields: [
+      {
+        id: "transcript-field-123",
+        field_value: "Hola mundo",
+      },
+    ],
+  },
+);
+
+assert.deepEqual(
+  buildGhlOpportunityUpdateBody({
+    assignedTo: "agent-ghl",
+    connectedStageId: "connected-stage-123",
+    transcript: "Hola mundo",
+  }),
+  {
+    assignedTo: "agent-ghl",
+    pipelineStageId: "connected-stage-123",
+  },
 );
 
 const transfer = selectCampaignTestTransfer({

@@ -71,7 +71,7 @@
 - `TRANSFER_CHILD_CALL_MAX_WAIT_MS` opcional (si se usa, no exceder lo necesario)
 - `BRENDA_TRANSFER_TRIGGER_STATUS=stopped`
 - `VAPI_ASSISTANT_ID`
-  - Staging GHL validado: `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7` (`Brenda - EN - Caribbean Luxury`)
+  - Staging GHL validado: `<VAPI_ASSISTANT_ID_BRENDA>` (`Brenda - EN - Caribbean Luxury`)
 - `PUBLIC_API_BASE_URL` / `API_BASE_URL` recomendado
   - fallback automático: `RAILWAY_PUBLIC_DOMAIN`
 

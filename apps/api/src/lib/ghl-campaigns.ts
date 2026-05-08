@@ -70,6 +70,12 @@ export type CampaignCallCsvRow = {
   recordingUrl?: string | null;
 };
 
+export type GhlOpportunityUpdateBody = {
+  assignedTo: string;
+  pipelineStageId: string;
+  customFields?: Array<{ id: string; field_value: string }>;
+};
+
 export const GHL_WEBHOOK_STAGING_URL = "https://revenioapi-staging.up.railway.app/webhooks/gohighlevel";
 export const GHL_WEBHOOK_PRODUCTION_URL = "https://revenioapi-production.up.railway.app/webhooks/gohighlevel";
 
@@ -143,6 +149,28 @@ export function getGhlCampaignRuntimeStatus(campaign: Pick<GhlCampaignConfig, "a
     return { allowed: false, reason: "campaign_inactive" };
   }
   return { allowed: true };
+}
+
+export function buildGhlOpportunityUpdateBody(params: {
+  assignedTo: string;
+  connectedStageId: string;
+  transcriptCustomFieldId?: string | null;
+  transcript?: string | null;
+}): GhlOpportunityUpdateBody {
+  const body: GhlOpportunityUpdateBody = {
+    assignedTo: params.assignedTo,
+    pipelineStageId: params.connectedStageId,
+  };
+  const transcriptCustomFieldId = asString(params.transcriptCustomFieldId);
+  if (transcriptCustomFieldId) {
+    body.customFields = [
+      {
+        id: transcriptCustomFieldId,
+        field_value: params.transcript ?? "",
+      },
+    ];
+  }
+  return body;
 }
 
 export function selectCampaignTestTransfer(params: {

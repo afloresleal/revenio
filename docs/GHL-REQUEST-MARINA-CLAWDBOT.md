@@ -19,9 +19,9 @@ https://revenioapi-staging.up.railway.app/webhooks/gohighlevel
 Cuenta/location de pruebas:
 
 ```text
-Location ID: dOlMhCyzBPIxKGO4CTDq
+Location ID: <GHL_TEST_LOCATION_ID>
 Pipeline: Marketing Pipeline
-Pipeline ID: y1d5iqHAz5WE5hdjpyia
+Pipeline ID: <GHL_PIPELINE_ID>
 ```
 
 Evento requerido:
@@ -124,7 +124,7 @@ Esperamos algo parecido a:
 ```json
 {
   "type": "OpportunityAssignedTo",
-  "locationId": "dOlMhCyzBPIxKGO4CTDq",
+  "locationId": "<GHL_TEST_LOCATION_ID>",
   "id": "<opportunity_id>",
   "assignedTo": "<ghl_user_id>",
   "contact": {
@@ -136,7 +136,7 @@ Esperamos algo parecido a:
     "assignedTo": "<ghl_user_id>"
   },
   "pipeline": {
-    "id": "y1d5iqHAz5WE5hdjpyia",
+    "id": "<GHL_PIPELINE_ID>",
     "name": "Marketing Pipeline"
   },
   "stage": {

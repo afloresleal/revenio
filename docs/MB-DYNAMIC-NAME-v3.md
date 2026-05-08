@@ -37,14 +37,14 @@
 |---------|-------|
 | **Objetivo** | Agregar variable `{{name}}` al firstMessage del assistant |
 | **Herramienta** | VAPI API (PATCH /assistant/{id}) |
-| **Assistant ID** | `675d2cb2-7047-4949-8735-bedb29351991` |
+| **Assistant ID** | `<VAPI_ASSISTANT_ID_MARINA>` |
 | **firstMessage nuevo** | `"Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"` |
 | **Método** | curl PATCH con Authorization Bearer |
 
 **Comando:**
 ```bash
-curl -X PATCH "https://api.vapi.ai/assistant/675d2cb2-7047-4949-8735-bedb29351991" \
-  -H "Authorization: Bearer 74ab62fa-4e1f-472f-9c1c-1f4e9406b510" \
+curl -X PATCH "https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_MARINA>" \
+  -H "Authorization: Bearer <VAPI_API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
     "firstMessage": "Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"
@@ -53,8 +53,8 @@ curl -X PATCH "https://api.vapi.ai/assistant/675d2cb2-7047-4949-8735-bedb2935199
 
 **Verificación:**
 ```bash
-curl -s "https://api.vapi.ai/assistant/675d2cb2-7047-4949-8735-bedb29351991" \
-  -H "Authorization: Bearer 74ab62fa-4e1f-472f-9c1c-1f4e9406b510" \
+curl -s "https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_MARINA>" \
+  -H "Authorization: Bearer <VAPI_API_KEY>" \
   | jq '.firstMessage'
 # Debe contener {{name}}
 ```
@@ -66,7 +66,7 @@ curl -s "https://api.vapi.ai/assistant/675d2cb2-7047-4949-8735-bedb29351991" \
 | Aspecto | Valor |
 |---------|-------|
 | **Objetivo** | Endpoint standalone para iniciar llamadas VAPI |
-| **Servidor destino** | 138.68.28.244 (DEV droplet Marina) |
+| **Servidor destino** | <DROPLET_IP> (DEV droplet Marina) |
 | **Puerto** | 3001 (nuevo servicio) o integrar en existente |
 | **Stack** | Node.js + Express (mínimo) |
 | **Dependencias** | dotenv, express |
@@ -155,7 +155,7 @@ app.listen(PORT, () => console.log(`revenio-caller on :${PORT}`));
 
 **Verificación:**
 ```bash
-curl http://138.68.28.244:3001/health
+curl http://<DROPLET_IP>:3001/health
 # {"ok":true,"service":"revenio-caller"}
 ```
 
@@ -189,15 +189,15 @@ curl http://138.68.28.244:3001/health
 
 **Contenido .env:**
 ```
-VAPI_API_KEY=74ab62fa-4e1f-472f-9c1c-1f4e9406b510
-VAPI_PHONE_NUMBER_ID=56a80999-3361-4501-ae74-f23beaea1c41
-VAPI_ASSISTANT_ID=675d2cb2-7047-4949-8735-bedb29351991
+VAPI_API_KEY=<VAPI_API_KEY>
+VAPI_PHONE_NUMBER_ID=<VAPI_PHONE_NUMBER_ID>
+VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_MARINA>
 PORT=3001
 ```
 
 **Verificación:**
 ```bash
-ssh root@138.68.28.244 "cat /opt/revenio-caller/.env | grep -c VAPI"
+ssh root@<DROPLET_IP> "cat /opt/revenio-caller/.env | grep -c VAPI"
 # Debe ser 3
 ```
 
@@ -212,7 +212,7 @@ ssh root@138.68.28.244 "cat /opt/revenio-caller/.env | grep -c VAPI"
 
 **Secuencia:**
 ```bash
-ssh root@138.68.28.244 << 'EOF'
+ssh root@<DROPLET_IP> << 'EOF'
 cd /opt/revenio-caller
 npm install
 pm2 start index.js --name revenio-caller
@@ -222,7 +222,7 @@ EOF
 
 **Verificación:**
 ```bash
-curl http://138.68.28.244:3001/health
+curl http://<DROPLET_IP>:3001/health
 ```
 
 ---
@@ -235,17 +235,17 @@ curl http://138.68.28.244:3001/health
 
 **Test 1: Con nombre**
 ```bash
-curl -X POST http://138.68.28.244:3001/call/vapi \
+curl -X POST http://<DROPLET_IP>:3001/call/vapi \
   -H "Content-Type: application/json" \
-  -d '{"to_number": "+525527326714", "lead_name": "Marina"}'
+  -d '{"to_number": "<LEGACY_FALLBACK_PHONE>", "lead_name": "Marina"}'
 ```
 **Esperado:** Dice "Hola, ¿hablo con Marina?"
 
 **Test 2: Sin nombre**
 ```bash
-curl -X POST http://138.68.28.244:3001/call/vapi \
+curl -X POST http://<DROPLET_IP>:3001/call/vapi \
   -H "Content-Type: application/json" \
-  -d '{"to_number": "+525527326714"}'
+  -d '{"to_number": "<LEGACY_FALLBACK_PHONE>"}'
 ```
 **Esperado:** Dice "Hola, buenas tardes... Uno de nuestros asesores lo atenderá..."
 

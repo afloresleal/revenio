@@ -26,7 +26,7 @@
 |---------|-------|
 | **Objetivo** | Definir `{{name}}` como variable dinámica en firstMessage |
 | **Herramienta** | VAPI Dashboard → Assistant → First Message |
-| **Assistant ID** | `675d2cb2-7047-4949-8735-bedb29351991` |
+| **Assistant ID** | `<VAPI_ASSISTANT_ID_MARINA>` |
 | **firstMessage actual** | `"Hola, ¿hablo con Valeria? Soy Marina de Casalba..."` |
 | **firstMessage nuevo** | `"Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"` |
 | **Fallback en VAPI** | Configurar default value para `{{name}}` = vacío (el backend manejará) |
@@ -36,7 +36,7 @@
 **Comando de verificación:**
 ```bash
 curl -s -H "Authorization: Bearer $VAPI_API_KEY" \
-  https://api.vapi.ai/assistant/675d2cb2-7047-4949-8735-bedb29351991 \
+  https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_MARINA> \
   | jq '.firstMessage'
 ```
 
@@ -140,7 +140,7 @@ expect(sanitizeName("  Juan  ")).toBe("Juan");
 curl -X POST http://localhost:3000/call/test/direct \
   -H "Content-Type: application/json" \
   -d '{
-    "to_number": "+525527741741",
+    "to_number": "<TEST_LEAD_PHONE>",
     "lead_name": "Carlos"
   }'
 ```
@@ -151,7 +151,7 @@ curl -X POST http://localhost:3000/call/test/direct \
 curl -X POST http://localhost:3000/call/test/direct \
   -H "Content-Type: application/json" \
   -d '{
-    "to_number": "+525527741741"
+    "to_number": "<TEST_LEAD_PHONE>"
   }'
 ```
 **Resultado esperado:** Marina dice "Hola, ¿hablo con la persona indicada?"
@@ -161,7 +161,7 @@ curl -X POST http://localhost:3000/call/test/direct \
 curl -X POST http://localhost:3000/call/test/direct \
   -H "Content-Type: application/json" \
   -d '{
-    "to_number": "+525527741741",
+    "to_number": "<TEST_LEAD_PHONE>",
     "lead_name": "   "
   }'
 ```

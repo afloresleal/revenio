@@ -91,11 +91,11 @@ Demo de integracion GoHighLevel -> Revenio -> Vapi:
 
 ## GHL test config
 
-- Location ID: `dOlMhCyzBPIxKGO4CTDq`
-- Pipeline ID: `y1d5iqHAz5WE5hdjpyia`
-- Trigger stage `New Lead`: `fe4e865c-c8e7-4747-b2b2-a1ed3baebb6e`
-- Connected stage `Contacted`: `c60834fb-1346-4a69-8da1-46e834a937b7`
-- Test GHL user Ale: `o6mW3ERlbWe49dW9rhKJ`
+- Location ID: `<GHL_TEST_LOCATION_ID>`
+- Pipeline ID: `<GHL_PIPELINE_ID>`
+- Trigger stage `New Lead`: `<GHL_TRIGGER_STAGE_ID>`
+- Connected stage `Contacted`: `<GHL_CONNECTED_STAGE_ID>`
+- Test GHL user Ale: `<GHL_USER_ID>`
 
 ## Multi-campaign Custom Data
 
@@ -119,11 +119,11 @@ Revenio uses `campaignId` to select the Vapi assistant and phone number. GHL sti
 ## Vapi test config validated on staging
 
 - Assistant: `Brenda - EN - Caribbean Luxury`
-- Assistant ID: `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`
-- Phone number ID: `56a80999-3361-4501-ae74-f23beaea1c41`
+- Assistant ID: `<VAPI_ASSISTANT_ID_BRENDA>`
+- Phone number ID: `<VAPI_PHONE_NUMBER_ID>`
 - Phone number name: `Twilio - Marina Casalba`
 - Railway staging variable:
-  - `VAPI_ASSISTANT_ID=5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`
+  - `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_BRENDA>`
 - For multi-campaign staging, prefer campaign-specific Railway variables:
   - `GHL_CAMPAIGN_IB_ES_VAPI_ASSISTANT_ID`
   - `GHL_CAMPAIGN_IB_EN_VAPI_ASSISTANT_ID`
@@ -199,10 +199,10 @@ The GHL webhook should create Vapi calls with this shape:
 - Vapi transfers to the GHL/Revenio-selected advisor number when the assistant Server URL points to staging.
 - Dashboard/API can show new Vapi call records via `/api/metrics/recent`.
 - Validated successful staging call:
-  - Vapi call creation response ID: `019df037-23b8-7bbe-8b1a-8dd68849d148`
-  - Assistant ID: `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`
+  - Vapi call creation response ID: `<VAPI_CALL_ID>`
+  - Assistant ID: `<VAPI_ASSISTANT_ID_BRENDA>`
   - Selected agent: `Ale Flores`
-  - Dynamic transfer number: `+525527026617`
+  - Dynamic transfer number: `<SELECTED_ADVISOR_PHONE>`
 
 ## Resolved issues from 2026-05-03 testing
 
@@ -243,7 +243,7 @@ One failed test used the correct Brenda assistant and accepted the dynamic trans
 
 Symptom:
 
-- Vapi log showed `forwardedPhoneNumber: "+525527326714"` instead of the Revenio-selected advisor number.
+- Vapi log showed `forwardedPhoneNumber: "<LEGACY_FALLBACK_PHONE>"` instead of the Revenio-selected advisor number.
 - Vapi call had `endedReason: "assistant-forwarded-call"` but used the assistant/phone fallback behavior.
 
 Fix:
@@ -256,7 +256,7 @@ Fix:
 
 Before running a GHL staging test:
 
-1. Railway `revenioapi-staging` has `VAPI_ASSISTANT_ID=5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`.
+1. Railway `revenioapi-staging` has `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_BRENDA>`.
 2. Vapi Assistant `Brenda - EN - Caribbean Luxury` is published.
 3. Vapi Assistant Server URL is `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
 4. Vapi Assistant Server timeout is at least `10` seconds.
@@ -272,13 +272,13 @@ Before running a GHL staging test:
 After the GHL test:
 
 - GHL/Revenio returns `201`.
-- Request assistant ID is `5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`.
+- Request assistant ID is `<VAPI_ASSISTANT_ID_BRENDA>`.
 - Request includes:
   - `transferPlan.mode = blind-transfer`
   - `transferPlan.sipVerb = dial`
   - destination number equal to the selected GHL/Revenio advisor.
 - Vapi final call log has:
-  - `assistantId = 5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7`
+  - `assistantId = <VAPI_ASSISTANT_ID_BRENDA>`
   - `endedReason = assistant-forwarded-call`
   - `forwardedPhoneNumber` equal to the selected advisor, not the lead/fallback phone.
 - Dashboard/API shows the call via `/api/metrics/recent`.
