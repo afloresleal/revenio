@@ -18,9 +18,8 @@ import { getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
 
 const router = Router();
 
-const BRENDA_ASSISTANT_ID = '5ac0c5dd-2e79-4d29-b76a-add2ff1b93b7';
-const BRENDA_TRANSFER_TRIGGER_STATUS =
-  (process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'stopped').toLowerCase() === 'started'
+const AUTO_TRANSFER_TRIGGER_STATUS =
+  (process.env.AUTO_TRANSFER_TRIGGER_STATUS ?? process.env.BRENDA_TRANSFER_TRIGGER_STATUS ?? 'stopped').toLowerCase() === 'started'
     ? 'started'
     : 'stopped';
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
@@ -1222,8 +1221,8 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   if (locationId && locationId !== property.locationId) {
     return { ok: true, ignored: true, reason: 'location_campaign_mismatch' as const, locationId, campaignId: campaign.campaignId };
   }
-  const resolvedVapiAssistantId = campaign?.vapiAssistantId || VAPI_ASSISTANT_ID;
-  const resolvedVapiPhoneNumberId = campaign?.vapiPhoneNumberId || VAPI_PHONE_NUMBER_ID;
+  const resolvedVapiAssistantId = campaign.vapiAssistantId;
+  const resolvedVapiPhoneNumberId = campaign.vapiPhoneNumberId;
 
   if (eventType !== 'OpportunityAssignedTo' && eventType !== 'OpportunityAssignedToUpdate') {
     return { ok: true, ignored: true, reason: 'unsupported_ghl_event' as const, eventType };
@@ -1253,9 +1252,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     return {
       ok: false,
       error: 'missing_vapi_config' as const,
-      required: campaign
-        ? ['VAPI_API_KEY', 'campaign Vapi assistant ID or VAPI_ASSISTANT_ID', 'campaign Vapi phone number ID or VAPI_PHONE_NUMBER_ID']
-        : ['VAPI_API_KEY', 'VAPI_PHONE_NUMBER_ID', 'VAPI_ASSISTANT_ID'],
+      required: ['VAPI_API_KEY', 'Admin campaign Vapi assistant ID', 'Admin campaign Vapi phone number ID'],
       campaignId: requestedCampaignId ?? null,
     };
   }
@@ -2390,7 +2387,7 @@ async function processTransferRecording(body: unknown): Promise<HandlerResult | 
 }
 
 /**
- * Auto-transfer handler for Brenda
+ * Auto-transfer handler for Vapi calls with a configured transfer number.
  * Triggers transfer after first assistant message (turn 1)
  */
 async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null> {
@@ -2412,17 +2409,16 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
   
   console.log('speech-update:', { status, role, turn, assistantId, callId });
   
-  // Auto-transfer conditions (ONLY for Brenda):
+  // Auto-transfer conditions:
   // 1. Assistant speech reached configured trigger status.
   // 2. It's the assistant speaking.
-  // 3. It's Brenda specifically (assistantId check).
+  // 3. This call has a runtime transfer destination configured by Revenio.
   // NOTE: do not gate by "turn" because Vapi turn numbering can vary by transport/config.
   if (
-    status === BRENDA_TRANSFER_TRIGGER_STATUS &&
-    role === 'assistant' && 
-    assistantId === BRENDA_ASSISTANT_ID
+    status === AUTO_TRANSFER_TRIGGER_STATUS &&
+    role === 'assistant'
   ) {
-    console.log('Auto-transfer triggered for Brenda:', callId);
+    console.log('Auto-transfer trigger matched:', { callId, assistantId });
     
     // Find controlUrl in DB
     let controlUrl: string | null = null;
@@ -2445,9 +2441,9 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
         transferNumber;
       if (!transferNumber) {
         return {
-          ok: false,
-          error: 'missing_transfer_number',
-          message: 'No transfer destination configured for auto-transfer.',
+          ok: true,
+          ignored: true,
+          reason: 'missing-transfer-number',
           callId,
         };
       }
@@ -2476,7 +2472,7 @@ async function processSpeechUpdate(body: unknown): Promise<HandlerResult | null>
       });
 
       console.log('Auto-transfer destination:', transferNumber);
-      console.log('Auto-transfer trigger status:', BRENDA_TRANSFER_TRIGGER_STATUS);
+      console.log('Auto-transfer trigger status:', AUTO_TRANSFER_TRIGGER_STATUS);
       console.log('Auto-transfer response:', transferResp.status);
       if (!transferResp.ok) {
         const transferBody = await transferResp.text().catch(() => '');
@@ -2610,7 +2606,7 @@ router.post('/vapi/events', async (req, res) => {
       // If ignored, continue processing other event types
     }
 
-    // Auto-transfer via speech-update (Brenda) to avoid confirmation loops in assistant prompt.
+    // Auto-transfer via speech-update to avoid confirmation loops in assistant prompts.
     const speechUpdate = await processSpeechUpdate(req.body);
     if (speechUpdate) {
       const action = asRecord(speechUpdate)?.action;
