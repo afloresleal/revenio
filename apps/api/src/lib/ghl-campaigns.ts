@@ -222,10 +222,28 @@ const CAMPAIGN_CALLS_CSV_HEADERS: Array<[keyof CampaignCallCsvRow, string]> = [
   ["recordingUrl", "recording_url"],
 ];
 
+const CAMPAIGN_CALLS_CSV_TIMEZONE = "America/Mexico_City";
+
 function normalizeCsvValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) return value.toISOString();
   return String(value).replace(/\r?\n/g, " ").trim();
+}
+
+function normalizeCsvDateTime(value: CampaignCallCsvRow["startedAt"]): string {
+  if (value === null || value === undefined) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return normalizeCsvValue(value);
+  return date.toLocaleString("es-MX", {
+    timeZone: CAMPAIGN_CALLS_CSV_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
 }
 
 function escapeCsvValue(value: unknown): string {
@@ -238,7 +256,7 @@ export function buildCampaignCallsCsv(rows: CampaignCallCsvRow[]): string {
   const header = CAMPAIGN_CALLS_CSV_HEADERS.map(([, label]) => label).join(",");
   const body = rows.map((row) =>
     CAMPAIGN_CALLS_CSV_HEADERS
-      .map(([key]) => escapeCsvValue(row[key]))
+      .map(([key]) => escapeCsvValue(key === "startedAt" ? normalizeCsvDateTime(row[key]) : row[key]))
       .join(","),
   );
   return [header, ...body].join("\n");

@@ -158,7 +158,7 @@ assert.equal(
   callsCsv,
   [
     "campaign_name,campaign_id,started_at,lead_phone,outcome,sentiment,assigned_to,first_agent,answered_agent,transfer_number,total_duration_sec,time_to_transfer_sec,seller_talk_sec,transcript,recording_url",
-    "Isla Blanca ES,isla-blanca-es,2026-05-05T19:00:00.000Z,+525500000001,transfer_success,positive,ana-ghl,Ana,\"Luis, Ventas\",+525500000002,120,18,91,Hola mundo,https://example.com/audio.mp3",
+    "Isla Blanca ES,isla-blanca-es,\"05/05/2026, 01:00:00 p.m.\",+525500000001,transfer_success,positive,ana-ghl,Ana,\"Luis, Ventas\",+525500000002,120,18,91,Hola mundo,https://example.com/audio.mp3",
   ].join("\n"),
 );
 
