@@ -52,7 +52,7 @@ export type CampaignTestTransfer = {
   source: "agent" | "fallback";
 };
 
-export type CampaignCallCsvRow = {
+export type CampaignCallRow = {
   campaignName?: string | null;
   campaignId?: string | null;
   startedAt?: Date | string | null;
@@ -68,6 +68,11 @@ export type CampaignCallCsvRow = {
   sellerTalkSec?: number | null;
   transcript?: string | null;
   recordingUrl?: string | null;
+};
+
+export type CampaignCallExportColumn = {
+  key: keyof CampaignCallRow;
+  label: string;
 };
 
 export type GhlOpportunityUpdateBody = {
@@ -204,22 +209,22 @@ export function selectCampaignTestTransfer(params: {
   };
 }
 
-const CAMPAIGN_CALLS_CSV_HEADERS: Array<[keyof CampaignCallCsvRow, string]> = [
-  ["campaignName", "campaign_name"],
-  ["campaignId", "campaign_id"],
-  ["startedAt", "started_at"],
-  ["phone", "lead_phone"],
-  ["outcome", "outcome"],
-  ["sentiment", "sentiment"],
-  ["assignedTo", "assigned_to"],
-  ["firstAgentName", "first_agent"],
-  ["answeredAgentName", "answered_agent"],
-  ["transferNumber", "transfer_number"],
-  ["durationSec", "total_duration_sec"],
-  ["timeToTransferSec", "time_to_transfer_sec"],
-  ["sellerTalkSec", "seller_talk_sec"],
-  ["transcript", "transcript"],
-  ["recordingUrl", "recording_url"],
+export const CAMPAIGN_CALL_EXPORT_COLUMNS: CampaignCallExportColumn[] = [
+  { key: "campaignName", label: "campaign_name" },
+  { key: "campaignId", label: "campaign_id" },
+  { key: "startedAt", label: "started_at" },
+  { key: "phone", label: "lead_phone" },
+  { key: "outcome", label: "outcome" },
+  { key: "sentiment", label: "sentiment" },
+  { key: "assignedTo", label: "assigned_to" },
+  { key: "firstAgentName", label: "first_agent" },
+  { key: "answeredAgentName", label: "answered_agent" },
+  { key: "transferNumber", label: "transfer_number" },
+  { key: "durationSec", label: "total_duration_sec" },
+  { key: "timeToTransferSec", label: "time_to_transfer_sec" },
+  { key: "sellerTalkSec", label: "seller_talk_sec" },
+  { key: "transcript", label: "transcript" },
+  { key: "recordingUrl", label: "recording_url" },
 ];
 
 const CAMPAIGN_CALLS_CSV_TIMEZONE = "America/Mexico_City";
@@ -230,7 +235,7 @@ function normalizeCsvValue(value: unknown): string {
   return String(value).replace(/\r?\n/g, " ").trim();
 }
 
-function normalizeCsvDateTime(value: CampaignCallCsvRow["startedAt"]): string {
+function normalizeCsvDateTime(value: CampaignCallRow["startedAt"]): string {
   if (value === null || value === undefined) return "";
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return normalizeCsvValue(value);
@@ -252,11 +257,22 @@ function escapeCsvValue(value: unknown): string {
   return `"${normalized.replace(/"/g, '""')}"`;
 }
 
-export function buildCampaignCallsCsv(rows: CampaignCallCsvRow[]): string {
-  const header = CAMPAIGN_CALLS_CSV_HEADERS.map(([, label]) => label).join(",");
-  const body = rows.map((row) =>
-    CAMPAIGN_CALLS_CSV_HEADERS
-      .map(([key]) => escapeCsvValue(key === "startedAt" ? normalizeCsvDateTime(row[key]) : row[key]))
+export function buildCampaignCallExportRows(rows: CampaignCallRow[]): Array<Record<string, string>> {
+  return rows.map((row) => {
+    const normalized: Record<string, string> = {};
+    CAMPAIGN_CALL_EXPORT_COLUMNS.forEach(({ key }) => {
+      normalized[key] = key === "startedAt" ? normalizeCsvDateTime(row[key]) : normalizeCsvValue(row[key]);
+    });
+    return normalized;
+  });
+}
+
+export function buildCampaignCallsCsv(rows: CampaignCallRow[]): string {
+  const header = CAMPAIGN_CALL_EXPORT_COLUMNS.map(({ label }) => label).join(",");
+  const exportRows = buildCampaignCallExportRows(rows);
+  const body = exportRows.map((row) =>
+    CAMPAIGN_CALL_EXPORT_COLUMNS
+      .map(({ key }) => escapeCsvValue(row[key] ?? ""))
       .join(","),
   );
   return [header, ...body].join("\n");

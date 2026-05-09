@@ -189,12 +189,21 @@
           <div class="panel-title">
             <div>
               <h2>Llamadas de la campaña</h2>
-              <p>Exporta los registros operativos de la campaña seleccionada.</p>
+              <p>Consulta y exporta los registros operativos de la campaña seleccionada.</p>
             </div>
-            <button id="btn_download_calls_csv" type="button">Descargar CSV</button>
+            <div class="panel-actions">
+              <button id="btn_refresh_calls" type="button">Actualizar</button>
+              <button id="btn_download_calls_csv" type="button">Descargar CSV</button>
+            </div>
           </div>
           <div id="calls_feedback" class="feedback" hidden></div>
-          <div class="notice">El CSV incluye vendedor intentado, vendedor que contestó cuando exista, duración, transferencia, transcript y recording URL.</div>
+          <div class="calls-table-wrap">
+            <table class="calls-table">
+              <thead id="calls_table_head"></thead>
+              <tbody id="calls_table_body"></tbody>
+            </table>
+          </div>
+          <div id="calls_empty" class="notice">Selecciona una campaña para ver sus llamadas.</div>
         </section>
 
         <section id="panel_test" class="panel is-hidden" hidden>

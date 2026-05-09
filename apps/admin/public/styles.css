@@ -424,6 +424,55 @@ td:first-child {
   font-weight: 700;
 }
 
+.panel-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.calls-table-wrap {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: auto;
+  max-height: 62vh;
+  background: rgb(15 23 42 / 0.45);
+}
+
+.calls-table {
+  min-width: 1500px;
+  margin-top: 0;
+}
+
+.calls-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+
+.calls-table td {
+  max-width: 260px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.calls-table .cell-long {
+  max-width: 340px;
+  white-space: normal;
+}
+
+.calls-table a {
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.calls-table a:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+
 .checklist {
   margin: 10px 0 0;
   padding-left: 18px;

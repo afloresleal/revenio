@@ -29,11 +29,15 @@ const agentsFeedbackEl = $("agents_feedback");
 const callsFeedbackEl = $("calls_feedback");
 const campaignListEl = $("campaign_list");
 const agentRowsEl = $("agent_rows");
+const callsTableHeadEl = $("calls_table_head");
+const callsTableBodyEl = $("calls_table_body");
+const callsEmptyEl = $("calls_empty");
 let campaigns = [];
 let selectedCampaignId = null;
 let selectedCampaign = null;
 let isCreatingCampaign = false;
 let agentsLoadToken = 0;
+let callsLoadToken = 0;
 
 fields.forEach((id) => {
   const value = localStorage.getItem(`admin_${id}`);
@@ -81,6 +85,63 @@ function setCallsFeedback(message = "", type = "info") {
   callsFeedbackEl.textContent = message;
   callsFeedbackEl.hidden = !message;
   callsFeedbackEl.classList.toggle("is-error", type === "error");
+}
+
+function truncateCell(value, maxLength = 220) {
+  const text = String(value ?? "");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 3)}...`;
+}
+
+function renderCallsTable(columns = [], calls = []) {
+  callsTableHeadEl.innerHTML = "";
+  callsTableBodyEl.innerHTML = "";
+
+  if (!selectedCampaign) {
+    callsEmptyEl.textContent = "Selecciona una campaña para ver sus llamadas.";
+    callsEmptyEl.hidden = false;
+    return;
+  }
+
+  if (!calls.length) {
+    callsEmptyEl.textContent = "Esta campaña todavía no tiene llamadas registradas.";
+    callsEmptyEl.hidden = false;
+    return;
+  }
+
+  callsEmptyEl.hidden = true;
+  const headerRow = document.createElement("tr");
+  columns.forEach((column) => {
+    const th = document.createElement("th");
+    th.textContent = column.label;
+    headerRow.appendChild(th);
+  });
+  callsTableHeadEl.appendChild(headerRow);
+
+  calls.forEach((call) => {
+    const row = document.createElement("tr");
+    columns.forEach((column) => {
+      const td = document.createElement("td");
+      const value = call[column.key] ?? "";
+      if (column.key === "transcript") {
+        td.className = "cell-long";
+        td.textContent = truncateCell(value);
+        td.title = value;
+      } else if (column.key === "recordingUrl" && value) {
+        td.className = "cell-long";
+        const link = document.createElement("a");
+        link.href = value;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "Abrir recording";
+        td.appendChild(link);
+      } else {
+        td.textContent = value;
+      }
+      row.appendChild(td);
+    });
+    callsTableBodyEl.appendChild(row);
+  });
 }
 
 function clearCampaignFieldErrors() {
@@ -215,10 +276,15 @@ function applyCampaign(campaign) {
   clearAgentFieldErrors();
   setCampaignFeedback("");
   setAgentsFeedback(campaign ? `Editando agentes de ${campaign.name}.` : "Guarda o selecciona una campaña antes de capturar agentes.");
-  setCallsFeedback(campaign ? `CSV listo para ${campaign.name}.` : "Selecciona o crea una campaña para descargar llamadas.");
+  setCallsFeedback(campaign ? `Cargando llamadas de ${campaign.name}...` : "Selecciona o crea una campaña para ver llamadas.");
+  renderCallsTable([], []);
   renderCampaignList();
   renderWebhookInstructions(campaign?.webhookInstructions ?? null);
   loadAgents().catch((error) => setStatus(error.message));
+  loadCalls().catch((error) => {
+    setCallsFeedback(error.message, "error");
+    setStatus(error.message);
+  });
 }
 
 function startNewCampaign() {
@@ -437,6 +503,22 @@ async function downloadCallsCsv() {
   setStatus("CSV descargado.");
 }
 
+async function loadCalls() {
+  const token = ++callsLoadToken;
+  const campaignAtRequest = selectedCampaign?.id ?? null;
+  if (!selectedCampaignId || !selectedCampaign) {
+    renderCallsTable([], []);
+    return;
+  }
+  setCallsFeedback(`Cargando llamadas de ${selectedCampaign.name}...`);
+  setStatus("Cargando llamadas...");
+  const data = await request("GET", `/api/admin/ghl-campaigns/${selectedCampaignId}/calls`);
+  if (token !== callsLoadToken || campaignAtRequest !== selectedCampaign?.id) return;
+  renderCallsTable(data.columns ?? [], data.calls ?? []);
+  setCallsFeedback(`${data.count ?? 0} llamadas cargadas para ${selectedCampaign.name}.`);
+  setStatus("Llamadas cargadas.");
+}
+
 function renderWebhookInstructions(instructions) {
   const webhookTable = $("webhook_table");
   const customDataTable = $("custom_data_table");
@@ -505,6 +587,10 @@ $("btn_save_campaign").addEventListener("click", () => saveCampaign().catch((err
 $("campaign_active").addEventListener("change", updateCampaignActiveLabel);
 $("btn_save_agents").addEventListener("click", () => saveAgents().catch((error) => setStatus(error.message)));
 $("btn_test_call")?.addEventListener("click", () => runTestCall().catch((error) => setStatus(error.message)));
+$("btn_refresh_calls").addEventListener("click", () => loadCalls().catch((error) => {
+  setCallsFeedback(error.message, "error");
+  setStatus(error.message);
+}));
 $("btn_download_calls_csv").addEventListener("click", () => downloadCallsCsv().catch((error) => {
   setCallsFeedback(error.message, "error");
   setStatus(error.message);

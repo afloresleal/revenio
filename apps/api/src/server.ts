@@ -16,7 +16,10 @@ import metricsRouter from "./routes/metrics.js";
 import webhooksRouter from "./routes/webhooks.js";
 import jobsRouter from "./routes/jobs.js";
 import {
+  CAMPAIGN_CALL_EXPORT_COLUMNS,
+  buildCampaignCallExportRows,
   buildCampaignCallsCsv,
+  type CampaignCallRow,
   buildGhlWebhookInstructions,
   normalizeStoredGhlCampaign,
   selectCampaignTestTransfer,
@@ -2730,6 +2733,73 @@ function adminCsvFilename(campaignId: string): string {
   return `revenio-${safeCampaignId}-calls-${dateKey}.csv`;
 }
 
+async function findAdminCampaignCallRows(campaign: { id: string; campaignId: string; name: string }, limit: number): Promise<CampaignCallRow[]> {
+  const attempts = await prisma.callAttempt.findMany({
+    where: {
+      providerId: { not: null },
+      OR: [
+        { resultJson: { path: ["ghlIntegration", "campaignId"], equals: campaign.campaignId } },
+        { resultJson: { path: ["campaignId"], equals: campaign.campaignId } },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: { lead: true },
+  });
+
+  const callIds = attempts
+    .map((attempt) => attempt.providerId)
+    .filter((callId): callId is string => Boolean(callId));
+  const metrics = callIds.length
+    ? await prisma.callMetric.findMany({
+        where: { callId: { in: callIds } },
+        orderBy: [{ startedAt: "desc" }, { createdAt: "desc" }],
+      })
+    : [];
+  const metricsByCallId = new Map(metrics.map((metric) => [metric.callId, metric]));
+
+  return attempts.map((attempt) => {
+    const result = adminRecord(attempt.resultJson);
+    const integration = adminRecord(result?.ghlIntegration);
+    const roundRobin = adminRecord(result?.roundRobin);
+    const selectedAgent = adminRecord(result?.selected_agent);
+    const metric = attempt.providerId ? metricsByCallId.get(attempt.providerId) : null;
+    const startedAt = metric?.startedAt ?? attempt.createdAt;
+    const transferNumber =
+      metric?.transferNumber ??
+      adminString(selectedAgent?.transfer_number) ??
+      adminString(roundRobin?.selectedTransferNumber) ??
+      adminString(result?.transferNumber);
+    const durationSec = metric?.durationSec ?? adminNumber(result?.durationSec);
+    const timeToTransferSec = adminDiffSeconds(metric?.startedAt, metric?.transferredAt);
+    const sellerTalkSec =
+      metric?.postTransferDurationSec ??
+      adminDiffSeconds(metric?.transferredAt, metric?.endedAt);
+
+    return {
+      campaignName: adminString(integration?.campaignName) ?? campaign.name,
+      campaignId: adminString(integration?.campaignId) ?? campaign.campaignId,
+      startedAt,
+      phone: attempt.lead?.phone ?? metric?.phoneNumber ?? "",
+      outcome: metric?.outcome ?? attempt.status,
+      sentiment: metric?.sentiment ?? "",
+      assignedTo: adminString(integration?.assignedTo) ?? adminString(result?.assignedTo) ?? "",
+      firstAgentName:
+        adminString(roundRobin?.firstAgentName) ??
+        adminString(roundRobin?.selectedAgentName) ??
+        adminString(selectedAgent?.human_agent_name) ??
+        "",
+      answeredAgentName: adminString(roundRobin?.answeredAgentName) ?? "",
+      transferNumber,
+      durationSec,
+      timeToTransferSec,
+      sellerTalkSec,
+      transcript: metric?.fullTranscript ?? metric?.transferTranscript ?? metric?.transcript ?? "",
+      recordingUrl: metric?.transferRecordingUrl ?? metric?.recordingUrl ?? "",
+    };
+  });
+}
+
 function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSchema>, options: { preserveEmptyApiKey: boolean }) {
   const normalized = {
     ...data,
@@ -2824,76 +2894,27 @@ app.get("/api/admin/ghl-campaigns/:id", async (req, res) => {
   return res.json({ ok: true, campaign: serializeGhlCampaign(campaign) });
 });
 
+app.get("/api/admin/ghl-campaigns/:id/calls", async (req, res) => {
+  const campaign = await prisma.ghlCampaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) return res.status(404).json({ error: "not_found" });
+
+  const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? "1000"), 10) || 1000, 1), 5000);
+  const rows = await findAdminCampaignCallRows(campaign, limit);
+  return res.json({
+    ok: true,
+    campaignId: campaign.campaignId,
+    columns: CAMPAIGN_CALL_EXPORT_COLUMNS,
+    calls: buildCampaignCallExportRows(rows),
+    count: rows.length,
+  });
+});
+
 app.get("/api/admin/ghl-campaigns/:id/calls.csv", async (req, res) => {
   const campaign = await prisma.ghlCampaign.findUnique({ where: { id: req.params.id } });
   if (!campaign) return res.status(404).json({ error: "not_found" });
 
   const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? "1000"), 10) || 1000, 1), 5000);
-  const attempts = await prisma.callAttempt.findMany({
-    where: {
-      providerId: { not: null },
-      OR: [
-        { resultJson: { path: ["ghlIntegration", "campaignId"], equals: campaign.campaignId } },
-        { resultJson: { path: ["campaignId"], equals: campaign.campaignId } },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-    include: { lead: true },
-  });
-
-  const callIds = attempts
-    .map((attempt) => attempt.providerId)
-    .filter((callId): callId is string => Boolean(callId));
-  const metrics = callIds.length
-    ? await prisma.callMetric.findMany({
-        where: { callId: { in: callIds } },
-        orderBy: [{ startedAt: "desc" }, { createdAt: "desc" }],
-      })
-    : [];
-  const metricsByCallId = new Map(metrics.map((metric) => [metric.callId, metric]));
-
-  const rows = attempts.map((attempt) => {
-    const result = adminRecord(attempt.resultJson);
-    const integration = adminRecord(result?.ghlIntegration);
-    const roundRobin = adminRecord(result?.roundRobin);
-    const selectedAgent = adminRecord(result?.selected_agent);
-    const metric = attempt.providerId ? metricsByCallId.get(attempt.providerId) : null;
-    const startedAt = metric?.startedAt ?? attempt.createdAt;
-    const transferNumber =
-      metric?.transferNumber ??
-      adminString(selectedAgent?.transfer_number) ??
-      adminString(roundRobin?.selectedTransferNumber) ??
-      adminString(result?.transferNumber);
-    const durationSec = metric?.durationSec ?? adminNumber(result?.durationSec);
-    const timeToTransferSec = adminDiffSeconds(metric?.startedAt, metric?.transferredAt);
-    const sellerTalkSec =
-      metric?.postTransferDurationSec ??
-      adminDiffSeconds(metric?.transferredAt, metric?.endedAt);
-
-    return {
-      campaignName: adminString(integration?.campaignName) ?? campaign.name,
-      campaignId: adminString(integration?.campaignId) ?? campaign.campaignId,
-      startedAt,
-      phone: attempt.lead?.phone ?? metric?.phoneNumber ?? "",
-      outcome: metric?.outcome ?? attempt.status,
-      sentiment: metric?.sentiment ?? "",
-      assignedTo: adminString(integration?.assignedTo) ?? adminString(result?.assignedTo) ?? "",
-      firstAgentName:
-        adminString(roundRobin?.firstAgentName) ??
-        adminString(roundRobin?.selectedAgentName) ??
-        adminString(selectedAgent?.human_agent_name) ??
-        "",
-      answeredAgentName: adminString(roundRobin?.answeredAgentName) ?? "",
-      transferNumber,
-      durationSec,
-      timeToTransferSec,
-      sellerTalkSec,
-      transcript: metric?.fullTranscript ?? metric?.transferTranscript ?? metric?.transcript ?? "",
-      recordingUrl: metric?.transferRecordingUrl ?? metric?.recordingUrl ?? "",
-    };
-  });
-
+  const rows = await findAdminCampaignCallRows(campaign, limit);
   const csv = buildCampaignCallsCsv(rows);
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${adminCsvFilename(campaign.campaignId)}"`);

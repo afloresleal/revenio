@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  buildCampaignCallExportRows,
   buildGhlOpportunityUpdateBody,
   buildCampaignCallsCsv,
   buildGhlWebhookInstructions,
@@ -153,6 +154,33 @@ const callsCsv = buildCampaignCallsCsv([
     recordingUrl: "https://example.com/audio.mp3",
   },
 ]);
+
+const callsTableRows = buildCampaignCallExportRows([
+  {
+    campaignName: "Isla Blanca ES",
+    campaignId: "isla-blanca-es",
+    startedAt: new Date("2026-05-05T19:00:00.000Z"),
+    transcript: "Hola\nmundo",
+  },
+]);
+
+assert.deepEqual(callsTableRows[0], {
+  campaignName: "Isla Blanca ES",
+  campaignId: "isla-blanca-es",
+  startedAt: "05/05/2026, 01:00:00 p.m.",
+  phone: "",
+  outcome: "",
+  sentiment: "",
+  assignedTo: "",
+  firstAgentName: "",
+  answeredAgentName: "",
+  transferNumber: "",
+  durationSec: "",
+  timeToTransferSec: "",
+  sellerTalkSec: "",
+  transcript: "Hola mundo",
+  recordingUrl: "",
+});
 
 assert.equal(
   callsCsv,
