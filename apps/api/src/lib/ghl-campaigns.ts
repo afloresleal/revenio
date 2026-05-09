@@ -14,7 +14,7 @@ export type GhlCampaignConfig = {
   ghlConnectedStageId?: string | null;
   ghlOutcomeFieldId?: string | null;
   ghlAnsweredAgentFieldId?: string | null;
-  ghlFirstAgentFieldId?: string | null;
+  ghlSellerTalkFieldId?: string | null;
   ghlTranscriptFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
   active: boolean;
@@ -88,16 +88,14 @@ export type GhlOpportunityUpdateBody = {
 export type GhlPostCallCustomFieldIds = {
   outcome?: string | null;
   answeredAgent?: string | null;
-  firstAgent?: string | null;
-  transcript?: string | null;
+  sellerTalkSec?: string | null;
   recordingUrl?: string | null;
 };
 
 export type GhlPostCallCustomFieldValues = {
   outcome?: string | null;
   answeredAgent?: string | null;
-  firstAgent?: string | null;
-  transcript?: string | null;
+  sellerTalkSec?: number | string | null;
   recordingUrl?: string | null;
 };
 
@@ -133,7 +131,7 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlConnectedStageId: asString(value.ghlConnectedStageId),
     ghlOutcomeFieldId: asString(value.ghlOutcomeFieldId),
     ghlAnsweredAgentFieldId: asString(value.ghlAnsweredAgentFieldId),
-    ghlFirstAgentFieldId: asString(value.ghlFirstAgentFieldId),
+    ghlSellerTalkFieldId: asString(value.ghlSellerTalkFieldId),
     ghlTranscriptFieldId: asString(value.ghlTranscriptFieldId),
     ghlRecordingUrlFieldId: asString(value.ghlRecordingUrlFieldId),
     active: value.active !== false,
@@ -196,8 +194,7 @@ export function buildGhlOpportunityUpdateBody(params: {
     const customFields = [
       [ids.outcome, values.outcome],
       [ids.answeredAgent, values.answeredAgent],
-      [ids.firstAgent, values.firstAgent],
-      [ids.transcript, values.transcript],
+      [ids.sellerTalkSec, values.sellerTalkSec],
       [ids.recordingUrl, values.recordingUrl],
     ]
       .flatMap(([id, value]) => {

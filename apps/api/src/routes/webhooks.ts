@@ -39,8 +39,7 @@ type GhlPropertyConfig = {
   connectedStageId?: string;
   outcomeFieldId?: string;
   answeredAgentFieldId?: string;
-  firstAgentFieldId?: string;
-  transcriptCustomFieldId?: string;
+  sellerTalkFieldId?: string;
   recordingUrlFieldId?: string;
   apiKey?: string;
 };
@@ -59,8 +58,7 @@ type GhlCampaignConfig = {
   ghlConnectedStageId?: string | null;
   ghlOutcomeFieldId?: string | null;
   ghlAnsweredAgentFieldId?: string | null;
-  ghlFirstAgentFieldId?: string | null;
-  ghlTranscriptFieldId?: string | null;
+  ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
   active?: boolean;
   source?: 'db';
@@ -268,8 +266,7 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
     connectedStageId: campaign.ghlConnectedStageId ?? undefined,
     outcomeFieldId: campaign.ghlOutcomeFieldId ?? undefined,
     answeredAgentFieldId: campaign.ghlAnsweredAgentFieldId ?? undefined,
-    firstAgentFieldId: campaign.ghlFirstAgentFieldId ?? undefined,
-    transcriptCustomFieldId: campaign.ghlTranscriptFieldId ?? undefined,
+    sellerTalkFieldId: campaign.ghlSellerTalkFieldId ?? undefined,
     recordingUrlFieldId: campaign.ghlRecordingUrlFieldId ?? undefined,
     apiKey: campaign.ghlApiKey ?? undefined,
   };
@@ -293,8 +290,7 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       ghlConnectedStageId: dbCampaign.ghlConnectedStageId,
       ghlOutcomeFieldId: dbCampaign.ghlOutcomeFieldId,
       ghlAnsweredAgentFieldId: dbCampaign.ghlAnsweredAgentFieldId,
-      ghlFirstAgentFieldId: dbCampaign.ghlFirstAgentFieldId,
-      ghlTranscriptFieldId: dbCampaign.ghlTranscriptFieldId,
+      ghlSellerTalkFieldId: dbCampaign.ghlSellerTalkFieldId,
       ghlRecordingUrlFieldId: dbCampaign.ghlRecordingUrlFieldId,
       active: dbCampaign.active,
       source: 'db',
@@ -1477,11 +1473,9 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
           customFieldIds: {
             outcome: property.outcomeFieldId ?? null,
             answeredAgent: property.answeredAgentFieldId ?? null,
-            firstAgent: property.firstAgentFieldId ?? null,
-            transcript: property.transcriptCustomFieldId ?? null,
+            sellerTalkSec: property.sellerTalkFieldId ?? null,
             recordingUrl: property.recordingUrlFieldId ?? null,
           },
-          transcriptCustomFieldId: property.transcriptCustomFieldId ?? null,
         },
         roundRobin: {
           enabled: true,
@@ -1540,6 +1534,7 @@ async function pushSuccessfulTransferToGhl(params: {
   transferNumber: string | null;
   transcript: string | null;
   outcome: string | null;
+  sellerTalkSec: number | null;
   recordingUrl: string | null;
 }) {
   const integration = asRecord(params.resultJson?.ghlIntegration);
@@ -1566,8 +1561,7 @@ async function pushSuccessfulTransferToGhl(params: {
   const customFieldIds = {
     outcome: asString(storedCustomFieldIds?.outcome) ?? property.outcomeFieldId,
     answeredAgent: asString(storedCustomFieldIds?.answeredAgent) ?? property.answeredAgentFieldId,
-    firstAgent: asString(storedCustomFieldIds?.firstAgent) ?? property.firstAgentFieldId,
-    transcript: asString(storedCustomFieldIds?.transcript) ?? asString(integration.transcriptCustomFieldId) ?? property.transcriptCustomFieldId,
+    sellerTalkSec: asString(storedCustomFieldIds?.sellerTalkSec) ?? property.sellerTalkFieldId,
     recordingUrl: asString(storedCustomFieldIds?.recordingUrl) ?? property.recordingUrlFieldId,
   };
   if (!connectedStageId) {
@@ -1579,11 +1573,6 @@ async function pushSuccessfulTransferToGhl(params: {
       hasCustomFieldIds: Object.values(customFieldIds).some(Boolean),
     };
   }
-  const roundRobin = asRecord(params.resultJson?.roundRobin);
-  const firstAgentName =
-    asString(roundRobin?.firstAgentName) ??
-    asString(roundRobin?.selectedAgentName) ??
-    asString((Array.isArray(roundRobin?.agents) ? asRecord(roundRobin.agents[0]) : null)?.name);
   const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? answeredGhlUserId;
 
   const updateBody = buildGhlOpportunityUpdateBody({
@@ -1593,8 +1582,7 @@ async function pushSuccessfulTransferToGhl(params: {
     customFieldValues: {
       outcome: params.outcome,
       answeredAgent: answeredAgentName,
-      firstAgent: firstAgentName,
-      transcript: params.transcript,
+      sellerTalkSec: params.sellerTalkSec,
       recordingUrl: params.recordingUrl,
     },
   });
@@ -2086,6 +2074,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       transferNumber: resolvedTransferNumber,
       transcript: fullTranscript ?? transcript ?? null,
       outcome,
+      sellerTalkSec: effectivePostTransferDurationSec,
       recordingUrl: existing?.transferRecordingUrl ?? recordingUrl ?? null,
     });
     if (attempt?.leadId && ghlPush) {

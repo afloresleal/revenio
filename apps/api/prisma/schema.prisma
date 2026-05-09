@@ -129,7 +129,7 @@ model GhlCampaign {
   ghlConnectedStageId String? @map("ghl_connected_stage_id")
   ghlOutcomeFieldId String? @map("ghl_outcome_field_id")
   ghlAnsweredAgentFieldId String? @map("ghl_answered_agent_field_id")
-  ghlFirstAgentFieldId String? @map("ghl_first_agent_field_id")
+  ghlSellerTalkFieldId String? @map("ghl_seller_talk_field_id")
   ghlTranscriptFieldId String? @map("ghl_transcript_field_id")
   ghlRecordingUrlFieldId String? @map("ghl_recording_url_field_id")
   active            Boolean  @default(true)

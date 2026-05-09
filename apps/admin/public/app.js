@@ -16,8 +16,7 @@ const fields = [
   "ghl_connected_stage_id",
   "ghl_outcome_field_id",
   "ghl_answered_agent_field_id",
-  "ghl_first_agent_field_id",
-  "ghl_transcript_field_id",
+  "ghl_seller_talk_field_id",
   "ghl_recording_url_field_id",
   "campaign_active",
   "fallback_name",
@@ -240,8 +239,7 @@ function collectCampaignPayload() {
     ghlConnectedStageId: $("ghl_connected_stage_id").value.trim() || undefined,
     ghlOutcomeFieldId: $("ghl_outcome_field_id").value.trim() || undefined,
     ghlAnsweredAgentFieldId: $("ghl_answered_agent_field_id").value.trim() || undefined,
-    ghlFirstAgentFieldId: $("ghl_first_agent_field_id").value.trim() || undefined,
-    ghlTranscriptFieldId: $("ghl_transcript_field_id").value.trim() || undefined,
+    ghlSellerTalkFieldId: $("ghl_seller_talk_field_id").value.trim() || undefined,
     ghlRecordingUrlFieldId: $("ghl_recording_url_field_id").value.trim() || undefined,
     active: $("campaign_active").checked,
   };
@@ -275,8 +273,7 @@ function applyCampaign(campaign) {
   $("ghl_connected_stage_id").value = campaign?.ghlConnectedStageId ?? "";
   $("ghl_outcome_field_id").value = campaign?.ghlOutcomeFieldId ?? "";
   $("ghl_answered_agent_field_id").value = campaign?.ghlAnsweredAgentFieldId ?? "";
-  $("ghl_first_agent_field_id").value = campaign?.ghlFirstAgentFieldId ?? "";
-  $("ghl_transcript_field_id").value = campaign?.ghlTranscriptFieldId ?? "";
+  $("ghl_seller_talk_field_id").value = campaign?.ghlSellerTalkFieldId ?? "";
   $("ghl_recording_url_field_id").value = campaign?.ghlRecordingUrlFieldId ?? "";
   $("campaign_active").checked = campaign?.active !== false;
   $("campaign_form_title").textContent = campaign ? "Editar campaña" : "Nueva campaña";

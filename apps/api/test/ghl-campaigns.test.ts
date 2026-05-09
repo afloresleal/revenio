@@ -23,7 +23,7 @@ const campaign = normalizeStoredGhlCampaign({
   ghlStageId: "stage-123",
   ghlConnectedStageId: "connected-stage-123",
   ghlOutcomeFieldId: "outcome-field-123",
-  ghlTranscriptFieldId: "transcript-field-123",
+  ghlSellerTalkFieldId: "seller-talk-field-123",
   active: true,
 });
 
@@ -32,7 +32,7 @@ assert.equal(campaign?.clientName, "Caribbean Luxury Homes");
 assert.equal(campaign?.vapiAssistantId, "assistant-123");
 assert.equal(campaign?.ghlConnectedStageId, "connected-stage-123");
 assert.equal(campaign?.ghlOutcomeFieldId, "outcome-field-123");
-assert.equal(campaign?.ghlTranscriptFieldId, "transcript-field-123");
+assert.equal(campaign?.ghlSellerTalkFieldId, "seller-talk-field-123");
 assert.deepEqual(getGhlCampaignRuntimeStatus(campaign!), { allowed: true });
 
 const pausedCampaign = normalizeStoredGhlCampaign({
@@ -85,12 +85,12 @@ assert.deepEqual(
     connectedStageId: "connected-stage-123",
     customFieldIds: {
       outcome: "outcome-field-123",
-      transcript: "transcript-field-123",
+      sellerTalkSec: "seller-talk-field-123",
       recordingUrl: "recording-url-field-123",
     },
     customFieldValues: {
       outcome: "transfer_success",
-      transcript: "Hola mundo",
+      sellerTalkSec: 85,
       recordingUrl: "https://example.com/recording.mp3",
     },
   }),
@@ -103,8 +103,8 @@ assert.deepEqual(
         field_value: "transfer_success",
       },
       {
-        id: "transcript-field-123",
-        field_value: "Hola mundo",
+        id: "seller-talk-field-123",
+        field_value: "85",
       },
       {
         id: "recording-url-field-123",
