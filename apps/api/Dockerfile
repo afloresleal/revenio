@@ -31,4 +31,4 @@ COPY . .
 RUN npm -w apps/api run build
 
 EXPOSE 3000
-CMD ["npm", "-w", "apps/api", "run", "start"]
+CMD ["sh", "-c", "npm -w apps/api run prisma:migrate:deploy && npm -w apps/api run start"]
