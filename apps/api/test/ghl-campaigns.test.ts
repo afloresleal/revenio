@@ -22,6 +22,7 @@ const campaign = normalizeStoredGhlCampaign({
   ghlPipelineId: "pipeline-123",
   ghlStageId: "stage-123",
   ghlConnectedStageId: "connected-stage-123",
+  ghlOutcomeFieldId: "outcome-field-123",
   ghlTranscriptFieldId: "transcript-field-123",
   active: true,
 });
@@ -30,6 +31,7 @@ assert.equal(campaign?.campaignId, "isla-blanca-es");
 assert.equal(campaign?.clientName, "Caribbean Luxury Homes");
 assert.equal(campaign?.vapiAssistantId, "assistant-123");
 assert.equal(campaign?.ghlConnectedStageId, "connected-stage-123");
+assert.equal(campaign?.ghlOutcomeFieldId, "outcome-field-123");
 assert.equal(campaign?.ghlTranscriptFieldId, "transcript-field-123");
 assert.deepEqual(getGhlCampaignRuntimeStatus(campaign!), { allowed: true });
 
@@ -81,16 +83,32 @@ assert.deepEqual(
   buildGhlOpportunityUpdateBody({
     assignedTo: "agent-ghl",
     connectedStageId: "connected-stage-123",
-    transcriptCustomFieldId: "transcript-field-123",
-    transcript: "Hola mundo",
+    customFieldIds: {
+      outcome: "outcome-field-123",
+      transcript: "transcript-field-123",
+      recordingUrl: "recording-url-field-123",
+    },
+    customFieldValues: {
+      outcome: "transfer_success",
+      transcript: "Hola mundo",
+      recordingUrl: "https://example.com/recording.mp3",
+    },
   }),
   {
     assignedTo: "agent-ghl",
     pipelineStageId: "connected-stage-123",
     customFields: [
       {
+        id: "outcome-field-123",
+        field_value: "transfer_success",
+      },
+      {
         id: "transcript-field-123",
         field_value: "Hola mundo",
+      },
+      {
+        id: "recording-url-field-123",
+        field_value: "https://example.com/recording.mp3",
       },
     ],
   },
@@ -100,7 +118,6 @@ assert.deepEqual(
   buildGhlOpportunityUpdateBody({
     assignedTo: "agent-ghl",
     connectedStageId: "connected-stage-123",
-    transcript: "Hola mundo",
   }),
   {
     assignedTo: "agent-ghl",

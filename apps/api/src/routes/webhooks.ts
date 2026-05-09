@@ -37,7 +37,11 @@ type GhlPropertyConfig = {
   pipelineId?: string;
   triggerStageId?: string;
   connectedStageId?: string;
+  outcomeFieldId?: string;
+  answeredAgentFieldId?: string;
+  firstAgentFieldId?: string;
   transcriptCustomFieldId?: string;
+  recordingUrlFieldId?: string;
   apiKey?: string;
 };
 
@@ -53,7 +57,11 @@ type GhlCampaignConfig = {
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
   ghlConnectedStageId?: string | null;
+  ghlOutcomeFieldId?: string | null;
+  ghlAnsweredAgentFieldId?: string | null;
+  ghlFirstAgentFieldId?: string | null;
   ghlTranscriptFieldId?: string | null;
+  ghlRecordingUrlFieldId?: string | null;
   active?: boolean;
   source?: 'db';
 };
@@ -258,7 +266,11 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
     pipelineId: campaign.ghlPipelineId ?? undefined,
     triggerStageId: campaign.ghlStageId ?? undefined,
     connectedStageId: campaign.ghlConnectedStageId ?? undefined,
+    outcomeFieldId: campaign.ghlOutcomeFieldId ?? undefined,
+    answeredAgentFieldId: campaign.ghlAnsweredAgentFieldId ?? undefined,
+    firstAgentFieldId: campaign.ghlFirstAgentFieldId ?? undefined,
     transcriptCustomFieldId: campaign.ghlTranscriptFieldId ?? undefined,
+    recordingUrlFieldId: campaign.ghlRecordingUrlFieldId ?? undefined,
     apiKey: campaign.ghlApiKey ?? undefined,
   };
 }
@@ -279,7 +291,11 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       ghlPipelineId: dbCampaign.ghlPipelineId,
       ghlStageId: dbCampaign.ghlStageId,
       ghlConnectedStageId: dbCampaign.ghlConnectedStageId,
+      ghlOutcomeFieldId: dbCampaign.ghlOutcomeFieldId,
+      ghlAnsweredAgentFieldId: dbCampaign.ghlAnsweredAgentFieldId,
+      ghlFirstAgentFieldId: dbCampaign.ghlFirstAgentFieldId,
       ghlTranscriptFieldId: dbCampaign.ghlTranscriptFieldId,
+      ghlRecordingUrlFieldId: dbCampaign.ghlRecordingUrlFieldId,
       active: dbCampaign.active,
       source: 'db',
     };
@@ -1458,6 +1474,13 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
           pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
           triggerStageId: stageId ?? null,
           connectedStageId: property.connectedStageId ?? null,
+          customFieldIds: {
+            outcome: property.outcomeFieldId ?? null,
+            answeredAgent: property.answeredAgentFieldId ?? null,
+            firstAgent: property.firstAgentFieldId ?? null,
+            transcript: property.transcriptCustomFieldId ?? null,
+            recordingUrl: property.recordingUrlFieldId ?? null,
+          },
           transcriptCustomFieldId: property.transcriptCustomFieldId ?? null,
         },
         roundRobin: {
@@ -1516,6 +1539,8 @@ async function pushSuccessfulTransferToGhl(params: {
   resultJson: Record<string, unknown> | null;
   transferNumber: string | null;
   transcript: string | null;
+  outcome: string | null;
+  recordingUrl: string | null;
 }) {
   const integration = asRecord(params.resultJson?.ghlIntegration);
   if (!integration) return null;
@@ -1537,22 +1562,41 @@ async function pushSuccessfulTransferToGhl(params: {
   }
 
   const connectedStageId = asString(integration.connectedStageId) ?? property.connectedStageId;
-  const transcriptCustomFieldId = asString(integration.transcriptCustomFieldId) ?? property.transcriptCustomFieldId;
+  const storedCustomFieldIds = asRecord(integration.customFieldIds);
+  const customFieldIds = {
+    outcome: asString(storedCustomFieldIds?.outcome) ?? property.outcomeFieldId,
+    answeredAgent: asString(storedCustomFieldIds?.answeredAgent) ?? property.answeredAgentFieldId,
+    firstAgent: asString(storedCustomFieldIds?.firstAgent) ?? property.firstAgentFieldId,
+    transcript: asString(storedCustomFieldIds?.transcript) ?? asString(integration.transcriptCustomFieldId) ?? property.transcriptCustomFieldId,
+    recordingUrl: asString(storedCustomFieldIds?.recordingUrl) ?? property.recordingUrlFieldId,
+  };
   if (!connectedStageId) {
     return {
       ok: false,
       skipped: true,
       reason: 'missing_ghl_connected_stage',
       hasConnectedStageId: !!connectedStageId,
-      hasTranscriptCustomFieldId: !!transcriptCustomFieldId,
+      hasCustomFieldIds: Object.values(customFieldIds).some(Boolean),
     };
   }
+  const roundRobin = asRecord(params.resultJson?.roundRobin);
+  const firstAgentName =
+    asString(roundRobin?.firstAgentName) ??
+    asString(roundRobin?.selectedAgentName) ??
+    asString((Array.isArray(roundRobin?.agents) ? asRecord(roundRobin.agents[0]) : null)?.name);
+  const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? answeredGhlUserId;
 
   const updateBody = buildGhlOpportunityUpdateBody({
     assignedTo: answeredGhlUserId,
     connectedStageId,
-    transcriptCustomFieldId,
-    transcript: params.transcript,
+    customFieldIds,
+    customFieldValues: {
+      outcome: params.outcome,
+      answeredAgent: answeredAgentName,
+      firstAgent: firstAgentName,
+      transcript: params.transcript,
+      recordingUrl: params.recordingUrl,
+    },
   });
 
   const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
@@ -1574,7 +1618,7 @@ async function pushSuccessfulTransferToGhl(params: {
     opportunityId,
     assignedTo: answeredGhlUserId,
     connectedStageId,
-    transcriptCustomFieldId,
+    customFieldIds,
     request: updateBody,
     data,
   };
@@ -2041,6 +2085,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
       resultJson: attemptResultJson,
       transferNumber: resolvedTransferNumber,
       transcript: fullTranscript ?? transcript ?? null,
+      outcome,
+      recordingUrl: existing?.transferRecordingUrl ?? recordingUrl ?? null,
     });
     if (attempt?.leadId && ghlPush) {
       await prisma.event.create({

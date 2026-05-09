@@ -12,7 +12,11 @@ export type GhlCampaignConfig = {
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
   ghlConnectedStageId?: string | null;
+  ghlOutcomeFieldId?: string | null;
+  ghlAnsweredAgentFieldId?: string | null;
+  ghlFirstAgentFieldId?: string | null;
   ghlTranscriptFieldId?: string | null;
+  ghlRecordingUrlFieldId?: string | null;
   active: boolean;
 };
 
@@ -81,6 +85,22 @@ export type GhlOpportunityUpdateBody = {
   customFields?: Array<{ id: string; field_value: string }>;
 };
 
+export type GhlPostCallCustomFieldIds = {
+  outcome?: string | null;
+  answeredAgent?: string | null;
+  firstAgent?: string | null;
+  transcript?: string | null;
+  recordingUrl?: string | null;
+};
+
+export type GhlPostCallCustomFieldValues = {
+  outcome?: string | null;
+  answeredAgent?: string | null;
+  firstAgent?: string | null;
+  transcript?: string | null;
+  recordingUrl?: string | null;
+};
+
 export const GHL_WEBHOOK_STAGING_URL = "https://revenioapi-staging.up.railway.app/webhooks/gohighlevel";
 export const GHL_WEBHOOK_PRODUCTION_URL = "https://revenioapi-production.up.railway.app/webhooks/gohighlevel";
 
@@ -111,7 +131,11 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlPipelineId: asString(value.ghlPipelineId),
     ghlStageId: asString(value.ghlStageId),
     ghlConnectedStageId: asString(value.ghlConnectedStageId),
+    ghlOutcomeFieldId: asString(value.ghlOutcomeFieldId),
+    ghlAnsweredAgentFieldId: asString(value.ghlAnsweredAgentFieldId),
+    ghlFirstAgentFieldId: asString(value.ghlFirstAgentFieldId),
     ghlTranscriptFieldId: asString(value.ghlTranscriptFieldId),
+    ghlRecordingUrlFieldId: asString(value.ghlRecordingUrlFieldId),
     active: value.active !== false,
   };
 }
@@ -159,21 +183,28 @@ export function getGhlCampaignRuntimeStatus(campaign: Pick<GhlCampaignConfig, "a
 export function buildGhlOpportunityUpdateBody(params: {
   assignedTo: string;
   connectedStageId: string;
-  transcriptCustomFieldId?: string | null;
-  transcript?: string | null;
+  customFieldIds?: GhlPostCallCustomFieldIds | null;
+  customFieldValues?: GhlPostCallCustomFieldValues | null;
 }): GhlOpportunityUpdateBody {
   const body: GhlOpportunityUpdateBody = {
     assignedTo: params.assignedTo,
     pipelineStageId: params.connectedStageId,
   };
-  const transcriptCustomFieldId = asString(params.transcriptCustomFieldId);
-  if (transcriptCustomFieldId) {
-    body.customFields = [
-      {
-        id: transcriptCustomFieldId,
-        field_value: params.transcript ?? "",
-      },
-    ];
+  const ids = params.customFieldIds;
+  const values = params.customFieldValues;
+  if (ids && values) {
+    const customFields = [
+      [ids.outcome, values.outcome],
+      [ids.answeredAgent, values.answeredAgent],
+      [ids.firstAgent, values.firstAgent],
+      [ids.transcript, values.transcript],
+      [ids.recordingUrl, values.recordingUrl],
+    ]
+      .flatMap(([id, value]) => {
+        const fieldId = asString(id);
+        return fieldId ? [{ id: fieldId, field_value: String(value ?? "") }] : [];
+      });
+    if (customFields.length) body.customFields = customFields;
   }
   return body;
 }
