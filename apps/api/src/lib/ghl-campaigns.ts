@@ -80,8 +80,8 @@ export type CampaignCallExportColumn = {
 };
 
 export type GhlOpportunityUpdateBody = {
-  assignedTo: string;
-  pipelineStageId: string;
+  assignedTo?: string;
+  pipelineStageId?: string;
   customFields?: Array<{ id: string; field_value: string }>;
 };
 
@@ -179,15 +179,16 @@ export function getGhlCampaignRuntimeStatus(campaign: Pick<GhlCampaignConfig, "a
 }
 
 export function buildGhlOpportunityUpdateBody(params: {
-  assignedTo: string;
-  connectedStageId: string;
+  assignedTo?: string | null;
+  connectedStageId?: string | null;
   customFieldIds?: GhlPostCallCustomFieldIds | null;
   customFieldValues?: GhlPostCallCustomFieldValues | null;
 }): GhlOpportunityUpdateBody {
-  const body: GhlOpportunityUpdateBody = {
-    assignedTo: params.assignedTo,
-    pipelineStageId: params.connectedStageId,
-  };
+  const body: GhlOpportunityUpdateBody = {};
+  const assignedTo = asString(params.assignedTo);
+  const connectedStageId = asString(params.connectedStageId);
+  if (assignedTo) body.assignedTo = assignedTo;
+  if (connectedStageId) body.pipelineStageId = connectedStageId;
   const ids = params.customFieldIds;
   const values = params.customFieldValues;
   if (ids && values) {

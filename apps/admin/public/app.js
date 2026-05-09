@@ -41,6 +41,27 @@ let selectedCampaign = null;
 let isCreatingCampaign = false;
 let agentsLoadToken = 0;
 let callsLoadToken = 0;
+let isApplyingCampaign = false;
+let campaignDraftDirty = false;
+
+const campaignDraftFields = new Set([
+  "client_name",
+  "campaign_name",
+  "campaign_id",
+  "property_key",
+  "language",
+  "vapi_assistant_id",
+  "vapi_phone_number_id",
+  "ghl_location_id",
+  "ghl_pipeline_id",
+  "ghl_stage_id",
+  "ghl_connected_stage_id",
+  "ghl_outcome_field_id",
+  "ghl_answered_agent_field_id",
+  "ghl_seller_talk_field_id",
+  "ghl_recording_url_field_id",
+  "campaign_active",
+]);
 
 fields.forEach((id) => {
   const value = localStorage.getItem(`admin_${id}`);
@@ -58,6 +79,9 @@ fields.forEach((id) => {
   if (!el) return;
   const handler = () => {
     localStorage.setItem(`admin_${id}`, el.type === "checkbox" ? String(el.checked) : el.value);
+    if (!isApplyingCampaign && campaignDraftFields.has(id)) {
+      campaignDraftDirty = true;
+    }
   };
   el.addEventListener("input", handler);
   el.addEventListener("change", handler);
@@ -206,6 +230,16 @@ async function request(method, path, body) {
   return data;
 }
 
+function hasLocalCampaignDraft() {
+  return [
+    "campaign_name",
+    "campaign_id",
+    "vapi_assistant_id",
+    "vapi_phone_number_id",
+    "ghl_location_id",
+  ].some((id) => String($(id)?.value ?? "").trim());
+}
+
 function emptyAgentRows() {
   agentRowsEl.innerHTML = "";
   for (let i = 1; i <= 5; i += 1) {
@@ -255,6 +289,7 @@ function updateCampaignActiveLabel() {
 }
 
 function applyCampaign(campaign) {
+  isApplyingCampaign = true;
   selectedCampaign = campaign;
   selectedCampaignId = campaign?.id ?? null;
   isCreatingCampaign = !campaign;
@@ -294,6 +329,8 @@ function applyCampaign(campaign) {
     setCallsFeedback(error.message, "error");
     setStatus(error.message);
   });
+  campaignDraftDirty = false;
+  isApplyingCampaign = false;
 }
 
 function startNewCampaign() {
@@ -331,8 +368,12 @@ async function loadCampaigns() {
   campaigns = data.campaigns ?? [];
   renderCampaignList();
   const current = campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? campaigns[0] ?? null;
+  if (campaignDraftDirty || (isCreatingCampaign && hasLocalCampaignDraft())) {
+    setStatus("Campañas cargadas. Conservé el borrador que estás editando.");
+    return;
+  }
   if (current && !isCreatingCampaign) applyCampaign(current);
-  if (!current) applyCampaign(null);
+  if (!current && !hasLocalCampaignDraft()) applyCampaign(null);
   setStatus("Campañas cargadas.");
 }
 
@@ -349,8 +390,8 @@ async function saveCampaign() {
   setStatus("Guardando campaña...");
   setCampaignFeedback("Guardando campaña...");
   const data = await request(method, path, payload);
-  await loadCampaigns();
   applyCampaign(data.campaign);
+  await loadCampaigns();
   const activeMessage = data.campaign.active === false
     ? "Campaña pausada. Revenio no disparará llamadas desde GHL para esta campaña."
     : "Campaña activa. Ahora puedes configurar agentes y copiar el entregable de GHL.";
@@ -592,7 +633,10 @@ document.querySelectorAll(".tab").forEach((tab) => {
 });
 
 $("btn_new_campaign").addEventListener("click", startNewCampaign);
-$("btn_save_campaign").addEventListener("click", () => saveCampaign().catch((error) => setStatus(error.message)));
+$("btn_save_campaign").addEventListener("click", () => saveCampaign().catch((error) => {
+  setCampaignFeedback(error.message, "error");
+  setStatus(error.message);
+}));
 $("campaign_active").addEventListener("change", updateCampaignActiveLabel);
 $("btn_save_agents").addEventListener("click", () => saveAgents().catch((error) => setStatus(error.message)));
 $("btn_test_call")?.addEventListener("click", () => runTestCall().catch((error) => setStatus(error.message)));

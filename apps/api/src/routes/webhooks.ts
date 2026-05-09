@@ -29,6 +29,7 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
 const GHL_API_BASE_URL = normalizeBaseUrl(process.env.GHL_API_BASE_URL ?? 'https://services.leadconnectorhq.com');
 const GHL_API_VERSION = process.env.GHL_API_VERSION ?? '2021-07-28';
 const MAX_ROUND_ROBIN_AGENTS = 5;
+const GHL_OUTSIDE_BUSINESS_HOURS_OUTCOME = 'outside_business_hours';
 
 type GhlPropertyConfig = {
   key: string;
@@ -1217,6 +1218,66 @@ function normalizeGhlWorkflowPayload(body: unknown): GhlOpportunityAssignedInput
   };
 }
 
+async function pushOutsideBusinessHoursOutcomeToGhl(params: {
+  property: GhlPropertyConfig;
+  campaignId: string;
+  locationId: string;
+  opportunityId: string;
+  callWindow: unknown;
+}) {
+  if (!params.property.apiKey) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'missing_ghl_api_key',
+      locationId: params.locationId,
+      opportunityId: params.opportunityId,
+      campaignId: params.campaignId,
+    };
+  }
+  if (!params.property.outcomeFieldId) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'missing_ghl_outcome_field_id',
+      locationId: params.locationId,
+      opportunityId: params.opportunityId,
+      campaignId: params.campaignId,
+    };
+  }
+
+  const customFieldIds = { outcome: params.property.outcomeFieldId };
+  const updateBody = buildGhlOpportunityUpdateBody({
+    customFieldIds,
+    customFieldValues: { outcome: GHL_OUTSIDE_BUSINESS_HOURS_OUTCOME },
+  });
+
+  const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(params.opportunityId)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${params.property.apiKey}`,
+      Version: GHL_API_VERSION,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updateBody),
+  });
+  const data = await resp.json().catch(async () => ({ text: await resp.text().catch(() => '') }));
+
+  return {
+    ok: resp.ok,
+    status: resp.status,
+    locationId: params.locationId,
+    opportunityId: params.opportunityId,
+    campaignId: params.campaignId,
+    outcome: GHL_OUTSIDE_BUSINESS_HOURS_OUTCOME,
+    customFieldIds,
+    request: updateBody,
+    callWindow: params.callWindow,
+    data,
+  };
+}
+
 async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityAssignedSchema>) {
   const locationId = input.locationId;
   const assignedTo = input.assignedTo;
@@ -1267,7 +1328,22 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
 
   const callWindow = canStartOutboundCall();
   if (!callWindow.allowed) {
-    return { ok: false, error: 'outside_business_hours' as const, call_window: callWindow };
+    const ghlPush = await pushOutsideBusinessHoursOutcomeToGhl({
+      property,
+      campaignId: campaign.campaignId,
+      locationId: property.locationId,
+      opportunityId,
+      callWindow,
+    });
+    return {
+      ok: true,
+      ignored: true,
+      reason: GHL_OUTSIDE_BUSINESS_HOURS_OUTCOME,
+      campaignId: campaign.campaignId,
+      opportunityId,
+      call_window: callWindow,
+      ghlPush,
+    } as const;
   }
 
   if (!VAPI_API_KEY || !resolvedVapiPhoneNumberId || !resolvedVapiAssistantId) {

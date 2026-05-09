@@ -125,6 +125,25 @@ assert.deepEqual(
   },
 );
 
+assert.deepEqual(
+  buildGhlOpportunityUpdateBody({
+    customFieldIds: {
+      outcome: "outcome-field-123",
+    },
+    customFieldValues: {
+      outcome: "outside_business_hours",
+    },
+  }),
+  {
+    customFields: [
+      {
+        id: "outcome-field-123",
+        field_value: "outside_business_hours",
+      },
+    ],
+  },
+);
+
 const transfer = selectCampaignTestTransfer({
   agents: [
     { name: "Inactive", transferNumber: "+525500000000", active: false, priority: 1 },
