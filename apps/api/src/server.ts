@@ -1427,6 +1427,17 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
       if (FAILOVER_CLEAR_TIMER_STATUSES.has(normalizedStatus) || shouldFailoverFromStatus) {
         clearFailoverTimer(timerKey);
       }
+      console.log("transfer_failover_decision", {
+        attemptId: attemptIdForFailover,
+        childCallSid: effectiveChildCallSid,
+        shouldFailoverFromStatus,
+        failoverReason,
+        dialCallStatus,
+        normalizedStatus,
+        answeredBy,
+        machineAnswered,
+        willExecuteTwimlFailover: shouldFailoverFromStatus && failoverReason && (dialCallStatus || failoverReason === "voicemail"),
+      });
       if (shouldFailoverFromStatus && failoverReason && (dialCallStatus || failoverReason === "voicemail")) {
         const twimlFailoverResult = await selectNextRoundRobinAgent({
           attemptId: attemptIdForFailover,
