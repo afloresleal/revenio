@@ -2079,6 +2079,15 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   );
   const hasDurationEvidence = (effectivePostTransferDurationSec ?? 0) >= TRANSFER_CONNECTED_MIN_SEC;
   const confirmedTransfer = hasTwilioTransferEvidence || hasDurationEvidence;
+  console.log('end-of-call-report transfer confirmation:', {
+    callId,
+    effectiveTransferStatus,
+    effectivePostTransferDurationSec,
+    hasTwilioTransferEvidence,
+    hasDurationEvidence,
+    confirmedTransfer,
+    willPushToGhl: confirmedTransfer,
+  });
   outcome = determineOutcome(confirmedTransfer, endedReason ?? null);
   sentiment = deriveSentiment({
     outcome,
