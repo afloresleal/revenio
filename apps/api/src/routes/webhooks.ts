@@ -1728,7 +1728,7 @@ async function pushSuccessfulTransferToGhl(params: {
   console.log('callId:', params.callId);
   console.log('opportunityId:', opportunityId);
   console.log('updateBody.assignedTo:', updateBody.assignedTo);
-  console.log('updateBody.status:', updateBody.status);
+  console.log('updateBody.pipelineStageId:', updateBody.pipelineStageId);
   console.log('updateBody.customFields:', JSON.stringify(updateBody.customFields, null, 2));
 
   const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
