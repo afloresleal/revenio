@@ -1357,7 +1357,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
         machineAnswered
           ? "voicemail"
           : statusFailoverReason ??
-            (isCompletedWithoutAnswer ? "no-answer" : null);
+            (isCompletedWithoutAnswer ? "voicemail" : null);
       if (isHumanAnswered) {
         try {
           const attemptForAnswered = await prisma.callAttempt.findUnique({
