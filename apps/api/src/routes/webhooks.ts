@@ -1628,9 +1628,7 @@ async function pushSuccessfulTransferToGhl(params: {
 
   const answeredAgent = findGhlAgentByTransferNumber(params.resultJson, params.transferNumber);
   const answeredGhlUserId = asString(answeredAgent?.ghlUserId);
-  if (!answeredGhlUserId) {
-    return { ok: false, skipped: true, reason: 'answered_agent_not_mapped', transferNumber: params.transferNumber };
-  }
+  const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? answeredGhlUserId ?? null;
 
   const connectedStageId = asString(integration.connectedStageId) ?? property.connectedStageId;
   const storedCustomFieldIds = asRecord(integration.customFieldIds);
@@ -1640,20 +1638,23 @@ async function pushSuccessfulTransferToGhl(params: {
     sellerTalkSec: asString(storedCustomFieldIds?.sellerTalkSec) ?? property.sellerTalkFieldId,
     recordingUrl: asString(storedCustomFieldIds?.recordingUrl) ?? property.recordingUrlFieldId,
   };
-  if (!connectedStageId) {
+
+  // Only require at least one custom field to be configured
+  const hasAnyCustomField = Object.values(customFieldIds).some(Boolean);
+  if (!hasAnyCustomField && !connectedStageId && !answeredGhlUserId) {
     return {
       ok: false,
       skipped: true,
-      reason: 'missing_ghl_connected_stage',
+      reason: 'no_ghl_fields_configured',
       hasConnectedStageId: !!connectedStageId,
-      hasCustomFieldIds: Object.values(customFieldIds).some(Boolean),
+      hasCustomFieldIds: hasAnyCustomField,
+      hasAnsweredAgent: !!answeredGhlUserId,
     };
   }
-  const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? answeredGhlUserId;
 
   const updateBody = buildGhlOpportunityUpdateBody({
-    assignedTo: answeredGhlUserId,
-    connectedStageId,
+    assignedTo: answeredGhlUserId ?? undefined,
+    connectedStageId: answeredGhlUserId && connectedStageId ? connectedStageId : undefined,
     customFieldIds,
     customFieldValues: {
       outcome: params.outcome,
@@ -2146,37 +2147,36 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   });
 
   let ghlPush: HandlerResult | null = null;
-  if (confirmedTransfer) {
-    const attempt = await prisma.callAttempt.findFirst({
-      where: { providerId: callId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, leadId: true, resultJson: true },
+  // Always attempt to push to GHL, regardless of transfer success
+  const attempt = await prisma.callAttempt.findFirst({
+    where: { providerId: callId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, leadId: true, resultJson: true },
+  });
+  const attemptResultJson = asRecord(attempt?.resultJson);
+  ghlPush = await pushSuccessfulTransferToGhl({
+    callId,
+    resultJson: attemptResultJson,
+    transferNumber: resolvedTransferNumber,
+    transcript: fullTranscript ?? transcript ?? null,
+    outcome,
+    sellerTalkSec: effectivePostTransferDurationSec,
+    recordingUrl: existing?.transferRecordingUrl ?? recordingUrl ?? null,
+  });
+  if (attempt?.leadId && ghlPush) {
+    await prisma.event.create({
+      data: {
+        leadId: attempt.leadId,
+        type: 'ghl_post_call_push',
+        detail: {
+          attemptId: attempt.id,
+          callId,
+          confirmedTransfer,
+          transferNumber: resolvedTransferNumber,
+          result: ghlPush,
+        } as any,
+      },
     });
-    const attemptResultJson = asRecord(attempt?.resultJson);
-    ghlPush = await pushSuccessfulTransferToGhl({
-      callId,
-      resultJson: attemptResultJson,
-      transferNumber: resolvedTransferNumber,
-      transcript: fullTranscript ?? transcript ?? null,
-      outcome,
-      sellerTalkSec: effectivePostTransferDurationSec,
-      recordingUrl: existing?.transferRecordingUrl ?? recordingUrl ?? null,
-    });
-    if (attempt?.leadId && ghlPush) {
-      await prisma.event.create({
-        data: {
-          leadId: attempt.leadId,
-          type: 'ghl_post_call_push',
-          detail: {
-            attemptId: attempt.id,
-            callId,
-            confirmedTransfer,
-            transferNumber: resolvedTransferNumber,
-            result: ghlPush,
-          } as any,
-        },
-      });
-    }
   }
 
   return { 
