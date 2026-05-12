@@ -87,14 +87,12 @@ export type GhlOpportunityUpdateBody = {
 
 export type GhlPostCallCustomFieldIds = {
   outcome?: string | null;
-  answeredAgent?: string | null;
   sellerTalkSec?: string | null;
   recordingUrl?: string | null;
 };
 
 export type GhlPostCallCustomFieldValues = {
   outcome?: string | null;
-  answeredAgent?: string | null;
   sellerTalkSec?: number | string | null;
   recordingUrl?: string | null;
 };
@@ -196,10 +194,9 @@ export function buildGhlOpportunityUpdateBody(params: {
     const fieldMap = new Map<string, string>();
 
     // Order matters: if IDs are duplicated, the LAST value wins
-    // Priority (lowest to highest): answeredAgent < sellerTalkSec < recordingUrl < outcome
+    // Priority (lowest to highest): sellerTalkSec < recordingUrl < outcome
     const fieldsToAdd = [
-      [ids.answeredAgent, values.answeredAgent],      // Lowest priority
-      [ids.sellerTalkSec, values.sellerTalkSec],
+      [ids.sellerTalkSec, values.sellerTalkSec],      // Lowest priority
       [ids.recordingUrl, values.recordingUrl],
       [ids.outcome, values.outcome],                  // Highest priority
     ];

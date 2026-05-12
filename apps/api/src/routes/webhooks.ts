@@ -39,7 +39,6 @@ type GhlPropertyConfig = {
   triggerStageId?: string;
   connectedStageId?: string;
   outcomeFieldId?: string;
-  answeredAgentFieldId?: string;
   sellerTalkFieldId?: string;
   recordingUrlFieldId?: string;
   apiKey?: string;
@@ -266,7 +265,6 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
     triggerStageId: campaign.ghlStageId ?? undefined,
     connectedStageId: campaign.ghlConnectedStageId ?? undefined,
     outcomeFieldId: campaign.ghlOutcomeFieldId ?? undefined,
-    answeredAgentFieldId: campaign.ghlAnsweredAgentFieldId ?? undefined,
     sellerTalkFieldId: campaign.ghlSellerTalkFieldId ?? undefined,
     recordingUrlFieldId: campaign.ghlRecordingUrlFieldId ?? undefined,
     apiKey: campaign.ghlApiKey ?? undefined,
@@ -1548,7 +1546,6 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
           connectedStageId: property.connectedStageId ?? null,
           customFieldIds: {
             outcome: property.outcomeFieldId ?? null,
-            answeredAgent: property.answeredAgentFieldId ?? null,
             sellerTalkSec: property.sellerTalkFieldId ?? null,
             recordingUrl: property.recordingUrlFieldId ?? null,
           },
@@ -1680,7 +1677,6 @@ async function pushSuccessfulTransferToGhl(params: {
   const storedCustomFieldIds = asRecord(integration.customFieldIds);
   const customFieldIds = {
     outcome: asString(storedCustomFieldIds?.outcome) ?? property.outcomeFieldId,
-    answeredAgent: asString(storedCustomFieldIds?.answeredAgent) ?? property.answeredAgentFieldId,
     sellerTalkSec: asString(storedCustomFieldIds?.sellerTalkSec) ?? property.sellerTalkFieldId,
     recordingUrl: asString(storedCustomFieldIds?.recordingUrl) ?? property.recordingUrlFieldId,
   };
@@ -1697,7 +1693,7 @@ async function pushSuccessfulTransferToGhl(params: {
     'GHL_VALUES',
     `callId:${params.callId}`,
     `outcome:${params.outcome}`,
-    `agent:${answeredAgentName}`,
+    `assignedTo:${answeredGhlUserId || 'none'}`,
     `sellTalk:${params.sellerTalkSec}`,
     `hasRecUrl:${!!params.recordingUrl}`,
     `fieldIds:${JSON.stringify(customFieldIds)}`,
@@ -1728,7 +1724,6 @@ async function pushSuccessfulTransferToGhl(params: {
     customFieldIds,
     customFieldValues: {
       outcome: params.outcome,
-      answeredAgent: answeredAgentName,
       sellerTalkSec: params.sellerTalkSec,
       recordingUrl: params.recordingUrl,
     },
