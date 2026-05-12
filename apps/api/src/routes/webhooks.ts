@@ -1686,14 +1686,20 @@ async function pushSuccessfulTransferToGhl(params: {
   // Only require at least one custom field to be configured
   const hasAnyCustomField = Object.values(customFieldIds).some(Boolean);
 
-  console.log('pushSuccessfulTransferToGhl field validation:', {
+  console.log('pushSuccessfulTransferToGhl field validation:', JSON.stringify({
     callId: params.callId,
     customFieldIds,
     hasAnyCustomField,
     connectedStageId,
     answeredGhlUserId,
     answeredAgentName,
-  });
+    customFieldValues: {
+      outcome: params.outcome,
+      answeredAgent: answeredAgentName,
+      sellerTalkSec: params.sellerTalkSec,
+      recordingUrl: params.recordingUrl,
+    },
+  }, null, 2));
 
   if (!hasAnyCustomField && !connectedStageId && !answeredGhlUserId) {
     console.log('pushSuccessfulTransferToGhl skipped: no GHL fields configured', {
@@ -1724,12 +1730,12 @@ async function pushSuccessfulTransferToGhl(params: {
     },
   });
 
-  console.log('pushSuccessfulTransferToGhl sending request to GHL:', {
+  console.log('pushSuccessfulTransferToGhl sending request to GHL:', JSON.stringify({
     callId: params.callId,
     opportunityId,
     url: `${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`,
     updateBody,
-  });
+  }, null, 2));
 
   const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
     method: 'PUT',
@@ -1743,12 +1749,12 @@ async function pushSuccessfulTransferToGhl(params: {
   });
   const data = await resp.json().catch(async () => ({ text: await resp.text().catch(() => '') }));
 
-  console.log('pushSuccessfulTransferToGhl GHL response:', {
+  console.log('pushSuccessfulTransferToGhl GHL response:', JSON.stringify({
     callId: params.callId,
     ok: resp.ok,
     status: resp.status,
     data,
-  });
+  }, null, 2));
 
   return {
     ok: resp.ok,
