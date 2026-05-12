@@ -1613,16 +1613,60 @@ async function pushSuccessfulTransferToGhl(params: {
   sellerTalkSec: number | null;
   recordingUrl: string | null;
 }) {
+  console.log('pushSuccessfulTransferToGhl called:', {
+    callId: params.callId,
+    hasResultJson: !!params.resultJson,
+    resultJsonKeys: params.resultJson ? Object.keys(params.resultJson) : [],
+    outcome: params.outcome,
+  });
+
   const integration = asRecord(params.resultJson?.ghlIntegration);
-  if (!integration) return null;
+  if (!integration) {
+    console.log('pushSuccessfulTransferToGhl skipped: no ghlIntegration in resultJson', {
+      callId: params.callId,
+      resultJson: params.resultJson,
+    });
+    return null;
+  }
+
   const locationId = asString(integration.locationId);
   const opportunityId = asString(integration.opportunityId);
   const campaignId = asString(integration.campaignId);
-  if (!locationId || !opportunityId || !campaignId) return null;
+
+  console.log('pushSuccessfulTransferToGhl GHL integration found:', {
+    callId: params.callId,
+    locationId,
+    opportunityId,
+    campaignId,
+  });
+
+  if (!locationId || !opportunityId || !campaignId) {
+    console.log('pushSuccessfulTransferToGhl skipped: missing required GHL fields', {
+      callId: params.callId,
+      hasLocationId: !!locationId,
+      hasOpportunityId: !!opportunityId,
+      hasCampaignId: !!campaignId,
+    });
+    return null;
+  }
 
   const campaign = await resolveGhlCampaign(campaignId);
   const property = campaign ? buildPropertyFromCampaign(campaign) : null;
+
+  console.log('pushSuccessfulTransferToGhl campaign resolved:', {
+    callId: params.callId,
+    campaignId,
+    hasCampaign: !!campaign,
+    hasProperty: !!property,
+    hasApiKey: !!property?.apiKey,
+  });
+
   if (!property?.apiKey) {
+    console.log('pushSuccessfulTransferToGhl skipped: missing API key', {
+      callId: params.callId,
+      locationId,
+      opportunityId,
+    });
     return { ok: false, skipped: true, reason: 'missing_ghl_api_key', locationId, opportunityId };
   }
 
@@ -1641,7 +1685,23 @@ async function pushSuccessfulTransferToGhl(params: {
 
   // Only require at least one custom field to be configured
   const hasAnyCustomField = Object.values(customFieldIds).some(Boolean);
+
+  console.log('pushSuccessfulTransferToGhl field validation:', {
+    callId: params.callId,
+    customFieldIds,
+    hasAnyCustomField,
+    connectedStageId,
+    answeredGhlUserId,
+    answeredAgentName,
+  });
+
   if (!hasAnyCustomField && !connectedStageId && !answeredGhlUserId) {
+    console.log('pushSuccessfulTransferToGhl skipped: no GHL fields configured', {
+      callId: params.callId,
+      hasConnectedStageId: !!connectedStageId,
+      hasCustomFieldIds: hasAnyCustomField,
+      hasAnsweredAgent: !!answeredGhlUserId,
+    });
     return {
       ok: false,
       skipped: true,
@@ -1664,6 +1724,13 @@ async function pushSuccessfulTransferToGhl(params: {
     },
   });
 
+  console.log('pushSuccessfulTransferToGhl sending request to GHL:', {
+    callId: params.callId,
+    opportunityId,
+    url: `${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`,
+    updateBody,
+  });
+
   const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
     method: 'PUT',
     headers: {
@@ -1675,6 +1742,13 @@ async function pushSuccessfulTransferToGhl(params: {
     body: JSON.stringify(updateBody),
   });
   const data = await resp.json().catch(async () => ({ text: await resp.text().catch(() => '') }));
+
+  console.log('pushSuccessfulTransferToGhl GHL response:', {
+    callId: params.callId,
+    ok: resp.ok,
+    status: resp.status,
+    data,
+  });
 
   return {
     ok: resp.ok,
