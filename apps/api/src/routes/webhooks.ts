@@ -1686,14 +1686,16 @@ async function pushSuccessfulTransferToGhl(params: {
   // Only require at least one custom field to be configured
   const hasAnyCustomField = Object.values(customFieldIds).some(Boolean);
 
-  console.log('=== GHL FIELD VALIDATION ===');
-  console.log('callId:', params.callId);
-  console.log('customFieldIds:', JSON.stringify(customFieldIds));
-  console.log('VALUES TO PUSH:');
-  console.log('  outcome:', params.outcome);
-  console.log('  answeredAgent:', answeredAgentName);
-  console.log('  sellerTalkSec:', params.sellerTalkSec);
-  console.log('  recordingUrl:', params.recordingUrl);
+  const valuesLog = [
+    'GHL_VALUES',
+    `callId:${params.callId}`,
+    `outcome:${params.outcome}`,
+    `agent:${answeredAgentName}`,
+    `sellTalk:${params.sellerTalkSec}`,
+    `hasRecUrl:${!!params.recordingUrl}`,
+    `fieldIds:${JSON.stringify(customFieldIds)}`,
+  ].join(' | ');
+  console.log(valuesLog);
 
   if (!hasAnyCustomField && !connectedStageId && !answeredGhlUserId) {
     console.log('pushSuccessfulTransferToGhl skipped: no GHL fields configured', {
@@ -1724,12 +1726,14 @@ async function pushSuccessfulTransferToGhl(params: {
     },
   });
 
-  console.log('=== GHL PUSH START ===');
-  console.log('callId:', params.callId);
-  console.log('opportunityId:', opportunityId);
-  console.log('updateBody.assignedTo:', updateBody.assignedTo);
-  console.log('updateBody.pipelineStageId:', updateBody.pipelineStageId);
-  console.log('updateBody.customFields:', JSON.stringify(updateBody.customFields, null, 2));
+  const pushLog = [
+    'GHL_PUSH_START',
+    `oppId:${opportunityId}`,
+    `assign:${updateBody.assignedTo}`,
+    `stage:${updateBody.pipelineStageId}`,
+    `fields:${JSON.stringify(updateBody.customFields)}`,
+  ].join(' | ');
+  console.log(pushLog);
 
   const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
     method: 'PUT',
@@ -1743,10 +1747,13 @@ async function pushSuccessfulTransferToGhl(params: {
   });
   const data = await resp.json().catch(async () => ({ text: await resp.text().catch(() => '') }));
 
-  console.log('=== GHL PUSH RESPONSE ===');
-  console.log('status:', resp.status);
-  console.log('ok:', resp.ok);
-  console.log('response data:', JSON.stringify(data).substring(0, 500));
+  const responseLog = [
+    'GHL_RESPONSE',
+    `status:${resp.status}`,
+    `ok:${resp.ok}`,
+    `data:${JSON.stringify(data).substring(0, 300)}`,
+  ].join(' | ');
+  console.log(responseLog);
 
   return {
     ok: resp.ok,
@@ -2152,16 +2159,21 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   );
   const hasDurationEvidence = (effectivePostTransferDurationSec ?? 0) >= TRANSFER_CONNECTED_MIN_SEC;
   const confirmedTransfer = hasTwilioTransferEvidence || hasDurationEvidence;
-  console.log('end-of-call-report transfer confirmation:', {
-    callId,
-    effectiveTransferStatus,
-    effectivePostTransferDurationSec,
-    hasTwilioTransferEvidence,
-    hasDurationEvidence,
-    confirmedTransfer,
-    willPushToGhl: confirmedTransfer,
-  });
+
   outcome = determineOutcome(confirmedTransfer, endedReason ?? null);
+
+  const confirmLog = [
+    '=== TRANSFER CONFIRMATION ===',
+    `callId: ${callId}`,
+    `effectiveTransferStatus: ${effectiveTransferStatus}`,
+    `effectivePostTransferDurationSec: ${effectivePostTransferDurationSec}`,
+    `minRequired: ${TRANSFER_CONNECTED_MIN_SEC}`,
+    `hasTwilioEvidence: ${hasTwilioTransferEvidence}`,
+    `hasDurationEvidence: ${hasDurationEvidence}`,
+    `confirmedTransfer: ${confirmedTransfer}`,
+    `determinedOutcome: ${outcome}`,
+  ].join(' | ');
+  console.log(confirmLog);
   sentiment = deriveSentiment({
     outcome,
     durationSec: finalDuration ?? null,
