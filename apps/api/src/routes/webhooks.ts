@@ -1686,20 +1686,14 @@ async function pushSuccessfulTransferToGhl(params: {
   // Only require at least one custom field to be configured
   const hasAnyCustomField = Object.values(customFieldIds).some(Boolean);
 
-  console.log('pushSuccessfulTransferToGhl field validation:', JSON.stringify({
-    callId: params.callId,
-    customFieldIds,
-    hasAnyCustomField,
-    connectedStageId,
-    answeredGhlUserId,
-    answeredAgentName,
-    customFieldValues: {
-      outcome: params.outcome,
-      answeredAgent: answeredAgentName,
-      sellerTalkSec: params.sellerTalkSec,
-      recordingUrl: params.recordingUrl,
-    },
-  }, null, 2));
+  console.log('=== GHL FIELD VALIDATION ===');
+  console.log('callId:', params.callId);
+  console.log('customFieldIds:', JSON.stringify(customFieldIds));
+  console.log('VALUES TO PUSH:');
+  console.log('  outcome:', params.outcome);
+  console.log('  answeredAgent:', answeredAgentName);
+  console.log('  sellerTalkSec:', params.sellerTalkSec);
+  console.log('  recordingUrl:', params.recordingUrl);
 
   if (!hasAnyCustomField && !connectedStageId && !answeredGhlUserId) {
     console.log('pushSuccessfulTransferToGhl skipped: no GHL fields configured', {
@@ -1730,12 +1724,12 @@ async function pushSuccessfulTransferToGhl(params: {
     },
   });
 
-  console.log('pushSuccessfulTransferToGhl sending request to GHL:', JSON.stringify({
-    callId: params.callId,
-    opportunityId,
-    url: `${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`,
-    updateBody,
-  }, null, 2));
+  console.log('=== GHL PUSH START ===');
+  console.log('callId:', params.callId);
+  console.log('opportunityId:', opportunityId);
+  console.log('updateBody.assignedTo:', updateBody.assignedTo);
+  console.log('updateBody.status:', updateBody.status);
+  console.log('updateBody.customFields:', JSON.stringify(updateBody.customFields, null, 2));
 
   const resp = await fetch(`${GHL_API_BASE_URL}/opportunities/${encodeURIComponent(opportunityId)}`, {
     method: 'PUT',
@@ -1749,12 +1743,10 @@ async function pushSuccessfulTransferToGhl(params: {
   });
   const data = await resp.json().catch(async () => ({ text: await resp.text().catch(() => '') }));
 
-  console.log('pushSuccessfulTransferToGhl GHL response:', JSON.stringify({
-    callId: params.callId,
-    ok: resp.ok,
-    status: resp.status,
-    data,
-  }, null, 2));
+  console.log('=== GHL PUSH RESPONSE ===');
+  console.log('status:', resp.status);
+  console.log('ok:', resp.ok);
+  console.log('response data:', JSON.stringify(data).substring(0, 500));
 
   return {
     ok: resp.ok,
