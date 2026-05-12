@@ -1671,8 +1671,10 @@ async function pushSuccessfulTransferToGhl(params: {
   }
 
   const answeredAgent = findGhlAgentByTransferNumber(params.resultJson, params.transferNumber);
-  const answeredGhlUserId = asString(answeredAgent?.ghlUserId);
-  const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? answeredGhlUserId ?? null;
+  const rawGhlUserId = asString(answeredAgent?.ghlUserId);
+  // Only use ghlUserId if it's a valid GHL user ID (not a test placeholder like "test-1:test-1:agent-1")
+  const answeredGhlUserId = rawGhlUserId && !rawGhlUserId.includes(':') ? rawGhlUserId : null;
+  const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? rawGhlUserId ?? null;
 
   const connectedStageId = asString(integration.connectedStageId) ?? property.connectedStageId;
   const storedCustomFieldIds = asRecord(integration.customFieldIds);
@@ -1686,6 +1688,11 @@ async function pushSuccessfulTransferToGhl(params: {
   // Only require at least one custom field to be configured
   const hasAnyCustomField = Object.values(customFieldIds).some(Boolean);
 
+  // Check for duplicate field IDs
+  const fieldIdValues = Object.values(customFieldIds).filter(Boolean);
+  const uniqueFieldIds = new Set(fieldIdValues);
+  const hasDuplicates = fieldIdValues.length !== uniqueFieldIds.size;
+
   const valuesLog = [
     'GHL_VALUES',
     `callId:${params.callId}`,
@@ -1694,7 +1701,8 @@ async function pushSuccessfulTransferToGhl(params: {
     `sellTalk:${params.sellerTalkSec}`,
     `hasRecUrl:${!!params.recordingUrl}`,
     `fieldIds:${JSON.stringify(customFieldIds)}`,
-  ].join(' | ');
+    hasDuplicates ? '⚠️DUPLICATE_FIELD_IDS' : '',
+  ].filter(Boolean).join(' | ');
   console.log(valuesLog);
 
   if (!hasAnyCustomField && !connectedStageId && !answeredGhlUserId) {

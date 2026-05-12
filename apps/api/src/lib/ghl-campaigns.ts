@@ -192,16 +192,26 @@ export function buildGhlOpportunityUpdateBody(params: {
   const ids = params.customFieldIds;
   const values = params.customFieldValues;
   if (ids && values) {
-    const customFields = [
-      [ids.outcome, values.outcome],
-      [ids.answeredAgent, values.answeredAgent],
+    // Build custom fields, deduplicating by ID (last value wins)
+    const fieldMap = new Map<string, string>();
+
+    // Order matters: if IDs are duplicated, the LAST value wins
+    // Priority (lowest to highest): answeredAgent < sellerTalkSec < recordingUrl < outcome
+    const fieldsToAdd = [
+      [ids.answeredAgent, values.answeredAgent],      // Lowest priority
       [ids.sellerTalkSec, values.sellerTalkSec],
       [ids.recordingUrl, values.recordingUrl],
-    ]
-      .flatMap(([id, value]) => {
-        const fieldId = asString(id);
-        return fieldId ? [{ id: fieldId, field_value: String(value ?? "") }] : [];
-      });
+      [ids.outcome, values.outcome],                  // Highest priority
+    ];
+
+    for (const [id, value] of fieldsToAdd) {
+      const fieldId = asString(id);
+      if (fieldId) {
+        fieldMap.set(fieldId, String(value ?? ""));
+      }
+    }
+
+    const customFields = Array.from(fieldMap.entries()).map(([id, field_value]) => ({ id, field_value }));
     if (customFields.length) body.customFields = customFields;
   }
   return body;
