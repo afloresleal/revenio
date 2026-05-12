@@ -272,7 +272,6 @@ function collectCampaignPayload() {
     ghlStageId: $("ghl_stage_id").value.trim() || undefined,
     ghlConnectedStageId: $("ghl_connected_stage_id").value.trim() || undefined,
     ghlOutcomeFieldId: $("ghl_outcome_field_id").value.trim() || undefined,
-    ghlAnsweredAgentFieldId: $("ghl_answered_agent_field_id").value.trim() || undefined,
     ghlSellerTalkFieldId: $("ghl_seller_talk_field_id").value.trim() || undefined,
     ghlRecordingUrlFieldId: $("ghl_recording_url_field_id").value.trim() || undefined,
     active: $("campaign_active").checked,
@@ -307,7 +306,6 @@ function applyCampaign(campaign) {
   $("ghl_stage_id").value = campaign?.ghlStageId ?? "";
   $("ghl_connected_stage_id").value = campaign?.ghlConnectedStageId ?? "";
   $("ghl_outcome_field_id").value = campaign?.ghlOutcomeFieldId ?? "";
-  $("ghl_answered_agent_field_id").value = campaign?.ghlAnsweredAgentFieldId ?? "";
   $("ghl_seller_talk_field_id").value = campaign?.ghlSellerTalkFieldId ?? "";
   $("ghl_recording_url_field_id").value = campaign?.ghlRecordingUrlFieldId ?? "";
   $("campaign_active").checked = campaign?.active !== false;
