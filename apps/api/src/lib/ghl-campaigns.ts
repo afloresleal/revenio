@@ -13,7 +13,6 @@ export type GhlCampaignConfig = {
   ghlStageId?: string | null;
   ghlConnectedStageId?: string | null;
   ghlOutcomeFieldId?: string | null;
-  ghlAnsweredAgentFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlTranscriptFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
@@ -128,7 +127,6 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlStageId: asString(value.ghlStageId),
     ghlConnectedStageId: asString(value.ghlConnectedStageId),
     ghlOutcomeFieldId: asString(value.ghlOutcomeFieldId),
-    ghlAnsweredAgentFieldId: asString(value.ghlAnsweredAgentFieldId),
     ghlSellerTalkFieldId: asString(value.ghlSellerTalkFieldId),
     ghlTranscriptFieldId: asString(value.ghlTranscriptFieldId),
     ghlRecordingUrlFieldId: asString(value.ghlRecordingUrlFieldId),

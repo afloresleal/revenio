@@ -2684,7 +2684,6 @@ const adminGhlCampaignSchema = z.object({
   ghlStageId: z.string().max(160).optional(),
   ghlConnectedStageId: z.string().max(160).optional(),
   ghlOutcomeFieldId: z.string().max(160).optional(),
-  ghlAnsweredAgentFieldId: z.string().max(160).optional(),
   ghlSellerTalkFieldId: z.string().max(160).optional(),
   ghlTranscriptFieldId: z.string().max(160).optional(),
   ghlRecordingUrlFieldId: z.string().max(160).optional(),
@@ -2711,7 +2710,6 @@ function serializeGhlCampaign(campaign: {
   ghlStageId?: string | null;
   ghlConnectedStageId?: string | null;
   ghlOutcomeFieldId?: string | null;
-  ghlAnsweredAgentFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlTranscriptFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
@@ -2828,7 +2826,6 @@ function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSche
     ghlStageId: adminString(data.ghlStageId),
     ghlConnectedStageId: adminString(data.ghlConnectedStageId),
     ghlOutcomeFieldId: adminString(data.ghlOutcomeFieldId),
-    ghlAnsweredAgentFieldId: adminString(data.ghlAnsweredAgentFieldId),
     ghlSellerTalkFieldId: adminString(data.ghlSellerTalkFieldId),
     ghlTranscriptFieldId: adminString(data.ghlTranscriptFieldId),
     ghlRecordingUrlFieldId: adminString(data.ghlRecordingUrlFieldId),

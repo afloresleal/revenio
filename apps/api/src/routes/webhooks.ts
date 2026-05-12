@@ -57,7 +57,6 @@ type GhlCampaignConfig = {
   ghlStageId?: string | null;
   ghlConnectedStageId?: string | null;
   ghlOutcomeFieldId?: string | null;
-  ghlAnsweredAgentFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
   active?: boolean;
@@ -288,7 +287,6 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       ghlStageId: dbCampaign.ghlStageId,
       ghlConnectedStageId: dbCampaign.ghlConnectedStageId,
       ghlOutcomeFieldId: dbCampaign.ghlOutcomeFieldId,
-      ghlAnsweredAgentFieldId: dbCampaign.ghlAnsweredAgentFieldId,
       ghlSellerTalkFieldId: dbCampaign.ghlSellerTalkFieldId,
       ghlRecordingUrlFieldId: dbCampaign.ghlRecordingUrlFieldId,
       active: dbCampaign.active,
