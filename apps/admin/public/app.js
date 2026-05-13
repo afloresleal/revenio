@@ -1,4 +1,6 @@
 const $ = (id) => document.getElementById(id);
+
+// API base URLs - updated for correct environment detection
 const LOCAL_API_BASE_URL = "http://localhost:3000";
 const STAGING_API_BASE_URL = "https://revenioapi-staging.up.railway.app";
 const PRODUCTION_API_BASE_URL = "https://revenioapi-production.up.railway.app";
