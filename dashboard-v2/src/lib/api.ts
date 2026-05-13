@@ -3,7 +3,23 @@
  * Connects to the metrics API endpoints
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+function getApiBase(): string {
+  // Check if there's a build-time override
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+
+  // Runtime environment detection (same logic as admin)
+  const hostname = window.location.hostname;
+  const isLocal = ['localhost', '127.0.0.1', ''].includes(hostname);
+
+  if (isLocal) return 'http://localhost:3000';
+  if (hostname.includes('staging')) return 'https://revenioapi-staging.up.railway.app';
+  // Default to production if not localhost and not staging
+  return 'https://revenioapi-production.up.railway.app';
+}
+
+const API_BASE = getApiBase();
 
 export interface SummaryData {
   totalCalls: number;
