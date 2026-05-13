@@ -279,15 +279,21 @@ function collectCampaignPayload() {
     ghlPipelineId: $("ghl_pipeline_id").value.trim() || undefined,
     ghlStageId: $("ghl_stage_id").value.trim() || undefined,
     ghlConnectedStageId: $("ghl_connected_stage_id").value.trim() || undefined,
-    ghlStageMapping: {
-      transfer_success: $("ghl_connected_stage_id").value.trim() || undefined,
-      voicemail: $("ghl_connected_stage_id").value.trim() || undefined,
-    },
     ghlOutcomeFieldId: $("ghl_outcome_field_id").value.trim() || undefined,
     ghlSellerTalkFieldId: $("ghl_seller_talk_field_id").value.trim() || undefined,
     ghlRecordingUrlFieldId: $("ghl_recording_url_field_id").value.trim() || undefined,
     active: $("campaign_active").checked,
   };
+
+  // Only add ghlStageMapping if connectedStageId has a value
+  const connectedStageId = $("ghl_connected_stage_id").value.trim();
+  if (connectedStageId) {
+    payload.ghlStageMapping = {
+      transfer_success: connectedStageId,
+      voicemail: connectedStageId,
+    };
+  }
+
   const ghlApiKey = $("ghl_api_key").value.trim();
   if (ghlApiKey) payload.ghlApiKey = ghlApiKey;
   return payload;
