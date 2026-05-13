@@ -2684,11 +2684,8 @@ const adminGhlCampaignSchema = z.object({
   ghlStageId: z.string().max(160).optional(),
   ghlConnectedStageId: z.string().max(160).optional(),
   ghlStageMapping: z.object({
-    transferred: z.string().max(160).optional(),
+    transfer_success: z.string().max(160).optional(),
     voicemail: z.string().max(160).optional(),
-    abandoned: z.string().max(160).optional(),
-    transfer_failed: z.string().max(160).optional(),
-    no_answer: z.string().max(160).optional(),
   }).optional(),
   ghlOutcomeFieldId: z.string().max(160).optional(),
   ghlSellerTalkFieldId: z.string().max(160).optional(),
@@ -2827,11 +2824,8 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
 function normalizeStageMapping(mapping: any) {
   if (!mapping || typeof mapping !== "object") return undefined;
   const normalized = {
-    transferred: adminString(mapping.transferred),
+    transfer_success: adminString(mapping.transfer_success),
     voicemail: adminString(mapping.voicemail),
-    abandoned: adminString(mapping.abandoned),
-    transfer_failed: adminString(mapping.transfer_failed),
-    no_answer: adminString(mapping.no_answer),
   };
   // Return undefined if all values are null/empty
   if (Object.values(normalized).every(v => !v)) return undefined;

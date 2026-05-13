@@ -1,9 +1,6 @@
 export type GhlStageMapping = {
-  transferred?: string | null;
+  transfer_success?: string | null;
   voicemail?: string | null;
-  abandoned?: string | null;
-  transfer_failed?: string | null;
-  no_answer?: string | null;
 };
 
 export type GhlCampaignConfig = {
@@ -116,11 +113,8 @@ function parseGhlStageMapping(value: unknown): GhlStageMapping | null {
   if (!value || typeof value !== "object") return null;
   const mapping = value as Record<string, unknown>;
   return {
-    transferred: asString(mapping.transferred),
+    transfer_success: asString(mapping.transfer_success),
     voicemail: asString(mapping.voicemail),
-    abandoned: asString(mapping.abandoned),
-    transfer_failed: asString(mapping.transfer_failed),
-    no_answer: asString(mapping.no_answer),
   };
 }
 
