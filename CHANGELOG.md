@@ -70,6 +70,7 @@ El admin tenía 7 campos confusos para stage mapping que no tenía sentido para 
 - `e619eef` refactor: simplify Connected Stage ID help text
 - `7933836` fix: make Lab dashboard link environment-aware
 - `d5b64d3` fix: run Prisma migrations on Railway deploy
+- `62e53d8` fix: invert admin API detection logic to default to production
 
 ---
 
