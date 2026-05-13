@@ -103,26 +103,25 @@
                 <input id="ghl_pipeline_id" placeholder="pipeline-id" />
               </label>
               <label>
-                GHL Trigger Stage ID
-                <input id="ghl_stage_id" placeholder="stage-id" />
-              </label>
-              <label>
-                GHL Connected Stage ID (Legacy - usar Stage Mapping en su lugar)
-                <input id="ghl_connected_stage_id" placeholder="stage-id destino" />
+                GHL New Lead Stage ID
+                <input id="ghl_stage_id" placeholder="fe4e865c-c8e7-4747-b2b2-a1ed3baebb6e" />
+                <span class="label-muted">Stage donde viven los leads antes de que Revenio los contacte</span>
               </label>
 
-              <h3 style="margin-top: 24px; margin-bottom: 8px;">Movimiento de Pipeline</h3>
-              <p style="margin-bottom: 16px; color: #666; font-size: 14px;">Configura a qué stage mover el lead dependiendo del resultado de la llamada. Usa el stage ID de "Contacted" para ambos. Deja vacío si no quieres que se mueva automáticamente.</p>
+              <input id="ghl_connected_stage_id" type="hidden" />
+
+              <h3 style="margin-top: 24px; margin-bottom: 8px;">GHL Connected Stage ID</h3>
+              <p style="margin-bottom: 16px; color: #666; font-size: 14px;">Configura a qué stage mover el lead después de contactarlo. <strong>Normalmente usas el mismo stage ID para ambos</strong> (ej: "Contacted"). Deja vacío si no quieres movimiento automático.</p>
 
               <label>
                 Cuando el vendedor contesta
                 <input id="ghl_stage_mapping_transfer_success" placeholder="c60834fb-1346-4a69-8da1-46e834a937b7" />
-                <span class="label-muted">Se transfirió exitosamente al vendedor y el vendedor contestó</span>
+                <span class="label-muted">El vendedor contestó la transferencia exitosamente</span>
               </label>
               <label>
-                Cuando va a buzón de voz del cliente
+                Cuando va a buzón del cliente
                 <input id="ghl_stage_mapping_voicemail" placeholder="c60834fb-1346-4a69-8da1-46e834a937b7" />
-                <span class="label-muted">El cliente no contestó o fue directamente a buzón de voz</span>
+                <span class="label-muted">El cliente no contestó o fue a buzón de voz</span>
               </label>
 
               <h3 style="margin-top: 24px; margin-bottom: 8px;">Custom Fields</h3>
