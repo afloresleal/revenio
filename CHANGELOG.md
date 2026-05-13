@@ -66,6 +66,7 @@ El admin tenía 7 campos confusos para stage mapping que no tenía sentido para 
 - `113a836` refactor: improve field layout with clear section headers
 - `8a683c2` fix: resolve 'Failed to fetch' error when saving campaigns
 - `2cdefd6` fix: add proper error handling for campaign update endpoint
+- `98239c1` fix: remove non-existent ghlTranscriptFieldId field from code
 
 ---
 
