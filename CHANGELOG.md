@@ -2,6 +2,72 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.0] - 2026-05-12
+
+### Admin UI - GHL Stage Mapping Simplificado
+
+**Problema resuelto:**
+El admin tenía 7 campos confusos para stage mapping que no tenía sentido para usuarios de marketing. Los outcomes del sistema (transfer_success, abandoned, completed) no coincidían con los campos del admin (transferred, voicemail, abandoned, transfer_failed, no_answer).
+
+**Solución implementada:**
+- Simplificado de 7 campos a solo 2 campos claros en el admin
+- Implementada detección automática de voicemail del cliente
+- Mejorada terminología para usar lenguaje de GHL en vez de términos técnicos
+
+**Cambios técnicos:**
+
+1. **Backend - Detección de Voicemail** (`apps/api/src/lib/sentiment.ts`)
+   - Nuevo outcome `voicemail` agregado al sistema
+   - Se detecta automáticamente cuando Vapi reporta: `no-answer`, `voicemail-beep`, `voicemail`
+   - Función `determineOutcome()` ahora retorna: `transfer_success | voicemail | abandoned | completed`
+
+2. **Backend - Stage Mapping** (`apps/api/src/lib/ghl-campaigns.ts`, `apps/api/src/server.ts`)
+   - Tipo `GhlStageMapping` simplificado a solo: `transfer_success` y `voicemail`
+   - Eliminados campos innecesarios: `abandoned`, `transfer_failed`, `no_answer`
+   - Validación Zod actualizada para reflejar solo 2 campos
+
+3. **Admin UI** (`apps/admin/public/index.html`, `apps/admin/public/app.js`)
+   - **Antes:** 5 campos separados (transferred, voicemail, abandoned, transfer_failed, no_answer)
+   - **Ahora:** 1 solo campo "GHL Connected Stage ID" que aplica para ambos casos
+   - Secciones reorganizadas con headers claros:
+     - **Configuración de Pipeline**: API key, Pipeline ID, New Lead Stage ID, Connected Stage ID
+     - **Custom Fields**: Outcome, Seller Talk, Recording URL
+   - Placeholders mejorados: en vez de IDs largos, ahora dice "Copia el ID del stage 'Contacted'"
+   - Labels con terminología GHL: "GHL New Lead Stage ID" en vez de "GHL Trigger Stage ID"
+
+4. **Fix Bug "Failed to fetch"** (`apps/api/src/server.ts`, `apps/admin/public/app.js`)
+   - **Causa 1:** campo `ghlStageMapping` faltaba en tipo TypeScript de `serializeGhlCampaign()`
+     - Fix: Usar `Prisma.GhlCampaignGetPayload<{}>` para type safety completa
+   - **Causa 2:** enviando `ghlStageMapping` con valores `undefined` causaba error de validación
+     - Fix: Solo incluir `ghlStageMapping` en payload si `connectedStageId` tiene valor
+   - Mejorado manejo de errores en frontend para distinguir errores de red vs errores de API
+
+**Cómo funciona ahora:**
+- Usuario configura solo 1 campo: "GHL Connected Stage ID" (típicamente el ID del stage "Contacted")
+- Ese mismo ID se usa automáticamente para:
+  - ✅ Cuando el vendedor contesta (`transfer_success`)
+  - ✅ Cuando va a buzón del cliente (`voicemail`)
+- Ambos casos significan "contactamos al cliente", por eso van al mismo stage
+
+**Archivos modificados:**
+- `apps/api/src/lib/ghl-campaigns.ts` - Tipos y parsing de stage mapping
+- `apps/api/src/lib/sentiment.ts` - Detección de voicemail
+- `apps/api/src/server.ts` - Validación y serialización
+- `apps/admin/public/index.html` - UI simplificado
+- `apps/admin/public/app.js` - Lógica de formulario
+- `apps/api/prisma/migrations/20260512175621_add_ghl_stage_mapping/` - Migración DB
+
+**Commits relevantes:**
+- `dee4cf9` feat: add flexible stage mapping for GHL pipeline management
+- `d425a07` refactor: simplify stage mapping to only transfer_success and voicemail
+- `a985bf7` refactor: improve admin UI labels using GHL terminology
+- `a27d049` refactor: use GHL stage names in placeholders instead of IDs
+- `5a4645a` refactor: simplify to single GHL Connected Stage ID field
+- `113a836` refactor: improve field layout with clear section headers
+- `8a683c2` fix: resolve 'Failed to fetch' error when saving campaigns
+
+---
+
 ## [0.2.0] - 2026-02-17
 
 ### Reorganizado
