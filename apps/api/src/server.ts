@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { z } from "zod";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import {
   canRunRoundRobinFailover,
   canStartOutboundCall,
@@ -2699,29 +2699,8 @@ const adminCampaignTestCallSchema = z.object({
   leadName: z.string().min(1).max(80).optional(),
 });
 
-function serializeGhlCampaign(campaign: {
-  id: string;
-  campaignId: string;
-  clientName?: string | null;
-  propertyKey: string;
-  name: string;
-  language: string;
-  vapiAssistantId: string;
-  vapiPhoneNumberId: string;
-  ghlLocationId?: string | null;
-  ghlApiKey?: string | null;
-  ghlPipelineId?: string | null;
-  ghlStageId?: string | null;
-  ghlConnectedStageId?: string | null;
-  ghlOutcomeFieldId?: string | null;
-  ghlSellerTalkFieldId?: string | null;
-  ghlTranscriptFieldId?: string | null;
-  ghlRecordingUrlFieldId?: string | null;
-  active: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-}) {
-  const normalized = normalizeStoredGhlCampaign(campaign);
+function serializeGhlCampaign(campaign: Prisma.GhlCampaignGetPayload<{}>) {
+  const normalized = normalizeStoredGhlCampaign(campaign as any);
   return {
     ...campaign,
     ghlApiKey: undefined,

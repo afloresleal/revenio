@@ -218,16 +218,24 @@ function validateCampaignPayload(payload) {
 }
 
 async function request(method, path, body) {
-  const resp = await fetch(`${apiBase()}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    throw new Error(data?.error || data?.message || `Error ${resp.status}`);
+  try {
+    const resp = await fetch(`${apiBase()}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(data?.error || data?.message || `Error ${resp.status}`);
+    }
+    return data;
+  } catch (error) {
+    // If fetch failed completely (network error, CORS, etc.)
+    if (error.message === 'Failed to fetch') {
+      throw new Error('Error de conexión. Verifica tu conexión a internet o revisa los logs del servidor.');
+    }
+    throw error;
   }
-  return data;
 }
 
 function hasLocalCampaignDraft() {
