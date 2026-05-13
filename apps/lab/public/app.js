@@ -79,6 +79,18 @@ if (adminLink) {
   }
 }
 
+const dashboardLink = $("dashboard_link");
+if (dashboardLink) {
+  const hostname = window.location.hostname;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    dashboardLink.href = "http://localhost:5173/";
+  } else if (hostname.includes("staging")) {
+    dashboardLink.href = "https://revenio-dashboard-staging.up.railway.app";
+  } else {
+    dashboardLink.href = "https://revenio-dashboard-production.up.railway.app";
+  }
+}
+
 const out = $("out");
 const callWindowStatus = $("cw_status");
 const agentsStatus = $("agents_status");
