@@ -92,8 +92,9 @@ function apiBase() {
   const hostname = window.location.hostname;
   const isLocal = ["localhost", "127.0.0.1", ""].includes(hostname);
   if (isLocal) return LOCAL_API_BASE_URL;
-  if (hostname.includes("production")) return PRODUCTION_API_BASE_URL;
-  return STAGING_API_BASE_URL;
+  if (hostname.includes("staging")) return STAGING_API_BASE_URL;
+  // Default to production if not localhost and not staging
+  return PRODUCTION_API_BASE_URL;
 }
 
 function setStatus(message) {
