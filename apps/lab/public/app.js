@@ -87,7 +87,7 @@ if (dashboardLink) {
   } else if (hostname.includes("staging")) {
     dashboardLink.href = "https://revenio-dashboard-staging.up.railway.app";
   } else {
-    dashboardLink.href = "https://revenio-dashboard-production.up.railway.app";
+    dashboardLink.href = "https://revenio-dashboard.up.railway.app";
   }
 }
 
