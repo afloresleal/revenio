@@ -20,7 +20,6 @@ export type GhlCampaignConfig = {
   ghlStageMapping?: GhlStageMapping | null;
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
-  ghlTranscriptFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
   active: boolean;
 };
@@ -144,7 +143,6 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlStageMapping: parseGhlStageMapping(value.ghlStageMapping),
     ghlOutcomeFieldId: asString(value.ghlOutcomeFieldId),
     ghlSellerTalkFieldId: asString(value.ghlSellerTalkFieldId),
-    ghlTranscriptFieldId: asString(value.ghlTranscriptFieldId),
     ghlRecordingUrlFieldId: asString(value.ghlRecordingUrlFieldId),
     active: value.active !== false,
   };

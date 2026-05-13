@@ -2689,7 +2689,6 @@ const adminGhlCampaignSchema = z.object({
   }).optional(),
   ghlOutcomeFieldId: z.string().max(160).optional(),
   ghlSellerTalkFieldId: z.string().max(160).optional(),
-  ghlTranscriptFieldId: z.string().max(160).optional(),
   ghlRecordingUrlFieldId: z.string().max(160).optional(),
   active: z.boolean().default(true),
 });
@@ -2822,7 +2821,6 @@ function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSche
     ghlStageMapping: normalizeStageMapping(data.ghlStageMapping),
     ghlOutcomeFieldId: adminString(data.ghlOutcomeFieldId),
     ghlSellerTalkFieldId: adminString(data.ghlSellerTalkFieldId),
-    ghlTranscriptFieldId: adminString(data.ghlTranscriptFieldId),
     ghlRecordingUrlFieldId: adminString(data.ghlRecordingUrlFieldId),
     ghlApiKey: adminString(data.ghlApiKey),
   };
