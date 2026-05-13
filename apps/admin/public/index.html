@@ -92,6 +92,7 @@
           <details class="advanced-fields">
             <summary>Integración GHL post-llamada</summary>
             <p>Solo se usa si Revenio actualizará la oportunidad en GHL después de que conteste un vendedor.</p>
+            <h3 style="margin-bottom: 16px;">Configuración de Pipeline</h3>
             <div class="form-grid">
               <label>
                 GHL API key
@@ -100,36 +101,36 @@
               </label>
               <label>
                 GHL Pipeline ID
-                <input id="ghl_pipeline_id" placeholder="pipeline-id" />
+                <input id="ghl_pipeline_id" placeholder="Copia el ID del pipeline" />
               </label>
               <label>
                 GHL New Lead Stage ID
                 <input id="ghl_stage_id" placeholder="Copia el ID del stage 'New Lead'" />
                 <span class="label-muted">Stage donde viven los leads antes de que Revenio los contacte</span>
               </label>
-
               <label>
                 GHL Connected Stage ID
                 <input id="ghl_connected_stage_id" placeholder="Copia el ID del stage 'Contacted'" />
                 <span class="label-muted">Stage donde mover el lead después de contactarlo (aplica para vendedor contesta y voicemail)</span>
               </label>
+            </div>
 
-              <input id="ghl_stage_mapping_transfer_success" type="hidden" />
-              <input id="ghl_stage_mapping_voicemail" type="hidden" />
+            <input id="ghl_stage_mapping_transfer_success" type="hidden" />
+            <input id="ghl_stage_mapping_voicemail" type="hidden" />
 
-              <h3 style="margin-top: 24px; margin-bottom: 8px;">Custom Fields</h3>
-
+            <h3 style="margin-top: 32px; margin-bottom: 16px;">Custom Fields</h3>
+            <div class="form-grid">
               <label>
                 Outcome Field ID (Resultado Revenio)
-                <input id="ghl_outcome_field_id" placeholder="ZYL1sSHJv02iwgTleQ2o" />
+                <input id="ghl_outcome_field_id" placeholder="Copia el ID del custom field" />
               </label>
               <label>
                 Seller Talk Field ID (Tiempo llamada con vendedor)
-                <input id="ghl_seller_talk_field_id" placeholder="pG7eChjnA91RmUB4o8hm" />
+                <input id="ghl_seller_talk_field_id" placeholder="Copia el ID del custom field" />
               </label>
               <label>
                 Recording URL Field ID (Enlace grabación llamada)
-                <input id="ghl_recording_url_field_id" placeholder="qyXVsD8J9BX7qBQkjIC2" />
+                <input id="ghl_recording_url_field_id" placeholder="Copia el ID del custom field" />
               </label>
             </div>
           </details>
