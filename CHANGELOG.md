@@ -71,6 +71,8 @@ El admin tenía 7 campos confusos para stage mapping que no tenía sentido para 
 - `7933836` fix: make Lab dashboard link environment-aware
 - `d5b64d3` fix: run Prisma migrations on Railway deploy
 - `62e53d8` fix: invert admin API detection logic to default to production
+- `1758d79` fix: force admin deploy with comment update
+- `0b24161` fix: ensure Lab and Dashboard production use correct API URLs
 
 ---
 
