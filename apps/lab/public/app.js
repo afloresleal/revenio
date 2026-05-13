@@ -75,7 +75,7 @@ if (adminLink) {
   } else if (hostname.includes("staging")) {
     adminLink.href = "https://revenio-admin-staging.up.railway.app";
   } else {
-    adminLink.href = "https://revenio-admin-production.up.railway.app";
+    adminLink.href = "https://revenio-admin.up.railway.app/";
   }
 }
 
