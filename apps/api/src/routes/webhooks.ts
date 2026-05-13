@@ -38,6 +38,7 @@ type GhlPropertyConfig = {
   pipelineId?: string;
   triggerStageId?: string;
   connectedStageId?: string;
+  stageMapping?: Record<string, string | null> | null;
   outcomeFieldId?: string;
   sellerTalkFieldId?: string;
   recordingUrlFieldId?: string;
@@ -56,6 +57,7 @@ type GhlCampaignConfig = {
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
   ghlConnectedStageId?: string | null;
+  ghlStageMapping?: Record<string, string | null> | null;
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
@@ -263,6 +265,7 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
     pipelineId: campaign.ghlPipelineId ?? undefined,
     triggerStageId: campaign.ghlStageId ?? undefined,
     connectedStageId: campaign.ghlConnectedStageId ?? undefined,
+    stageMapping: campaign.ghlStageMapping as Record<string, string | null> | null | undefined,
     outcomeFieldId: campaign.ghlOutcomeFieldId ?? undefined,
     sellerTalkFieldId: campaign.ghlSellerTalkFieldId ?? undefined,
     recordingUrlFieldId: campaign.ghlRecordingUrlFieldId ?? undefined,
@@ -286,6 +289,7 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       ghlPipelineId: dbCampaign.ghlPipelineId,
       ghlStageId: dbCampaign.ghlStageId,
       ghlConnectedStageId: dbCampaign.ghlConnectedStageId,
+      ghlStageMapping: dbCampaign.ghlStageMapping as Record<string, string | null> | null | undefined,
       ghlOutcomeFieldId: dbCampaign.ghlOutcomeFieldId,
       ghlSellerTalkFieldId: dbCampaign.ghlSellerTalkFieldId,
       ghlRecordingUrlFieldId: dbCampaign.ghlRecordingUrlFieldId,
@@ -1672,6 +1676,12 @@ async function pushSuccessfulTransferToGhl(params: {
   const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? rawGhlUserId ?? null;
 
   const connectedStageId = asString(integration.connectedStageId) ?? property.connectedStageId;
+
+  // Determine stage to move to based on outcome mapping
+  const stageMapping = asRecord(property.stageMapping);
+  const outcomeStageId = params.outcome && stageMapping ? asString(stageMapping[params.outcome]) : null;
+  const finalStageId = outcomeStageId || (answeredGhlUserId && connectedStageId ? connectedStageId : null);
+
   const storedCustomFieldIds = asRecord(integration.customFieldIds);
   const customFieldIds = {
     outcome: asString(storedCustomFieldIds?.outcome) ?? property.outcomeFieldId,
@@ -1691,6 +1701,7 @@ async function pushSuccessfulTransferToGhl(params: {
     'GHL_VALUES',
     `callId:${params.callId}`,
     `outcome:${params.outcome}`,
+    `stageId:${finalStageId || 'none'}`,
     `assignedTo:${answeredGhlUserId || 'none'}`,
     `sellTalk:${params.sellerTalkSec}`,
     `hasRecUrl:${!!params.recordingUrl}`,
@@ -1699,10 +1710,10 @@ async function pushSuccessfulTransferToGhl(params: {
   ].filter(Boolean).join(' | ');
   console.log(valuesLog);
 
-  if (!hasAnyCustomField && !connectedStageId && !answeredGhlUserId) {
+  if (!hasAnyCustomField && !finalStageId && !answeredGhlUserId) {
     console.log('pushSuccessfulTransferToGhl skipped: no GHL fields configured', {
       callId: params.callId,
-      hasConnectedStageId: !!connectedStageId,
+      hasStageId: !!finalStageId,
       hasCustomFieldIds: hasAnyCustomField,
       hasAnsweredAgent: !!answeredGhlUserId,
     });
@@ -1710,7 +1721,7 @@ async function pushSuccessfulTransferToGhl(params: {
       ok: false,
       skipped: true,
       reason: 'no_ghl_fields_configured',
-      hasConnectedStageId: !!connectedStageId,
+      hasStageId: !!finalStageId,
       hasCustomFieldIds: hasAnyCustomField,
       hasAnsweredAgent: !!answeredGhlUserId,
     };
@@ -1718,7 +1729,7 @@ async function pushSuccessfulTransferToGhl(params: {
 
   const updateBody = buildGhlOpportunityUpdateBody({
     assignedTo: answeredGhlUserId ?? undefined,
-    connectedStageId: answeredGhlUserId && connectedStageId ? connectedStageId : undefined,
+    connectedStageId: finalStageId ?? undefined,
     customFieldIds,
     customFieldValues: {
       outcome: params.outcome,

@@ -127,6 +127,7 @@ model GhlCampaign {
   ghlPipelineId     String?  @map("ghl_pipeline_id")
   ghlStageId        String?  @map("ghl_stage_id")
   ghlConnectedStageId String? @map("ghl_connected_stage_id")
+  ghlStageMapping   Json?    @map("ghl_stage_mapping")
   ghlOutcomeFieldId String? @map("ghl_outcome_field_id")
   ghlSellerTalkFieldId String? @map("ghl_seller_talk_field_id")
   ghlRecordingUrlFieldId String? @map("ghl_recording_url_field_id")

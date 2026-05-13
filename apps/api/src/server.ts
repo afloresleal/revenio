@@ -2683,6 +2683,13 @@ const adminGhlCampaignSchema = z.object({
   ghlPipelineId: z.string().max(160).optional(),
   ghlStageId: z.string().max(160).optional(),
   ghlConnectedStageId: z.string().max(160).optional(),
+  ghlStageMapping: z.object({
+    transferred: z.string().max(160).optional(),
+    voicemail: z.string().max(160).optional(),
+    abandoned: z.string().max(160).optional(),
+    transfer_failed: z.string().max(160).optional(),
+    no_answer: z.string().max(160).optional(),
+  }).optional(),
   ghlOutcomeFieldId: z.string().max(160).optional(),
   ghlSellerTalkFieldId: z.string().max(160).optional(),
   ghlTranscriptFieldId: z.string().max(160).optional(),
@@ -2817,6 +2824,20 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
   });
 }
 
+function normalizeStageMapping(mapping: any) {
+  if (!mapping || typeof mapping !== "object") return undefined;
+  const normalized = {
+    transferred: adminString(mapping.transferred),
+    voicemail: adminString(mapping.voicemail),
+    abandoned: adminString(mapping.abandoned),
+    transfer_failed: adminString(mapping.transfer_failed),
+    no_answer: adminString(mapping.no_answer),
+  };
+  // Return undefined if all values are null/empty
+  if (Object.values(normalized).every(v => !v)) return undefined;
+  return normalized;
+}
+
 function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSchema>, options: { preserveEmptyApiKey: boolean }) {
   const normalized = {
     ...data,
@@ -2825,6 +2846,7 @@ function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSche
     ghlPipelineId: adminString(data.ghlPipelineId),
     ghlStageId: adminString(data.ghlStageId),
     ghlConnectedStageId: adminString(data.ghlConnectedStageId),
+    ghlStageMapping: normalizeStageMapping(data.ghlStageMapping),
     ghlOutcomeFieldId: adminString(data.ghlOutcomeFieldId),
     ghlSellerTalkFieldId: adminString(data.ghlSellerTalkFieldId),
     ghlTranscriptFieldId: adminString(data.ghlTranscriptFieldId),

@@ -271,6 +271,13 @@ function collectCampaignPayload() {
     ghlPipelineId: $("ghl_pipeline_id").value.trim() || undefined,
     ghlStageId: $("ghl_stage_id").value.trim() || undefined,
     ghlConnectedStageId: $("ghl_connected_stage_id").value.trim() || undefined,
+    ghlStageMapping: {
+      transferred: $("ghl_stage_mapping_transferred").value.trim() || undefined,
+      voicemail: $("ghl_stage_mapping_voicemail").value.trim() || undefined,
+      abandoned: $("ghl_stage_mapping_abandoned").value.trim() || undefined,
+      transfer_failed: $("ghl_stage_mapping_transfer_failed").value.trim() || undefined,
+      no_answer: $("ghl_stage_mapping_no_answer").value.trim() || undefined,
+    },
     ghlOutcomeFieldId: $("ghl_outcome_field_id").value.trim() || undefined,
     ghlSellerTalkFieldId: $("ghl_seller_talk_field_id").value.trim() || undefined,
     ghlRecordingUrlFieldId: $("ghl_recording_url_field_id").value.trim() || undefined,
@@ -305,6 +312,11 @@ function applyCampaign(campaign) {
   $("ghl_pipeline_id").value = campaign?.ghlPipelineId ?? "";
   $("ghl_stage_id").value = campaign?.ghlStageId ?? "";
   $("ghl_connected_stage_id").value = campaign?.ghlConnectedStageId ?? "";
+  $("ghl_stage_mapping_transferred").value = campaign?.ghlStageMapping?.transferred ?? "";
+  $("ghl_stage_mapping_voicemail").value = campaign?.ghlStageMapping?.voicemail ?? "";
+  $("ghl_stage_mapping_abandoned").value = campaign?.ghlStageMapping?.abandoned ?? "";
+  $("ghl_stage_mapping_transfer_failed").value = campaign?.ghlStageMapping?.transfer_failed ?? "";
+  $("ghl_stage_mapping_no_answer").value = campaign?.ghlStageMapping?.no_answer ?? "";
   $("ghl_outcome_field_id").value = campaign?.ghlOutcomeFieldId ?? "";
   $("ghl_seller_talk_field_id").value = campaign?.ghlSellerTalkFieldId ?? "";
   $("ghl_recording_url_field_id").value = campaign?.ghlRecordingUrlFieldId ?? "";

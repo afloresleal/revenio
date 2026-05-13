@@ -1,3 +1,11 @@
+export type GhlStageMapping = {
+  transferred?: string | null;
+  voicemail?: string | null;
+  abandoned?: string | null;
+  transfer_failed?: string | null;
+  no_answer?: string | null;
+};
+
 export type GhlCampaignConfig = {
   id?: string;
   campaignId: string;
@@ -12,6 +20,7 @@ export type GhlCampaignConfig = {
   ghlPipelineId?: string | null;
   ghlStageId?: string | null;
   ghlConnectedStageId?: string | null;
+  ghlStageMapping?: GhlStageMapping | null;
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlTranscriptFieldId?: string | null;
@@ -103,6 +112,18 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function parseGhlStageMapping(value: unknown): GhlStageMapping | null {
+  if (!value || typeof value !== "object") return null;
+  const mapping = value as Record<string, unknown>;
+  return {
+    transferred: asString(mapping.transferred),
+    voicemail: asString(mapping.voicemail),
+    abandoned: asString(mapping.abandoned),
+    transfer_failed: asString(mapping.transfer_failed),
+    no_answer: asString(mapping.no_answer),
+  };
+}
+
 export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlCampaignConfig | null {
   const campaignId = asString(value.campaignId);
   const propertyKey = asString(value.propertyKey);
@@ -126,6 +147,7 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlPipelineId: asString(value.ghlPipelineId),
     ghlStageId: asString(value.ghlStageId),
     ghlConnectedStageId: asString(value.ghlConnectedStageId),
+    ghlStageMapping: parseGhlStageMapping(value.ghlStageMapping),
     ghlOutcomeFieldId: asString(value.ghlOutcomeFieldId),
     ghlSellerTalkFieldId: asString(value.ghlSellerTalkFieldId),
     ghlTranscriptFieldId: asString(value.ghlTranscriptFieldId),

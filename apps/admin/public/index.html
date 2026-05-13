@@ -107,9 +107,36 @@
                 <input id="ghl_stage_id" placeholder="stage-id" />
               </label>
               <label>
-                GHL Connected Stage ID
+                GHL Connected Stage ID (Legacy - usar Stage Mapping en su lugar)
                 <input id="ghl_connected_stage_id" placeholder="stage-id destino" />
               </label>
+
+              <h3 style="margin-top: 24px; margin-bottom: 8px;">Stage Mapping (Movimiento de Pipeline por Outcome)</h3>
+              <p style="margin-bottom: 16px; color: #666; font-size: 14px;">Configura a qué stage mover el lead según el resultado. Usa el ID del stage "Contacted" (c60834fb...). Deja vacío si no quieres mover el lead.</p>
+
+              <label>
+                Stage para Transfer Exitoso (transferred → Contacted)
+                <input id="ghl_stage_mapping_transferred" placeholder="c60834fb-1346-4a69-8da1-46e834a937b7" />
+              </label>
+              <label>
+                Stage para Voicemail (voicemail → Contacted)
+                <input id="ghl_stage_mapping_voicemail" placeholder="c60834fb-1346-4a69-8da1-46e834a937b7" />
+              </label>
+              <label>
+                Stage para Cliente Colgó (abandoned → dejar vacío)
+                <input id="ghl_stage_mapping_abandoned" placeholder="Dejar vacío = no mover" />
+              </label>
+              <label>
+                Stage para Transfer Falló (transfer_failed → dejar vacío)
+                <input id="ghl_stage_mapping_transfer_failed" placeholder="Dejar vacío = no mover" />
+              </label>
+              <label>
+                Stage para Sin Respuesta (no_answer → dejar vacío)
+                <input id="ghl_stage_mapping_no_answer" placeholder="Dejar vacío = no mover" />
+              </label>
+
+              <h3 style="margin-top: 24px; margin-bottom: 8px;">Custom Fields</h3>
+
               <label>
                 Outcome Field ID (Resultado Revenio)
                 <input id="ghl_outcome_field_id" placeholder="ZYL1sSHJv02iwgTleQ2o" />
