@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const LOCAL_API_BASE_URL = "http://localhost:3000";
-const RAILWAY_API_BASE_URL = "https://revenioapi-staging.up.railway.app";
+const STAGING_API_BASE_URL = "https://revenioapi-staging.up.railway.app";
+const PRODUCTION_API_BASE_URL = "https://revenioapi-production.up.railway.app";
 
 const fields = [
   "client_name",
@@ -88,8 +89,11 @@ fields.forEach((id) => {
 });
 
 function apiBase() {
-  const isLocal = ["localhost", "127.0.0.1", ""].includes(window.location.hostname);
-  return isLocal ? LOCAL_API_BASE_URL : RAILWAY_API_BASE_URL;
+  const hostname = window.location.hostname;
+  const isLocal = ["localhost", "127.0.0.1", ""].includes(hostname);
+  if (isLocal) return LOCAL_API_BASE_URL;
+  if (hostname.includes("production")) return PRODUCTION_API_BASE_URL;
+  return STAGING_API_BASE_URL;
 }
 
 function setStatus(message) {
