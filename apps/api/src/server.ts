@@ -2956,7 +2956,12 @@ app.put("/api/admin/ghl-campaigns/:id", async (req, res) => {
     if (message.includes("Unique constraint")) {
       return res.status(409).json({ error: "campaign_id_exists", campaignId: parsed.data.campaignId });
     }
-    throw error;
+    console.error("Error updating campaign:", error);
+    return res.status(500).json({
+      error: "server_error",
+      message: error instanceof Error ? error.message : "Unknown error",
+      details: error instanceof Error ? error.stack : String(error)
+    });
   }
 });
 
