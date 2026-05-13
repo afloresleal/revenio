@@ -272,8 +272,8 @@ function collectCampaignPayload() {
     ghlStageId: $("ghl_stage_id").value.trim() || undefined,
     ghlConnectedStageId: $("ghl_connected_stage_id").value.trim() || undefined,
     ghlStageMapping: {
-      transfer_success: $("ghl_stage_mapping_transfer_success").value.trim() || undefined,
-      voicemail: $("ghl_stage_mapping_voicemail").value.trim() || undefined,
+      transfer_success: $("ghl_connected_stage_id").value.trim() || undefined,
+      voicemail: $("ghl_connected_stage_id").value.trim() || undefined,
     },
     ghlOutcomeFieldId: $("ghl_outcome_field_id").value.trim() || undefined,
     ghlSellerTalkFieldId: $("ghl_seller_talk_field_id").value.trim() || undefined,
@@ -309,8 +309,9 @@ function applyCampaign(campaign) {
   $("ghl_pipeline_id").value = campaign?.ghlPipelineId ?? "";
   $("ghl_stage_id").value = campaign?.ghlStageId ?? "";
   $("ghl_connected_stage_id").value = campaign?.ghlConnectedStageId ?? "";
-  $("ghl_stage_mapping_transfer_success").value = campaign?.ghlStageMapping?.transfer_success ?? "";
-  $("ghl_stage_mapping_voicemail").value = campaign?.ghlStageMapping?.voicemail ?? "";
+  // Use connectedStageId or fallback to stage mapping values
+  const connectedStageId = campaign?.ghlConnectedStageId ?? campaign?.ghlStageMapping?.transfer_success ?? campaign?.ghlStageMapping?.voicemail ?? "";
+  $("ghl_connected_stage_id").value = connectedStageId;
   $("ghl_outcome_field_id").value = campaign?.ghlOutcomeFieldId ?? "";
   $("ghl_seller_talk_field_id").value = campaign?.ghlSellerTalkFieldId ?? "";
   $("ghl_recording_url_field_id").value = campaign?.ghlRecordingUrlFieldId ?? "";

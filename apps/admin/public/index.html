@@ -108,21 +108,14 @@
                 <span class="label-muted">Stage donde viven los leads antes de que Revenio los contacte</span>
               </label>
 
-              <input id="ghl_connected_stage_id" type="hidden" />
-
-              <h3 style="margin-top: 24px; margin-bottom: 8px;">GHL Connected Stage ID</h3>
-              <p style="margin-bottom: 16px; color: #666; font-size: 14px;">Configura a qué stage mover el lead después de contactarlo. <strong>Normalmente usas el mismo stage ID para ambos</strong> (ej: "Contacted"). Deja vacío si no quieres movimiento automático.</p>
-
               <label>
-                Cuando el vendedor contesta
-                <input id="ghl_stage_mapping_transfer_success" placeholder="Copia el ID del stage 'Contacted'" />
-                <span class="label-muted">El vendedor contestó la transferencia exitosamente</span>
+                GHL Connected Stage ID
+                <input id="ghl_connected_stage_id" placeholder="Copia el ID del stage 'Contacted'" />
+                <span class="label-muted">Stage donde mover el lead después de contactarlo (aplica para vendedor contesta y voicemail)</span>
               </label>
-              <label>
-                Cuando va a buzón del cliente
-                <input id="ghl_stage_mapping_voicemail" placeholder="Copia el ID del stage 'Contacted'" />
-                <span class="label-muted">El cliente no contestó o fue a buzón de voz</span>
-              </label>
+
+              <input id="ghl_stage_mapping_transfer_success" type="hidden" />
+              <input id="ghl_stage_mapping_voicemail" type="hidden" />
 
               <h3 style="margin-top: 24px; margin-bottom: 8px;">Custom Fields</h3>
 
