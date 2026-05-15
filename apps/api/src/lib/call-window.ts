@@ -173,3 +173,107 @@ export function canRunRoundRobinFailover(now: Date = new Date()): CallWindowEval
   }
   return evaluation;
 }
+
+export type CampaignCallWindowConfig = {
+  callWindowEnabled?: boolean | null | undefined;
+  callWindowTimezone?: string | null | undefined;
+  callWindowStartHour?: number | null | undefined;
+  callWindowEndHour?: number | null | undefined;
+  callWindowWeekdays?: string | null | undefined;
+  callWindowApplyToFailover?: boolean | null | undefined;
+  [key: string]: any; // Allow other properties to pass through
+};
+
+function parseWeekdaysString(raw: string | null | undefined): number[] {
+  if (!raw || !raw.trim()) return DEFAULT_ACTIVE_WEEKDAYS;
+  const parsed = raw
+    .split(',')
+    .map((token) => Number.parseInt(token.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n >= 0 && n <= 6);
+  return parsed.length ? uniqueSortedWeekdays(parsed) : DEFAULT_ACTIVE_WEEKDAYS;
+}
+
+function evaluateCallWindowWithSettings(settings: CallWindowSettings, now: Date = new Date()): CallWindowEvaluation {
+  if (!settings.enabled) {
+    return {
+      allowed: true,
+      reason: 'disabled',
+      timezone: settings.timezone,
+      currentHour: -1,
+      currentWeekday: -1,
+      settings,
+    };
+  }
+
+  const zoned = getDateInTimezone(settings.timezone);
+  const currentHour = zoned.getHours();
+  const currentWeekday = zoned.getDay();
+  const weekdayAllowed = settings.activeWeekdays.includes(currentWeekday);
+  const hourAllowed = isHourWithinWindow(currentHour, settings.startHour, settings.endHour);
+  const allowed = weekdayAllowed && hourAllowed;
+
+  return {
+    allowed,
+    reason: !weekdayAllowed ? 'inactive_weekday' : !hourAllowed ? 'outside_hours' : 'disabled',
+    timezone: settings.timezone,
+    currentHour,
+    currentWeekday,
+    settings,
+  };
+}
+
+export function evaluateCampaignCallWindow(
+  campaign: CampaignCallWindowConfig,
+  now: Date = new Date()
+): CallWindowEvaluation {
+  // If no specific configuration, use global settings
+  if (campaign.callWindowEnabled === null || campaign.callWindowEnabled === undefined) {
+    return evaluateCallWindow(now);
+  }
+
+  // If explicitly disabled for this campaign, allow 24/7
+  if (campaign.callWindowEnabled === false) {
+    const timezone = campaign.callWindowTimezone || DEFAULT_TIMEZONE;
+    return {
+      allowed: true,
+      reason: 'disabled',
+      timezone,
+      currentHour: -1,
+      currentWeekday: -1,
+      settings: {
+        enabled: false,
+        timezone,
+        startHour: DEFAULT_START_HOUR,
+        endHour: DEFAULT_END_HOUR,
+        activeWeekdays: DEFAULT_ACTIVE_WEEKDAYS,
+        applyToRoundRobinFailover: false,
+      },
+    };
+  }
+
+  // Use campaign-specific settings
+  const settings: CallWindowSettings = {
+    enabled: true,
+    timezone: validateTimezone(campaign.callWindowTimezone || DEFAULT_TIMEZONE),
+    startHour: clampHour(campaign.callWindowStartHour ?? DEFAULT_START_HOUR, DEFAULT_START_HOUR),
+    endHour: clampHour(campaign.callWindowEndHour ?? DEFAULT_END_HOUR, DEFAULT_END_HOUR),
+    activeWeekdays: parseWeekdaysString(campaign.callWindowWeekdays),
+    applyToRoundRobinFailover: campaign.callWindowApplyToFailover ?? true,
+  };
+
+  return evaluateCallWindowWithSettings(settings, now);
+}
+
+export function canCampaignRunRoundRobinFailover(
+  campaign: CampaignCallWindowConfig,
+  now: Date = new Date()
+): CallWindowEvaluation {
+  const evaluation = evaluateCampaignCallWindow(campaign, now);
+  if (!evaluation.settings.applyToRoundRobinFailover) {
+    return {
+      ...evaluation,
+      allowed: true,
+    };
+  }
+  return evaluation;
+}

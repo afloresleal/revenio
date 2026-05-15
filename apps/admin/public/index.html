@@ -89,6 +89,95 @@
             </label>
           </div>
 
+          <details class="advanced-fields" open>
+            <summary>Horario de llamadas</summary>
+            <p>Configura cuándo Revenio puede iniciar llamadas para esta campaña.</p>
+
+            <div class="form-grid">
+              <fieldset style="grid-column: 1 / -1; border: none; padding: 0; margin: 0;">
+                <legend style="margin-bottom: 12px; font-weight: 600; color: var(--ink);">Modo de horario</legend>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <label>
+                    <input type="radio" name="call_window_mode" id="call_window_mode_global" value="global" checked />
+                    <span>Usar horario global (Lab)</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="call_window_mode" id="call_window_mode_custom" value="custom" />
+                    <span>Horario personalizado para esta campaña</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="call_window_mode" id="call_window_mode_disabled" value="disabled" />
+                    <span>24/7 - Sin restricciones de horario</span>
+                  </label>
+                </div>
+              </fieldset>
+            </div>
+
+            <div id="call_window_custom_fields" class="form-grid" style="margin-top: 16px; display: none;">
+              <label>
+                Zona horaria
+                <select id="call_window_timezone">
+                  <option value="America/Mexico_City">America/Mexico_City (CST)</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                  <option value="America/Denver">America/Denver (MST)</option>
+                  <option value="America/Chicago">America/Chicago (CST)</option>
+                  <option value="America/New_York">America/New_York (EST)</option>
+                  <option value="America/Phoenix">America/Phoenix (MST sin DST)</option>
+                  <option value="America/Bogota">America/Bogota (COT)</option>
+                  <option value="America/Lima">America/Lima (PET)</option>
+                  <option value="America/Santiago">America/Santiago (CLT)</option>
+                  <option value="America/Argentina/Buenos_Aires">America/Argentina/Buenos_Aires (ART)</option>
+                  <option value="America/Caracas">America/Caracas (VET)</option>
+                  <option value="Europe/Madrid">Europe/Madrid (CET)</option>
+                  <option value="UTC">UTC</option>
+                </select>
+              </label>
+              <label>
+                Hora inicio
+                <input id="call_window_start_hour" type="number" min="0" max="23" placeholder="7" />
+                <span class="label-muted">Hora del día (0-23)</span>
+              </label>
+              <label>
+                Hora fin
+                <input id="call_window_end_hour" type="number" min="0" max="23" placeholder="22" />
+                <span class="label-muted">Hora del día (0-23)</span>
+              </label>
+              <fieldset style="grid-column: 1 / -1; border: none; padding: 0; margin: 0;">
+                <legend style="margin-bottom: 12px; font-weight: 600; color: var(--ink);">Días de la semana</legend>
+                <div style="display: flex; flex-wrap: wrap; gap: 14px;">
+                  <label>
+                    <input type="checkbox" id="call_window_day_0" value="0" checked />
+                    <span>Dom</span>
+                  </label>
+                  <label>
+                    <input type="checkbox" id="call_window_day_1" value="1" checked />
+                    <span>Lun</span>
+                  </label>
+                  <label>
+                    <input type="checkbox" id="call_window_day_2" value="2" checked />
+                    <span>Mar</span>
+                  </label>
+                  <label>
+                    <input type="checkbox" id="call_window_day_3" value="3" checked />
+                    <span>Mié</span>
+                  </label>
+                  <label>
+                    <input type="checkbox" id="call_window_day_4" value="4" checked />
+                    <span>Jue</span>
+                  </label>
+                  <label>
+                    <input type="checkbox" id="call_window_day_5" value="5" checked />
+                    <span>Vie</span>
+                  </label>
+                  <label>
+                    <input type="checkbox" id="call_window_day_6" value="6" checked />
+                    <span>Sáb</span>
+                  </label>
+                </div>
+              </fieldset>
+            </div>
+          </details>
+
           <details class="advanced-fields">
             <summary>Integración GHL post-llamada</summary>
             <p>Solo se usa si Revenio actualizará la oportunidad en GHL después de que conteste un vendedor.</p>

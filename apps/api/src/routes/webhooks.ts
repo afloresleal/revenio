@@ -9,7 +9,7 @@ import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
-import { canRunRoundRobinFailover, canStartOutboundCall } from '../lib/call-window.js';
+import { canRunRoundRobinFailover, canStartOutboundCall, evaluateCampaignCallWindow, canCampaignRunRoundRobinFailover } from '../lib/call-window.js';
 import {
   type GhlAgentConfig,
   orderGhlAgentsForAssignment,
@@ -1305,7 +1305,8 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     asString(fetchedContact?.['Phone']);
   if (!phone) return { ok: false, error: 'missing_contact_phone' as const };
 
-  const callWindow = canStartOutboundCall();
+  // Use campaign-specific call window settings (or global if not configured)
+  const callWindow = evaluateCampaignCallWindow(campaign);
   if (!callWindow.allowed) {
     const ghlPush = await pushOutsideBusinessHoursOutcomeToGhl({
       property,

@@ -22,6 +22,10 @@ const fields = [
   "ghl_seller_talk_field_id",
   "ghl_recording_url_field_id",
   "campaign_active",
+  "call_window_mode",
+  "call_window_timezone",
+  "call_window_start_hour",
+  "call_window_end_hour",
   "fallback_name",
   "fallback_user_id",
   "fallback_phone",
@@ -64,6 +68,10 @@ const campaignDraftFields = new Set([
   "ghl_seller_talk_field_id",
   "ghl_recording_url_field_id",
   "campaign_active",
+  "call_window_mode",
+  "call_window_timezone",
+  "call_window_start_hour",
+  "call_window_end_hour",
 ]);
 
 fields.forEach((id) => {
@@ -74,21 +82,70 @@ fields.forEach((id) => {
     el.checked = value === "true";
     return;
   }
+  if (el.type === "radio") {
+    if (el.value === value) el.checked = true;
+    return;
+  }
   el.value = value;
 });
+
+// Load weekdays checkboxes
+const savedWeekdays = localStorage.getItem('admin_call_window_weekdays');
+if (savedWeekdays) {
+  const days = savedWeekdays.split(',').map(d => d.trim());
+  for (let i = 0; i <= 6; i++) {
+    const checkbox = $(`call_window_day_${i}`);
+    if (checkbox) checkbox.checked = days.includes(String(i));
+  }
+}
 
 fields.forEach((id) => {
   const el = $(id);
   if (!el) return;
   const handler = () => {
-    localStorage.setItem(`admin_${id}`, el.type === "checkbox" ? String(el.checked) : el.value);
-    if (!isApplyingCampaign && campaignDraftFields.has(id)) {
-      campaignDraftDirty = true;
+    if (el.type === "radio") {
+      if (el.checked) {
+        localStorage.setItem(`admin_${id}`, el.value);
+        if (!isApplyingCampaign && campaignDraftFields.has(id)) {
+          campaignDraftDirty = true;
+        }
+      }
+    } else {
+      localStorage.setItem(`admin_${id}`, el.type === "checkbox" ? String(el.checked) : el.value);
+      if (!isApplyingCampaign && campaignDraftFields.has(id)) {
+        campaignDraftDirty = true;
+      }
     }
   };
   el.addEventListener("input", handler);
   el.addEventListener("change", handler);
 });
+
+// Save weekdays when changed
+for (let i = 0; i <= 6; i++) {
+  const checkbox = $(`call_window_day_${i}`);
+  if (checkbox) {
+    checkbox.addEventListener("change", () => {
+      const selectedDays = [];
+      for (let j = 0; j <= 6; j++) {
+        const cb = $(`call_window_day_${j}`);
+        if (cb?.checked) selectedDays.push(j);
+      }
+      localStorage.setItem('admin_call_window_weekdays', selectedDays.join(','));
+      if (!isApplyingCampaign && campaignDraftFields.has('call_window_weekdays')) {
+        campaignDraftDirty = true;
+      }
+    });
+  }
+}
+
+function updateCallWindowFieldsVisibility() {
+  const mode = document.querySelector('input[name="call_window_mode"]:checked')?.value || "global";
+  const customFields = $("call_window_custom_fields");
+  if (customFields) {
+    customFields.style.display = mode === "custom" ? "grid" : "none";
+  }
+}
 
 function apiBase() {
   const hostname = window.location.hostname;
@@ -301,6 +358,31 @@ function collectCampaignPayload() {
     };
   }
 
+  // Add call window configuration
+  const callWindowMode = document.querySelector('input[name="call_window_mode"]:checked')?.value || "global";
+
+  if (callWindowMode === "custom") {
+    payload.callWindowEnabled = true;
+    payload.callWindowTimezone = $("call_window_timezone").value.trim() || undefined;
+
+    const startHour = $("call_window_start_hour").value.trim();
+    if (startHour !== "") payload.callWindowStartHour = parseInt(startHour, 10);
+
+    const endHour = $("call_window_end_hour").value.trim();
+    if (endHour !== "") payload.callWindowEndHour = parseInt(endHour, 10);
+
+    const selectedDays = [];
+    for (let i = 0; i <= 6; i++) {
+      if ($(`call_window_day_${i}`)?.checked) selectedDays.push(i);
+    }
+    if (selectedDays.length) payload.callWindowWeekdays = selectedDays.join(',');
+
+    payload.callWindowApplyToFailover = true; // Always apply to failover
+  } else if (callWindowMode === "disabled") {
+    payload.callWindowEnabled = false;
+  }
+  // If mode is "global", don't send any call window fields (use DB null = global)
+
   const ghlApiKey = $("ghl_api_key").value.trim();
   if (ghlApiKey) payload.ghlApiKey = ghlApiKey;
   return payload;
@@ -337,6 +419,31 @@ function applyCampaign(campaign) {
   $("ghl_seller_talk_field_id").value = campaign?.ghlSellerTalkFieldId ?? "";
   $("ghl_recording_url_field_id").value = campaign?.ghlRecordingUrlFieldId ?? "";
   $("campaign_active").checked = campaign?.active !== false;
+
+  // Apply call window settings
+  let callWindowMode = "global";
+  if (campaign?.callWindowEnabled === false) {
+    callWindowMode = "disabled";
+  } else if (campaign?.callWindowEnabled === true) {
+    callWindowMode = "custom";
+  }
+  document.getElementById(`call_window_mode_${callWindowMode}`)?.click();
+
+  $("call_window_timezone").value = campaign?.callWindowTimezone ?? "America/Mexico_City";
+  $("call_window_start_hour").value = campaign?.callWindowStartHour ?? "";
+  $("call_window_end_hour").value = campaign?.callWindowEndHour ?? "";
+
+  // Apply weekdays
+  const weekdays = campaign?.callWindowWeekdays ? campaign.callWindowWeekdays.split(',').map(d => d.trim()) : [];
+  for (let i = 0; i <= 6; i++) {
+    const checkbox = $(`call_window_day_${i}`);
+    if (checkbox) {
+      checkbox.checked = weekdays.length === 0 || weekdays.includes(String(i));
+    }
+  }
+
+  updateCallWindowFieldsVisibility();
+
   $("campaign_form_title").textContent = campaign ? "Editar campaña" : "Nueva campaña";
   $("campaign_mode_badge").textContent = campaign ? (campaign.active === false ? "Pausada" : "Editando") : "Creando";
   $("campaign_mode_badge").classList.toggle("is-editing", Boolean(campaign));
@@ -679,5 +786,11 @@ $("btn_copy_handoff").addEventListener("click", async () => {
   setStatus("Instrucciones copiadas.");
 });
 
+// Call window mode change
+document.querySelectorAll('input[name="call_window_mode"]').forEach((radio) => {
+  radio.addEventListener("change", updateCallWindowFieldsVisibility);
+});
+
 emptyAgentRows();
+updateCallWindowFieldsVisibility();
 loadCampaigns().catch((error) => setStatus(error.message));

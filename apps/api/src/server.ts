@@ -2670,6 +2670,12 @@ const adminGhlCampaignSchema = z.object({
   ghlOutcomeFieldId: z.string().max(160).optional(),
   ghlSellerTalkFieldId: z.string().max(160).optional(),
   ghlRecordingUrlFieldId: z.string().max(160).optional(),
+  callWindowEnabled: z.boolean().optional(),
+  callWindowTimezone: z.string().max(80).optional(),
+  callWindowStartHour: z.number().int().min(0).max(23).optional(),
+  callWindowEndHour: z.number().int().min(0).max(23).optional(),
+  callWindowWeekdays: z.string().max(32).optional(),
+  callWindowApplyToFailover: z.boolean().optional(),
   active: z.boolean().default(true),
 });
 
@@ -2698,6 +2704,10 @@ function adminString(value: unknown): string | null {
 
 function adminNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function adminBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function adminDiffSeconds(start?: Date | null, end?: Date | null): number | null {
@@ -2803,6 +2813,12 @@ function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSche
     ghlSellerTalkFieldId: adminString(data.ghlSellerTalkFieldId),
     ghlRecordingUrlFieldId: adminString(data.ghlRecordingUrlFieldId),
     ghlApiKey: adminString(data.ghlApiKey),
+    callWindowEnabled: adminBoolean(data.callWindowEnabled),
+    callWindowTimezone: adminString(data.callWindowTimezone),
+    callWindowStartHour: adminNumber(data.callWindowStartHour),
+    callWindowEndHour: adminNumber(data.callWindowEndHour),
+    callWindowWeekdays: adminString(data.callWindowWeekdays),
+    callWindowApplyToFailover: adminBoolean(data.callWindowApplyToFailover),
   };
   if (options.preserveEmptyApiKey && !normalized.ghlApiKey) {
     delete (normalized as Partial<typeof normalized>).ghlApiKey;

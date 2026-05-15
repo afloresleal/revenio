@@ -366,6 +366,35 @@ button:hover {
   min-height: 16px;
 }
 
+/* Radio button labels */
+label:has(input[type="radio"]) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+label:has(input[type="radio"]) input[type="radio"] {
+  width: 18px;
+  min-height: 18px;
+  cursor: pointer;
+}
+
+/* Weekday checkboxes */
+label:has(input[type="checkbox"][id^="call_window_day_"]) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+label:has(input[type="checkbox"][id^="call_window_day_"]) input {
+  width: 16px;
+  min-height: 16px;
+}
+
 .agent-list {
   display: grid;
   gap: 10px;

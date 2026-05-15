@@ -21,6 +21,12 @@ export type GhlCampaignConfig = {
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
+  callWindowEnabled?: boolean | null;
+  callWindowTimezone?: string | null;
+  callWindowStartHour?: number | null;
+  callWindowEndHour?: number | null;
+  callWindowWeekdays?: string | null;
+  callWindowApplyToFailover?: boolean | null;
   active: boolean;
 };
 
@@ -108,6 +114,18 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function asBoolean(value: unknown): boolean | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "boolean") return value;
+  return null;
+}
+
+function asNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
 function parseGhlStageMapping(value: unknown): GhlStageMapping | null {
   if (!value || typeof value !== "object") return null;
   const mapping = value as Record<string, unknown>;
@@ -144,6 +162,12 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlOutcomeFieldId: asString(value.ghlOutcomeFieldId),
     ghlSellerTalkFieldId: asString(value.ghlSellerTalkFieldId),
     ghlRecordingUrlFieldId: asString(value.ghlRecordingUrlFieldId),
+    callWindowEnabled: asBoolean(value.callWindowEnabled),
+    callWindowTimezone: asString(value.callWindowTimezone),
+    callWindowStartHour: asNumber(value.callWindowStartHour),
+    callWindowEndHour: asNumber(value.callWindowEndHour),
+    callWindowWeekdays: asString(value.callWindowWeekdays),
+    callWindowApplyToFailover: asBoolean(value.callWindowApplyToFailover),
     active: value.active !== false,
   };
 }
