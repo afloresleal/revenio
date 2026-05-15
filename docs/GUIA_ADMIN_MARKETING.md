@@ -36,7 +36,9 @@ El admin es donde configuras todas las campañas de llamadas de Revenio. Desde a
 1. En la barra lateral izquierda, haz clic en el botón **"Nueva"**
 2. Se abrirá el formulario de campaña en blanco
 
+
 ![Botón Nueva Campaña](screenshots/02-nueva-campana-button.png)
+
 *Captura: Botón "Nueva" en la barra lateral para crear una campaña*
 
 ### Paso 2: Datos básicos de la campaña
@@ -410,5 +412,3 @@ Si tienes problemas o dudas que no se resuelven con esta guía:
 
 ---
 
-**Última actualización**: Mayo 2026
-**Versión del admin**: 0.3.0
