@@ -1,6 +1,6 @@
 # 📚 Índice de Documentación — Revenio
 
-> **Última actualización:** 2026-05-14
+> **Última actualización:** 2026-05-14 (10 archivos archivados)
 
 Este índice organiza toda la documentación de Revenio por estado y propósito.
 
@@ -56,6 +56,8 @@ Documentos obsoletos, reemplazados por versiones nuevas, o que no se implementar
 | Documento | Razón | Fecha archivado |
 |-----------|-------|-----------------|
 | [ARCHIVED-2026-04-08-call-transfer-handoff.md](ARCHIVED-2026-04-08-call-transfer-handoff.md) | Reemplazado por versión de mayo 2026 | 2026-05-03 |
+| [ARCHIVED-2026-04-27-ghl-guia-integracion-pruebas.md](ARCHIVED-2026-04-27-ghl-guia-integracion-pruebas.md) | Credenciales de prueba GHL obsoletas (cubierto por ACTIVE-admin-ghl-campaigns.md) | 2026-04-27 |
+| [ARCHIVED-clawdbot-handoff-inicial.md](ARCHIVED-clawdbot-handoff-inicial.md) | Handoff técnico inicial de desarrollo (arquitectura evolucionó) | 2026-05-14 |
 | [ARCHIVED-mb-dynamic-name-v1.md](ARCHIVED-mb-dynamic-name-v1.md) | Reemplazado por v3 | 2026-05-12 |
 | [ARCHIVED-mb-dynamic-name-v2.md](ARCHIVED-mb-dynamic-name-v2.md) | Reemplazado por v3 | 2026-05-12 |
 | [ARCHIVED-ghl-krp-integration.md](ARCHIVED-ghl-krp-integration.md) | Integración específica no continuada | 2026-05-12 |
