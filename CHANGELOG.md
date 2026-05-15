@@ -2,6 +2,48 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.1] - 2026-05-14
+
+### Fix: Habilitado Failover Automático para Todos los Flujos
+
+**Problema reportado por:** Marina (equipo)
+
+**Caso específico:**
+- Llamada a Marina (+525527326714) transferida a Gaby (+529988650335)
+- Gaby sin señal → llamada cayó en buzón de voz de Gaby
+- Round robin configurado con 3 agentes (Gaby, Diana, Arturo) pero **NO se ejecutó failover**
+- Marina terminó en el buzón sin que se intentara con Diana o Arturo
+
+**Causa raíz:**
+Todas las llamadas usaban `blind-transfer` (transferencia ciega) via hooks de Vapi, lo que bypaseaba completamente el sistema de failover automático ya implementado en el backend.
+
+**Solución implementada:**
+- Eliminado hook de `blind-transfer` en `buildAssistantOverrides()`
+- Ahora Vapi solicita transfer via webhook `transfer-destination-request`
+- Habilitado AMD (Answering Machine Detection) de Twilio automáticamente
+- Failover secuencial funciona cuando un agente no contesta, está ocupado, o cae en voicemail
+
+**Archivos modificados:**
+- `apps/api/src/routes/webhooks.ts` - Eliminado hook de blind-transfer en buildAssistantOverrides()
+- `apps/api/src/server.ts` - Mismo cambio en función duplicada
+- Eliminada función `buildImmediateTransferHook()` (ya no se usa)
+
+**Impacto:**
+- ✅ Todos los endpoints de llamadas ahora usan AMD + failover automático:
+  - `POST /webhooks/gohighlevel` (Webhook GHL)
+  - `POST /call/vapi` (API legacy)
+  - `POST /call/test` (Pruebas manuales)
+  - `POST /test-campaign/:campaignId/call` (Test de campañas)
+- ✅ Round robin secuencial funcionando: Agente 1 → Agente 2 → Agente 3
+- ✅ Dashboard muestra quién no respondió y por qué
+- ✅ Mejor tasa de conexión con agentes humanos
+
+**Referencia técnica completa:** `docs/BLIND-TRANSFER-FIX-2026-05-14.md`
+
+**Nota:** Este fix es **distinto** del trabajo sobre detección de voicemail del cliente implementado en v0.3.0. Ese detecta cuando el **cliente** no contesta. Este fix habilita failover cuando el **agente** no contesta.
+
+---
+
 ## [0.3.0] - 2026-05-12
 
 ### Admin UI - GHL Stage Mapping Simplificado

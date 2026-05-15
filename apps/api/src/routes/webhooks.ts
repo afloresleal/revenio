@@ -127,30 +127,6 @@ function sanitizeName(name: string): string {
 function normalizePhoneForMatch(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '');
 }
-
-function buildImmediateTransferHook(transferNumber: string): Record<string, unknown> {
-  return {
-    on: 'call.timeElapsed',
-    options: { seconds: 1 },
-    do: [
-      {
-        type: 'tool',
-        tool: {
-          type: 'transferCall',
-          destinations: [
-            {
-              type: 'number',
-              number: transferNumber,
-              message: '',
-              transferPlan: { mode: 'blind-transfer', sipVerb: 'dial' },
-            },
-          ],
-        },
-      },
-    ],
-  };
-}
-
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
@@ -165,9 +141,12 @@ function buildAssistantOverrides(
   if (agentName) variableValues.agent_name = agentName;
   const overrides: Record<string, unknown> = { metadata };
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
-  if (transferNumber) {
-    overrides.hooks = [buildImmediateTransferHook(transferNumber)];
-  }
+
+  // NOTE: We do NOT add blind-transfer hooks here.
+  // Instead, we let Vapi request transfer via transfer-destination-request webhook.
+  // This enables AMD (Answering Machine Detection) and automatic failover when agents don't answer.
+  // The backend already handles transfer-destination-request in processTransferUpdate() (line 2295-2374).
+
   return overrides;
 }
 
