@@ -24,7 +24,6 @@ const fields = [
   "call_window_timezone",
   "call_window_start_hour",
   "call_window_end_hour",
-  "call_window_apply_to_failover",
   "fallback_name",
   "fallback_user_id",
   "fallback_phone",
@@ -71,7 +70,6 @@ const campaignDraftFields = new Set([
   "call_window_timezone",
   "call_window_start_hour",
   "call_window_end_hour",
-  "call_window_apply_to_failover",
 ]);
 
 fields.forEach((id) => {
@@ -376,7 +374,7 @@ function collectCampaignPayload() {
     }
     if (selectedDays.length) payload.callWindowWeekdays = selectedDays.join(',');
 
-    payload.callWindowApplyToFailover = $("call_window_apply_to_failover").checked;
+    payload.callWindowApplyToFailover = true; // Always apply to failover
   } else if (callWindowMode === "disabled") {
     payload.callWindowEnabled = false;
   }
@@ -441,7 +439,6 @@ function applyCampaign(campaign) {
     }
   }
 
-  $("call_window_apply_to_failover").checked = campaign?.callWindowApplyToFailover !== false;
   updateCallWindowFieldsVisibility();
 
   $("campaign_form_title").textContent = campaign ? "Editar campaña" : "Nueva campaña";
