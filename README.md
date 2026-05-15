@@ -33,9 +33,9 @@ Referencia: [docs/VAPI-CONFIG.md](docs/VAPI-CONFIG.md)
 .
 ├─ apps/
 │  ├─ api/              # API principal
+│  ├─ admin/            # Panel de administración
 │  └─ lab/              # UI estatica para debug
-├─ dashboard/           # Dashboard legacy (vanilla)
-├─ dashboard-v2/        # Dashboard actual (React + Vite)
+├─ dashboard-v2/        # Dashboard de métricas (React + Vite)
 ├─ docs/
 ├─ docker-compose.yml
 └─ package.json         # workspaces (apps/*, packages/*)
