@@ -2,6 +2,59 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.2] - 2026-05-14
+
+### Feature: Horario de Llamadas por Campaña
+
+**Nueva funcionalidad:** Configuración de horarios de llamada específicos por campaña desde Admin UI.
+
+**Capacidades:**
+- **Modo Global** (default): Usa el horario configurado en Lab para toda la plataforma
+- **Modo Custom**: Horario personalizado por campaña con:
+  - Timezone específico (13 zonas horarias disponibles)
+  - Horas de inicio/fin (0-23)
+  - Días de la semana activos (Dom-Sáb)
+  - Aplicación automática al failover de round robin
+- **Modo 24/7**: Sin restricciones de horario para campañas específicas
+
+**Backend (Fase 1):**
+- 6 nuevas columnas en `ghl_campaign` (nullable para backward compatibility)
+- Lógica `evaluateCampaignCallWindow()` con 3 modos:
+  - `null` → Usa horario global (backward compatible)
+  - `false` → 24/7 sin restricciones
+  - `true` → Usa configuración específica de campaña
+- Integración en webhook GHL: valida horario antes de iniciar llamada
+
+**Frontend (Fase 2):**
+- Nueva sección "Horario de llamadas" en Admin panel
+- Radio buttons para selección de modo
+- Campos condicionales para modo custom (timezone, horas, días)
+- Persistencia en localStorage para draft state
+- Validación Zod en backend
+
+**Archivos principales:**
+- `apps/api/prisma/migrations/20260514210000_add_call_window_to_campaign/` - Migración DB
+- `apps/api/src/lib/call-window.ts` - Lógica de evaluación (~120 líneas)
+- `apps/api/src/routes/webhooks.ts:1309` - Integración en GHL webhook
+- `apps/api/src/server.ts` - Schema Zod + normalización
+- `apps/admin/public/index.html` - UI de configuración
+- `apps/admin/public/app.js` - Lógica frontend
+
+**Backward compatibility:**
+- ✅ Campañas existentes mantienen comportamiento actual (null = horario global)
+- ✅ Sin necesidad de reconfiguración
+- ✅ Opt-in: solo campañas configuradas usan horarios custom
+
+**Documentación completa:** `docs/CALL-WINDOW-PER-CAMPAIGN-ANALYSIS.md`
+
+**Commits principales:**
+- `ffa5e6a` - Fase 1: Backend y lógica de evaluación
+- `3d1ce34` - Fase 2: Admin UI completo
+- `3aae153` - Fix: Layout de radio buttons y checkboxes
+- `912a32a` - Simplificación: Failover siempre aplicado por default
+
+---
+
 ## [0.3.1] - 2026-05-14
 
 ### Fix: Habilitado Failover Automático para Todos los Flujos
