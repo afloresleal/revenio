@@ -3205,18 +3205,19 @@ async function handleGetGhlAgents(req: express.Request, res: express.Response) {
 }
 
 async function handlePutGhlAgents(req: express.Request, res: express.Response) {
-  const parsed = labGhlAgentsSaveSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
-  }
+  try {
+    const parsed = labGhlAgentsSaveSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+    }
 
-  const { propertyKey, campaignId, agents, fallback } = parsed.data;
+    const { propertyKey, campaignId, agents, fallback } = parsed.data;
   const fallbackName = fallback?.name?.trim() || null;
   const fallbackGhlUserId = fallback?.ghlUserId?.trim() || null;
   const fallbackTransferNumber = fallback?.transferNumber?.trim() || null;
 
-  // Normalize campaignId to explicit null (not undefined) for Prisma
-  const normalizedCampaignId = campaignId ?? null;
+  // Normalize campaignId: convert undefined/null/empty to explicit null for Prisma
+  const normalizedCampaignId = campaignId?.trim() || null;
 
   const normalizedAgents = agents.map((agent, index) => ({
     propertyKey,
@@ -3230,15 +3231,19 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
 
   const savedAgents = await prisma.$transaction(async (tx) => {
     // For nullable fields in Prisma, we need explicit null handling
-    const whereClause = normalizedCampaignId
+    const whereClause = normalizedCampaignId !== null
       ? { propertyKey, campaignId: normalizedCampaignId }
       : { propertyKey, campaignId: null };
 
-    await tx.ghlHumanAgent.deleteMany({ where: whereClause });
-    await tx.ghlAgentPoolSetting.deleteMany({ where: whereClause });
+    console.log("[handlePutGhlAgents] Deleting with whereClause:", whereClause);
+    const deletedAgents = await tx.ghlHumanAgent.deleteMany({ where: whereClause });
+    const deletedSettings = await tx.ghlAgentPoolSetting.deleteMany({ where: whereClause });
+    console.log(`[handlePutGhlAgents] Deleted ${deletedAgents.count} agents, ${deletedSettings.count} settings`);
+    console.log("[handlePutGhlAgents] Creating agents:", normalizedAgents);
     for (const agent of normalizedAgents) {
       await tx.ghlHumanAgent.create({ data: agent });
     }
+    console.log("[handlePutGhlAgents] Successfully created all agents");
     if (fallbackName || fallbackGhlUserId || fallbackTransferNumber) {
       await tx.ghlAgentPoolSetting.create({
         data: {
@@ -3256,17 +3261,26 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
     });
   });
 
-  return res.json({
-    ok: true,
-    propertyKey,
-    campaignId: normalizedCampaignId,
-    agents: savedAgents,
-    fallback: {
-      name: fallbackName ?? "",
-      ghlUserId: fallbackGhlUserId ?? "",
-      transferNumber: fallbackTransferNumber ?? "",
-    },
-  });
+    return res.json({
+      ok: true,
+      propertyKey,
+      campaignId: normalizedCampaignId,
+      agents: savedAgents,
+      fallback: {
+        name: fallbackName ?? "",
+        ghlUserId: fallbackGhlUserId ?? "",
+        transferNumber: fallbackTransferNumber ?? "",
+      },
+    });
+  } catch (error: any) {
+    console.error("[handlePutGhlAgents] Error:", error);
+    return res.status(500).json({
+      error: "agent_save_failed",
+      message: error.message,
+      code: error.code,
+      details: error.meta,
+    });
+  }
 }
 
 app.get("/lab/ghl-agents", handleGetGhlAgents);
