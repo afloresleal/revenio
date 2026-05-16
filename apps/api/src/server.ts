@@ -3230,20 +3230,25 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
   }));
 
   const savedAgents = await prisma.$transaction(async (tx) => {
-    // For nullable fields in Prisma, we need explicit null handling
-    const whereClause = normalizedCampaignId !== null
+    // Strategy: Delete existing agents for this scope, then create fresh ones
+    // This avoids unique constraint violations and campaignId inconsistency issues
+    const scopeFilter = normalizedCampaignId !== null
       ? { propertyKey, campaignId: normalizedCampaignId }
       : { propertyKey, campaignId: null };
 
-    console.log("[handlePutGhlAgents] Deleting with whereClause:", whereClause);
-    const deletedAgents = await tx.ghlHumanAgent.deleteMany({ where: whereClause });
-    const deletedSettings = await tx.ghlAgentPoolSetting.deleteMany({ where: whereClause });
-    console.log(`[handlePutGhlAgents] Deleted ${deletedAgents.count} agents, ${deletedSettings.count} settings`);
+    console.log("[handlePutGhlAgents] Deleting existing agents with scopeFilter:", scopeFilter);
+    const deletedAgents = await tx.ghlHumanAgent.deleteMany({ where: scopeFilter });
+    console.log(`[handlePutGhlAgents] Deleted ${deletedAgents.count} agents`);
+
+    // Create new agents
     console.log("[handlePutGhlAgents] Creating agents:", normalizedAgents);
     for (const agent of normalizedAgents) {
       await tx.ghlHumanAgent.create({ data: agent });
     }
     console.log("[handlePutGhlAgents] Successfully created all agents");
+
+    // Handle fallback settings
+    await tx.ghlAgentPoolSetting.deleteMany({ where: scopeFilter });
     if (fallbackName || fallbackGhlUserId || fallbackTransferNumber) {
       await tx.ghlAgentPoolSetting.create({
         data: {
@@ -3255,8 +3260,9 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
         },
       });
     }
+    // Return only the agents for this specific campaign
     return tx.ghlHumanAgent.findMany({
-      where: whereClause,
+      where: scopeFilter,
       orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
     });
   });
