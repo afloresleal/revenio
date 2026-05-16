@@ -1,6 +1,6 @@
 # 📚 Índice de Documentación — Revenio
 
-> **Última actualización:** 2026-05-14 (10 archivos archivados)
+> **Última actualización:** 2026-05-16 (agregado testing & code review guidelines)
 
 Este índice organiza toda la documentación de Revenio por estado y propósito.
 
@@ -16,6 +16,7 @@ Documentos de referencia que se mantienen actualizados.
 | [ACTIVE-api-reference.md](ACTIVE-api-reference.md) | Referencia de endpoints API de Revenio | 2026-05-12 |
 | [ACTIVE-architecture.md](ACTIVE-architecture.md) | Arquitectura del sistema: flujos, componentes, integración Vapi/Twilio | 2026-05-07 |
 | [ACTIVE-vapi-config.md](ACTIVE-vapi-config.md) | Configuración de asistentes Vapi, voice settings, webhooks | 2026-05-12 |
+| [TESTING-AND-REVIEW-GUIDELINES.md](TESTING-AND-REVIEW-GUIDELINES.md) | Procesos de testing y code review: checklists, estrategias, lecciones aprendidas | 2026-05-16 |
 
 ---
 

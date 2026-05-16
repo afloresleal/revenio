@@ -272,7 +272,32 @@ export function selectCampaignTestTransfer(params: {
 
 **IMPORTANTE:** Para que funcione el flujo correcto, los Vapi Assistants deben tener:
 
-### Server Messages (en Vapi dashboard)
+### 1. Crear Transfer Tool
+
+**En Vapi Dashboard → Tools:**
+1. Click "Create Tool"
+2. Tool Name: `transfer_call_tool`
+3. Tool Type: `transferCall`
+4. Description: "Transfers call to human agent"
+5. **NO agregar destinations** (el backend responde dinámicamente via webhook)
+6. Save tool
+
+### 2. Asignar Tool al Assistant
+
+**En Vapi Dashboard → Assistants → [tu assistant]:**
+1. Ve a la pestaña "Tools"
+2. Click "+ Add Tool"
+3. Selecciona `transfer_call_tool`
+4. Save assistant
+
+### 3. Configurar Webhook Server
+
+**En Vapi Dashboard → Assistants → [tu assistant] → Webhook Server:**
+- **Server URL:**
+  - Staging: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
+  - Production: `https://revenioapi-production.up.railway.app/webhooks/vapi/events`
+
+### 4. Server Messages (en Vapi dashboard)
 
 ✅ **Activar:**
 - `transfer-destination-request` (CRÍTICO)
@@ -284,16 +309,12 @@ export function selectCampaignTestTransfer(params: {
 ❌ **Desactivar:**
 - `phone-call-control` (causa problemas de transfer)
 
-### Server URL
+### ⚠️ Errores Comunes
 
-- Staging: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
-- Production: `https://revenioapi-production.up.railway.app/webhooks/vapi/events`
-
-### NO configurar en Vapi
-
-❌ NO agregar `Forwarding Phone Number` / fallback fijo
-❌ NO agregar tool nativo `Transfer Call` con destino hardcodeado
-❌ NO agregar hooks en el assistant (Revenio los elimina con este fix)
+❌ NO agregar destinations al tool (debe quedar vacío)
+❌ NO agregar `Forwarding Phone Number` / fallback fijo en el assistant
+❌ NO agregar hooks con `blind-transfer` en el assistant (Revenio los elimina con este fix)
+❌ NO olvidar asignar el tool al assistant (crearlo no es suficiente)
 
 ## Plan de Implementación
 
