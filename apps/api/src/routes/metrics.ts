@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
+import { normalizeMetricClassification } from '../lib/metric-classification.js';
 
 const router = Router();
 // Minimum duration fallback for transfer connection heuristic.
@@ -17,7 +18,6 @@ const MAX_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_MAX_LIMIT ?? 500)
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
-const CONNECTED_TRANSFER_STATUSES = new Set(['in-progress', 'answered', 'completed']);
 
 type TzDateParts = {
   year: number;
@@ -1727,55 +1727,6 @@ function sellerTalkSource(postTransferDurationSec: number | null, transferredAt:
   return 'missing';
 }
 
-function looksLikeTransferEndedReason(reason: string | null | undefined): boolean {
-  if (!reason) return false;
-  const normalized = reason.toLowerCase();
-  return normalized.includes('forward') || normalized.includes('transfer');
-}
-
-function normalizeMetricClassification(input: {
-  outcome: string | null;
-  sentiment: string | null;
-  endedReason: string | null;
-  transferredAt: Date | null;
-  endedAt: Date | null;
-  twilioTransferCallSid: string | null;
-  transferStatus: string | null;
-  postTransferDurationSec: number | null;
-}) {
-  const transferStatus = (input.transferStatus || '').toLowerCase();
-  const timeAfterTransferSec = diffSeconds(input.transferredAt, input.endedAt) ?? 0;
-  const hasConnectedTransfer =
-    (input.postTransferDurationSec ?? 0) > 0 ||
-    CONNECTED_TRANSFER_STATUSES.has(transferStatus) ||
-    (!!input.transferredAt && timeAfterTransferSec > 0);
-  const transferAttempted =
-    hasConnectedTransfer ||
-    !!input.twilioTransferCallSid ||
-    !!input.transferredAt ||
-    !!input.transferStatus ||
-    looksLikeTransferEndedReason(input.endedReason) ||
-    input.outcome === 'transfer_success';
-
-  let outcome = input.outcome ?? 'completed';
-  if (hasConnectedTransfer) {
-    outcome = 'transfer_success';
-  } else if (outcome === 'transfer_success' && !transferAttempted) {
-    outcome = 'completed';
-  }
-
-  let sentiment = input.sentiment ?? 'neutral';
-  if (outcome === 'transfer_success') sentiment = 'positive';
-  else if (outcome === 'abandoned' || outcome === 'failed') sentiment = 'negative';
-  else if (!sentiment || sentiment === 'negative') sentiment = 'neutral';
-
-  return {
-    outcome,
-    sentiment,
-    hasConnectedTransfer,
-    transferAttempted,
-  };
-}
 
 type DataSource = 'twilio' | 'vapi' | 'missing';
 

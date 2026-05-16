@@ -1400,6 +1400,15 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
                 } as any,
               },
             });
+            if (callIdForMetrics) {
+              await prisma.callMetric.updateMany({
+                where: { callId: callIdForMetrics },
+                data: {
+                  outcome: "transfer_success",
+                  sentiment: "positive",
+                },
+              });
+            }
           }
         } catch (error) {
           console.warn("round_robin_answered_agent_update_failed", {
@@ -1457,7 +1466,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           const callbackUrlXml = escapeXml(callbackUrl);
           const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
           const nextTransferNumberXml = escapeXml(twimlFailoverResult.nextTransferNumber);
-          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
+          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
           return sendTwimlResponse(res, xml, {
             branch: "dial-callback-failover-next-agent",
             callSid: context.callSid,
@@ -2014,7 +2023,7 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration,
       endedReason,
-      outcome: isEnded ? (endedReason === "assistant-forwarded-call" ? "transfer_success" : "completed") : "in_progress",
+      outcome: isEnded ? "completed" : "in_progress",
       sentiment: isEnded ? "neutral" : undefined,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
@@ -2031,7 +2040,7 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration ?? undefined,
       endedReason,
-      outcome: isEnded ? (endedReason === "assistant-forwarded-call" ? "transfer_success" : "completed") : "in_progress",
+      outcome: isEnded ? "completed" : "in_progress",
       sentiment: isEnded ? "neutral" : undefined,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
