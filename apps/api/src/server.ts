@@ -3214,9 +3214,13 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
   const fallbackName = fallback?.name?.trim() || null;
   const fallbackGhlUserId = fallback?.ghlUserId?.trim() || null;
   const fallbackTransferNumber = fallback?.transferNumber?.trim() || null;
+
+  // Normalize campaignId to explicit null (not undefined) for Prisma
+  const normalizedCampaignId = campaignId ?? null;
+
   const normalizedAgents = agents.map((agent, index) => ({
     propertyKey,
-    campaignId: campaignId ?? null,
+    campaignId: normalizedCampaignId,
     name: agent.name.trim(),
     ghlUserId: agent.ghlUserId.trim(),
     transferNumber: agent.transferNumber.trim(),
@@ -3225,12 +3229,13 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
   }));
 
   const savedAgents = await prisma.$transaction(async (tx) => {
-    await tx.ghlHumanAgent.deleteMany({
-      where: { propertyKey, campaignId: campaignId ?? null },
-    });
-    await tx.ghlAgentPoolSetting.deleteMany({
-      where: { propertyKey, campaignId: campaignId ?? null },
-    });
+    // For nullable fields in Prisma, we need explicit null handling
+    const whereClause = normalizedCampaignId
+      ? { propertyKey, campaignId: normalizedCampaignId }
+      : { propertyKey, campaignId: null };
+
+    await tx.ghlHumanAgent.deleteMany({ where: whereClause });
+    await tx.ghlAgentPoolSetting.deleteMany({ where: whereClause });
     for (const agent of normalizedAgents) {
       await tx.ghlHumanAgent.create({ data: agent });
     }
@@ -3238,7 +3243,7 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
       await tx.ghlAgentPoolSetting.create({
         data: {
           propertyKey,
-          campaignId: campaignId ?? null,
+          campaignId: normalizedCampaignId,
           fallbackName,
           fallbackGhlUserId,
           fallbackTransferNumber,
@@ -3246,7 +3251,7 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
       });
     }
     return tx.ghlHumanAgent.findMany({
-      where: { propertyKey, campaignId: campaignId ?? null },
+      where: whereClause,
       orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
     });
   });
@@ -3254,7 +3259,7 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
   return res.json({
     ok: true,
     propertyKey,
-    campaignId: campaignId ?? null,
+    campaignId: normalizedCampaignId,
     agents: savedAgents,
     fallback: {
       name: fallbackName ?? "",
