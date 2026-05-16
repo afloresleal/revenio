@@ -139,7 +139,7 @@ function normalizePhoneForMatch(value: string | null | undefined): string {
  * Unlike blind-transfer, warm-transfer respects AMD and enables failover.
  * Transfer destination is obtained dynamically via transfer-destination-request webhook.
  */
-function buildImmediateWarmTransferHook(): Record<string, unknown> {
+export function buildImmediateWarmTransferHook(): Record<string, unknown> {
   return {
     on: 'call.timeElapsed',
     options: { seconds: 12 }, // After firstMessage completes (~12 sec)
@@ -150,10 +150,6 @@ function buildImmediateWarmTransferHook(): Record<string, unknown> {
           type: 'transferCall',
           destinations: [], // No hardcoded destination - uses webhook
           messages: [
-            {
-              type: 'request-start',
-              content: 'Perfect. Connecting you now.',
-            },
             {
               type: 'request-failed',
               content: 'I apologize, our specialists are currently busy. We will call you back within 30 minutes. Thank you!',
@@ -718,7 +714,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
       const callbackUrlXml = escapeXml(callbackUrl);
       const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
       const fallbackTransferNumberXml = escapeXml(fallbackTransferNumber);
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${fallbackTransferNumberXml}</Number></Dial></Response>`;
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${fallbackTransferNumberXml}</Number></Dial></Response>`;
       const twilioResp = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
         {
@@ -847,7 +843,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   const callbackUrlXml = escapeXml(callbackUrl);
   const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const nextTransferNumberXml = escapeXml(nextAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
@@ -1001,7 +997,7 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   const callbackUrlXml = escapeXml(callbackUrl);
   const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const currentTransferNumberXml = escapeXml(currentAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {

@@ -25,6 +25,7 @@ import {
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
 import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
+import { classifyTransferAnswer } from "./lib/transfer-failover.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -38,8 +39,6 @@ function resolvePublicApiBaseUrl(): string {
 }
 const PUBLIC_API_BASE_URL = resolvePublicApiBaseUrl();
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
-const FAILOVER_ANSWERED_STATUSES = new Set(["in-progress", "answered"]);
-const FAILOVER_MACHINE_ANSWER_PREFIXES = ["machine", "fax"];
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
   "completed",
@@ -481,11 +480,6 @@ function clearFailoverTimer(timerKey: string) {
 
 function asFiniteInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
-}
-
-function isMachineAnswered(answeredBy: string | null): boolean {
-  if (!answeredBy) return false;
-  return FAILOVER_MACHINE_ANSWER_PREFIXES.some((prefix) => answeredBy.startsWith(prefix));
 }
 
 function mapStatusToFailoverReason(status: string | null): Exclude<AgentFailoverReason, "ring-timeout" | "voicemail"> | null {
@@ -1350,11 +1344,11 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
       });
     } else {
       const effectiveStatusForReason = dialCallStatus ?? normalizedStatus;
-      const machineAnswered = isMachineAnswered(answeredBy);
-      const isAnsweredStatus =
-        FAILOVER_ANSWERED_STATUSES.has(normalizedStatus) ||
-        FAILOVER_ANSWERED_STATUSES.has(dialCallStatus ?? "");
-      const isHumanAnswered = isAnsweredStatus && !machineAnswered;
+      const { machineAnswered, humanAnswered: isHumanAnswered } = classifyTransferAnswer({
+        normalizedStatus,
+        dialCallStatus,
+        answeredBy,
+      });
       const statusFailoverReason = mapStatusToFailoverReason(effectiveStatusForReason);
       const isCompletedWithoutAnswer =
         (normalizedStatus === "completed" || dialCallStatus === "completed") &&
@@ -1463,7 +1457,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           const callbackUrlXml = escapeXml(callbackUrl);
           const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
           const nextTransferNumberXml = escapeXml(twimlFailoverResult.nextTransferNumber);
-          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
+          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
           return sendTwimlResponse(res, xml, {
             branch: "dial-callback-failover-next-agent",
             callSid: context.callSid,
