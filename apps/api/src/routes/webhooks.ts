@@ -133,6 +133,38 @@ function sanitizeName(name: string): string {
 function normalizePhoneForMatch(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '');
 }
+
+/**
+ * Builds a Vapi hook to automatically trigger warm transfer after firstMessage.
+ * Unlike blind-transfer, warm-transfer respects AMD and enables failover.
+ * Transfer destination is obtained dynamically via transfer-destination-request webhook.
+ */
+function buildImmediateWarmTransferHook(): Record<string, unknown> {
+  return {
+    on: 'call.timeElapsed',
+    options: { seconds: 12 }, // After firstMessage completes (~12 sec)
+    do: [
+      {
+        type: 'tool',
+        tool: {
+          type: 'transferCall',
+          destinations: [], // No hardcoded destination - uses webhook
+          messages: [
+            {
+              type: 'request-start',
+              content: 'Perfect. Connecting you now.',
+            },
+            {
+              type: 'request-failed',
+              content: 'I apologize, our specialists are currently busy. We will call you back within 30 minutes. Thank you!',
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
@@ -148,10 +180,12 @@ function buildAssistantOverrides(
   const overrides: Record<string, unknown> = { metadata };
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
 
-  // NOTE: We do NOT add blind-transfer hooks here.
-  // Instead, we let Vapi request transfer via transfer-destination-request webhook.
-  // This enables AMD (Answering Machine Detection) and automatic failover when agents don't answer.
-  // The backend already handles transfer-destination-request in processTransferUpdate() (line 2295-2374).
+  // Auto-trigger warm transfer after firstMessage completes
+  // Uses warm-transfer mode to enable AMD and failover (unlike blind-transfer)
+  // Transfer destination obtained dynamically via transfer-destination-request webhook
+  if (transferNumber) {
+    overrides.hooks = [buildImmediateWarmTransferHook()];
+  }
 
   return overrides;
 }

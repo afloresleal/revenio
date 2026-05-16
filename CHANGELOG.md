@@ -2,6 +2,50 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.3] - 2026-05-16
+
+### Fix: Auto-Transfer Inmediato con Warm-Transfer Mode
+
+**Problema:** Después de remover blind-transfer (v0.3.1), el assistant esperaba respuesta del usuario antes de ejecutar el transfer, causando delays de 9-12 segundos y permitiendo interrupciones.
+
+**Solución:** Implementar hook auto-trigger con warm-transfer mode que ejecuta el transfer automáticamente después del firstMessage, manteniendo AMD y failover activos.
+
+**Approach técnico:**
+- **Hook Vapi:** `call.timeElapsed` con 12 segundos (duración del firstMessage)
+- **Transfer mode:** `warm-transfer-experimental` (NO blind-transfer)
+- **Destino dinámico:** Sin destinations hardcoded, usa `transfer-destination-request` webhook
+- **AMD habilitado:** Twilio detecta answering machines y activa failover
+- **Round robin:** Failover automático funciona correctamente
+
+**Comportamiento esperado:**
+1. Assistant dice firstMessage completo (~12 seg)
+2. Hook dispara `transferCall` automáticamente
+3. Vapi solicita destino vía webhook `transfer-destination-request`
+4. Backend responde con número dinámico (round robin o del request)
+5. Transfer se ejecuta con AMD y failover habilitados
+
+**Diferencia vs blind-transfer:**
+| Feature | Blind-transfer (v0.2) | Warm-transfer hook (v0.3.3) |
+|---------|----------------------|----------------------------|
+| Transfer inmediato | ✅ Sí | ✅ Sí |
+| AMD habilitado | ❌ No | ✅ Sí |
+| Failover funciona | ❌ No | ✅ Sí |
+| Destino dinámico | ❌ Hardcoded | ✅ Webhook |
+
+**Archivos modificados:**
+- `apps/api/src/routes/webhooks.ts` - Agregado `buildImmediateWarmTransferHook()`
+- `apps/api/src/routes/webhooks.ts` - Modificado `buildAssistantOverrides()` para incluir hook
+
+**Testing:**
+- ✅ Transfer se dispara inmediatamente después del firstMessage
+- ✅ No espera respuesta del usuario
+- ✅ AMD detecta voicemail y activa failover
+- ✅ Round robin funciona con múltiples agentes
+
+**Reported by:** Marina + testing con assistant `Isla-Blanca_v.corta`
+
+---
+
 ## [0.3.2] - 2026-05-14
 
 ### Feature: Horario de Llamadas por Campaña
@@ -81,6 +125,14 @@ Todas las llamadas usaban `blind-transfer` (transferencia ciega) via hooks de Va
 - `apps/api/src/server.ts` - Mismo cambio en función duplicada
 - Eliminada función `buildImmediateTransferHook()` (ya no se usa)
 
+**Configuración requerida en Vapi Dashboard:**
+- ⚠️ **CRÍTICO**: Cada assistant debe tener el tool `transferCall` configurado:
+  1. Crear tool `transfer_call_tool` en Tools section
+  2. Agregar el tool al assistant en la sección "Tools"
+  3. Configurar Webhook Server URL: `https://revenioapi-[env].up.railway.app/webhooks/vapi/events`
+  4. El tool NO necesita destinations configuradas (backend responde dinámicamente)
+- Sin esta configuración, las transferencias fallarán silenciosamente
+
 **Impacto:**
 - ✅ Todos los endpoints de llamadas ahora usan AMD + failover automático:
   - `POST /webhooks/gohighlevel` (Webhook GHL)
@@ -91,7 +143,7 @@ Todas las llamadas usaban `blind-transfer` (transferencia ciega) via hooks de Va
 - ✅ Dashboard muestra quién no respondió y por qué
 - ✅ Mejor tasa de conexión con agentes humanos
 
-**Referencia técnica completa:** `docs/BLIND-TRANSFER-FIX-2026-05-14.md`
+**Referencia técnica completa:** `docs/IMPLEMENTED-2026-05-14-blind-transfer-fix.md`
 
 **Nota:** Este fix es **distinto** del trabajo sobre detección de voicemail del cliente implementado en v0.3.0. Ese detecta cuando el **cliente** no contesta. Este fix habilita failover cuando el **agente** no contesta.
 
