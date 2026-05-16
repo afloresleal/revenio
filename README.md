@@ -9,6 +9,46 @@ Incluye:
 
 ---
 
+## ⚠️ IMPORTANTE: Para Developers / Claude AI
+
+**Este es código de producción que maneja llamadas telefónicas en vivo.**
+
+### 🤖 Si eres Claude AI trabajando en este repo:
+
+**ANTES de escribir código, DEBES leer:**
+
+1. **`.claude/README.md`** ⭐ - Instrucciones MANDATORY para Claude
+2. **`.claude-checklist.md`** ⭐ - Checklist paso a paso (NO omitir)
+3. **`docs/TESTING-AND-REVIEW-GUIDELINES.md`** - Estrategia de testing
+
+**Estos documentos previenen bugs de producción.** No son opcionales.
+
+### 👨‍💻 Si eres developer humano:
+
+**Proceso de desarrollo:**
+
+```bash
+# 1. ANTES de implementar:
+#    Lee .claude-checklist.md para entender el proceso
+
+# 2. DURANTE implementación:
+#    Si agregas campos a DB, verifica propagación:
+./scripts/check-field-propagation.sh <fieldName> <modelName>
+
+# 3. ANTES de commit:
+./scripts/pre-commit-check.sh
+```
+
+**Reglas de oro:**
+- ✅ Todo cambio debe tener tests
+- ✅ Si agregas campo a modelo DB → actualizar TODAS las funciones de mapping
+- ✅ Si requiere config externa (Vapi/Twilio) → documentar en CHANGELOG
+- ✅ Buscar tipos duplicados antes de modificar: `grep -r "type ModelName" apps/api/src/`
+
+**Ver:** `scripts/README.md` para documentación completa de scripts de testing.
+
+---
+
 ## 1) Arquitectura (resumen)
 
 ### Flujo principal
@@ -33,9 +73,9 @@ Referencia: [docs/VAPI-CONFIG.md](docs/VAPI-CONFIG.md)
 .
 ├─ apps/
 │  ├─ api/              # API principal
+│  ├─ admin/            # Panel de administración
 │  └─ lab/              # UI estatica para debug
-├─ dashboard/           # Dashboard legacy (vanilla)
-├─ dashboard-v2/        # Dashboard actual (React + Vite)
+├─ dashboard-v2/        # Dashboard de métricas (React + Vite)
 ├─ docs/
 ├─ docker-compose.yml
 └─ package.json         # workspaces (apps/*, packages/*)
@@ -323,7 +363,110 @@ Validar `DATABASE_URL` correcta para el entorno (local vs Railway interna/public
 
 ---
 
-## 10) Comandos utiles
+## 10) Testing y Validación
+
+### Scripts de validación
+
+```bash
+# Pre-commit checks (run before committing)
+./scripts/pre-commit-check.sh
+
+# Check field propagation when adding DB fields
+./scripts/check-field-propagation.sh <fieldName> [modelName]
+
+# Example: verify callWindowEndHour propagated correctly
+./scripts/check-field-propagation.sh callWindowEndHour GhlCampaign
+```
+
+**Ver:** `scripts/README.md` para documentación completa de scripts
+
+### Comandos de testing
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test file
+npm -w apps/api test apps/api/test/webhooks-resolve-ghl-campaign.test.ts
+
+# TypeScript type check (no build)
+npm -w apps/api exec tsc --noEmit
+
+# Build check
+npm -w apps/api run build
+```
+
+### Workflow de Desarrollo Completo
+
+**Ejemplo: Agregar campo `newField` al modelo `GhlCampaign`**
+
+```bash
+# ============================================
+# PASO 1: INVESTIGAR (antes de tocar código)
+# ============================================
+# Buscar tipos duplicados
+grep -r "type GhlCampaign" apps/api/src/
+# Output:
+#   apps/api/src/lib/ghl-campaigns.ts:export type GhlCampaignConfig
+#   apps/api/src/routes/webhooks.ts:type GhlCampaignConfig
+# ⚠️ Encontré 2 tipos! Debo actualizar AMBOS
+
+# Buscar funciones de mapping
+grep -r "function.*resolve.*GhlCampaign" apps/api/src/
+grep -r "function.*normalize.*GhlCampaign" apps/api/src/
+# Output:
+#   apps/api/src/routes/webhooks.ts: resolveGhlCampaign()
+#   apps/api/src/lib/ghl-campaigns.ts: normalizeStoredGhlCampaign()
+# ⚠️ Debo actualizar AMBAS funciones
+
+# ============================================
+# PASO 2: IMPLEMENTAR
+# ============================================
+# 1. Crear migración Prisma
+npm -w apps/api exec prisma migrate dev --name add_new_field
+
+# 2. Actualizar schema.prisma
+# 3. Actualizar AMBOS tipos TypeScript (encontrados en paso 1)
+# 4. Actualizar AMBAS funciones de mapping (encontradas en paso 1)
+# 5. Escribir test de propagación
+
+# ============================================
+# PASO 3: VERIFICAR PROPAGACIÓN
+# ============================================
+./scripts/check-field-propagation.sh newField GhlCampaign
+# Output esperado:
+#   ✅ Found in schema.prisma
+#   ✅ Found in 2 TypeScript types
+#   ✅ Uses newField in resolveGhlCampaign()
+#   ✅ Uses newField in normalizeStoredGhlCampaign()
+#   ✅ Found in tests
+
+# ============================================
+# PASO 4: PRE-COMMIT CHECKS
+# ============================================
+./scripts/pre-commit-check.sh
+# Output esperado:
+#   ✅ TypeScript compiles without errors
+#   ✅ Build successful
+#   ✅ All tests passing
+#   ✅ No hardcoded secrets detected
+#   ✅ CHANGELOG.md updated
+
+# ============================================
+# PASO 5: COMMIT
+# ============================================
+git add .
+git commit -m "feat: add newField to GhlCampaign model"
+```
+
+**Archivos clave para consultar:**
+- `.claude-checklist.md` - Checklist paso a paso (mandatory para Claude)
+- `docs/TESTING-AND-REVIEW-GUIDELINES.md` - Proceso completo de testing
+- `scripts/README.md` - Documentación de scripts de validación
+
+---
+
+## 11) Comandos utiles
 
 ```bash
 # Build API

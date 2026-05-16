@@ -24,6 +24,8 @@ import {
   normalizeStoredGhlCampaign,
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
+import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
+import { classifyTransferAnswer } from "./lib/transfer-failover.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -37,8 +39,6 @@ function resolvePublicApiBaseUrl(): string {
 }
 const PUBLIC_API_BASE_URL = resolvePublicApiBaseUrl();
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
-const FAILOVER_ANSWERED_STATUSES = new Set(["in-progress", "answered"]);
-const FAILOVER_MACHINE_ANSWER_PREFIXES = ["machine", "fax"];
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
   "completed",
@@ -61,10 +61,15 @@ app.use(cors({
     'http://127.0.0.1:5173',
     'http://127.0.0.1:5175',
     'https://revenio.austack.app',
-    // Railway domains
+    // Railway domains - Production
     'https://revenioapi-production.up.railway.app',
     'https://revenio-lab-production.up.railway.app',
-    /\.up\.railway\.app$/,  // Any Railway subdomain
+    'https://revenio-admin-production.up.railway.app',
+    // Railway domains - Staging
+    'https://revenioapi-staging.up.railway.app',
+    'https://revenio-lab-staging.up.railway.app',
+    'https://revenio-admin-staging.up.railway.app',
+    /\.up\.railway\.app$/,  // Any Railway subdomain (fallback)
     process.env.DASHBOARD_URL,
   ].filter(Boolean) as (string | RegExp)[],
   credentials: true,
@@ -475,11 +480,6 @@ function clearFailoverTimer(timerKey: string) {
 
 function asFiniteInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
-}
-
-function isMachineAnswered(answeredBy: string | null): boolean {
-  if (!answeredBy) return false;
-  return FAILOVER_MACHINE_ANSWER_PREFIXES.some((prefix) => answeredBy.startsWith(prefix));
 }
 
 function mapStatusToFailoverReason(status: string | null): Exclude<AgentFailoverReason, "ring-timeout" | "voicemail"> | null {
@@ -1344,11 +1344,11 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
       });
     } else {
       const effectiveStatusForReason = dialCallStatus ?? normalizedStatus;
-      const machineAnswered = isMachineAnswered(answeredBy);
-      const isAnsweredStatus =
-        FAILOVER_ANSWERED_STATUSES.has(normalizedStatus) ||
-        FAILOVER_ANSWERED_STATUSES.has(dialCallStatus ?? "");
-      const isHumanAnswered = isAnsweredStatus && !machineAnswered;
+      const { machineAnswered, humanAnswered: isHumanAnswered } = classifyTransferAnswer({
+        normalizedStatus,
+        dialCallStatus,
+        answeredBy,
+      });
       const statusFailoverReason = mapStatusToFailoverReason(effectiveStatusForReason);
       const isCompletedWithoutAnswer =
         (normalizedStatus === "completed" || dialCallStatus === "completed") &&
@@ -1400,6 +1400,15 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
                 } as any,
               },
             });
+            if (callIdForMetrics) {
+              await prisma.callMetric.updateMany({
+                where: { callId: callIdForMetrics },
+                data: {
+                  outcome: "transfer_success",
+                  sentiment: "positive",
+                },
+              });
+            }
           }
         } catch (error) {
           console.warn("round_robin_answered_agent_update_failed", {
@@ -1457,7 +1466,7 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
           const callbackUrlXml = escapeXml(callbackUrl);
           const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
           const nextTransferNumberXml = escapeXml(twimlFailoverResult.nextTransferNumber);
-          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
+          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
           return sendTwimlResponse(res, xml, {
             branch: "dial-callback-failover-next-agent",
             callSid: context.callSid,
@@ -2014,7 +2023,7 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration,
       endedReason,
-      outcome: isEnded ? (endedReason === "assistant-forwarded-call" ? "transfer_success" : "completed") : "in_progress",
+      outcome: isEnded ? "completed" : "in_progress",
       sentiment: isEnded ? "neutral" : undefined,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
@@ -2031,7 +2040,7 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration ?? undefined,
       endedReason,
-      outcome: isEnded ? (endedReason === "assistant-forwarded-call" ? "transfer_success" : "completed") : "in_progress",
+      outcome: isEnded ? "completed" : "in_progress",
       sentiment: isEnded ? "neutral" : undefined,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
@@ -3200,18 +3209,23 @@ async function handleGetGhlAgents(req: express.Request, res: express.Response) {
 }
 
 async function handlePutGhlAgents(req: express.Request, res: express.Response) {
-  const parsed = labGhlAgentsSaveSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
-  }
+  try {
+    const parsed = labGhlAgentsSaveSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+    }
 
-  const { propertyKey, campaignId, agents, fallback } = parsed.data;
+    const { propertyKey, campaignId, agents, fallback } = parsed.data;
   const fallbackName = fallback?.name?.trim() || null;
   const fallbackGhlUserId = fallback?.ghlUserId?.trim() || null;
   const fallbackTransferNumber = fallback?.transferNumber?.trim() || null;
+
+  // Normalize campaignId: convert undefined/null/empty to explicit null for Prisma
+  const normalizedCampaignId = campaignId?.trim() || null;
+
   const normalizedAgents = agents.map((agent, index) => ({
     propertyKey,
-    campaignId: campaignId ?? null,
+    campaignId: normalizedCampaignId,
     name: agent.name.trim(),
     ghlUserId: agent.ghlUserId.trim(),
     transferNumber: agent.transferNumber.trim(),
@@ -3219,44 +3233,73 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
     active: agent.active ?? true,
   }));
 
+  const duplicateGhlUserIds = findDuplicateGhlUserIds(normalizedAgents);
+  if (duplicateGhlUserIds.length) {
+    return res.status(400).json({
+      error: "duplicate_ghl_user_id",
+      message: "Cada agente debe tener un GHL User ID distinto.",
+      duplicateGhlUserIds,
+    });
+  }
+
   const savedAgents = await prisma.$transaction(async (tx) => {
-    await tx.ghlHumanAgent.deleteMany({
-      where: { propertyKey, campaignId: campaignId ?? null },
-    });
-    await tx.ghlAgentPoolSetting.deleteMany({
-      where: { propertyKey, campaignId: campaignId ?? null },
-    });
+    // Strategy: Delete existing agents for this scope, then create fresh ones
+    // This avoids unique constraint violations and campaignId inconsistency issues
+    const scopeFilter = normalizedCampaignId !== null
+      ? { propertyKey, campaignId: normalizedCampaignId }
+      : { propertyKey, campaignId: null };
+
+    console.log("[handlePutGhlAgents] Deleting existing agents with scopeFilter:", scopeFilter);
+    const deletedAgents = await tx.ghlHumanAgent.deleteMany({ where: scopeFilter });
+    console.log(`[handlePutGhlAgents] Deleted ${deletedAgents.count} agents`);
+
+    // Create new agents
+    console.log("[handlePutGhlAgents] Creating agents:", normalizedAgents);
     for (const agent of normalizedAgents) {
       await tx.ghlHumanAgent.create({ data: agent });
     }
+    console.log("[handlePutGhlAgents] Successfully created all agents");
+
+    // Handle fallback settings
+    await tx.ghlAgentPoolSetting.deleteMany({ where: scopeFilter });
     if (fallbackName || fallbackGhlUserId || fallbackTransferNumber) {
       await tx.ghlAgentPoolSetting.create({
         data: {
           propertyKey,
-          campaignId: campaignId ?? null,
+          campaignId: normalizedCampaignId,
           fallbackName,
           fallbackGhlUserId,
           fallbackTransferNumber,
         },
       });
     }
+    // Return only the agents for this specific campaign
     return tx.ghlHumanAgent.findMany({
-      where: { propertyKey, campaignId: campaignId ?? null },
+      where: scopeFilter,
       orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
     });
   });
 
-  return res.json({
-    ok: true,
-    propertyKey,
-    campaignId: campaignId ?? null,
-    agents: savedAgents,
-    fallback: {
-      name: fallbackName ?? "",
-      ghlUserId: fallbackGhlUserId ?? "",
-      transferNumber: fallbackTransferNumber ?? "",
-    },
-  });
+    return res.json({
+      ok: true,
+      propertyKey,
+      campaignId: normalizedCampaignId,
+      agents: savedAgents,
+      fallback: {
+        name: fallbackName ?? "",
+        ghlUserId: fallbackGhlUserId ?? "",
+        transferNumber: fallbackTransferNumber ?? "",
+      },
+    });
+  } catch (error: any) {
+    console.error("[handlePutGhlAgents] Error:", error);
+    return res.status(500).json({
+      error: "agent_save_failed",
+      message: error.message,
+      code: error.code,
+      details: error.meta,
+    });
+  }
 }
 
 app.get("/lab/ghl-agents", handleGetGhlAgents);

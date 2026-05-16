@@ -2,6 +2,182 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.5] - 2026-05-16
+
+### Fix: Transferencias a Agentes Humanos y Clasificación de Buzón
+
+**Problemas detectados durante testing en staging:**
+- El assistant confirmaba la transferencia en inglés antes de conectar al asesor.
+- Algunos buzones de voz de agentes humanos seguían siendo tratados como si hubiera contestado una persona.
+- Llamadas conectadas a buzón podían aparecer como `transfer_success` aunque ningún humano hubiera respondido.
+
+**Solución implementada:**
+- Eliminado el mensaje `request-start` que provocaba la frase en inglés durante el handoff.
+- La llamada solo se considera atendida por humano cuando Twilio reporta explícitamente `AnsweredBy=human`.
+- Ajustada la detección AMD de Twilio para buzones cortos con `machineDetectionSpeechEndThreshold="2500"`.
+- Separada la noción de:
+  - llamada transferida/conectada
+  - llamada realmente atendida por humano
+- `transfer_success` ahora se registra solo cuando hay confirmación humana real.
+
+**Comportamiento validado en staging:**
+- Diana -> Arturo -> Marina ejecutó round robin completo.
+- El sistema saltó correctamente los primeros dos intentos fallidos.
+- Cuando ningún agente humano atendió, `roundRobinAnsweredAgentName` quedó en `null`.
+- La llamada dejó de contarse como éxito falso cuando terminó en buzón.
+
+**Archivos principales:**
+- `apps/api/src/routes/webhooks.ts`
+- `apps/api/src/server.ts`
+- `apps/api/src/lib/transfer-failover.ts`
+- `apps/api/src/lib/metric-classification.ts`
+- `apps/api/test/transfer-failover.test.ts`
+- `apps/api/test/metric-classification.test.ts`
+
+**Commits principales:**
+- `84863ae` - `fix: avoid voicemail transfer confirmations`
+- `2d49a11` - `fix: tune amd and require human-confirmed transfers`
+
+---
+
+## [0.3.4] - 2026-05-16
+
+### Fix: Admin Panel Agent Save Error
+
+**Problema reportado por:** Ale (durante testing en staging)
+
+**Síntoma:** Al intentar guardar agentes en el Admin Panel de staging, el request fallaba y el backend devolvía error de Prisma por constraint único.
+
+**Causa raíz:**
+El save podía intentar crear dos filas con el mismo `ghl_user_id` dentro del mismo batch, por ejemplo cuando un agente conservaba un ID autogenerado antiguo y otro campo vacío generaba exactamente el mismo valor.
+
+El backend devolvía:
+```
+Unique constraint failed on the fields: (`property_key`,`campaign_id`,`ghl_user_id`)
+```
+
+**Solución implementada:**
+- Mantener el manejo consistente de `campaignId` nullable.
+- Detectar IDs duplicados antes de tocar Prisma.
+- Devolver error claro `duplicate_ghl_user_id` en lugar de dejar que falle la transacción.
+- Validar duplicados también en frontend para que el usuario vea el problema antes de guardar.
+
+**Archivos modificados:**
+- `apps/api/src/server.ts`
+- `apps/api/src/lib/ghl-agents.ts`
+- `apps/admin/public/app.js`
+- `apps/api/test/ghl-agents.test.ts`
+
+**Impacto:**
+- ✅ Admin staging puede guardar y actualizar agentes sin romper por duplicados
+- ✅ El backend ya no expone el error crudo de Prisma para este caso
+- ✅ El formulario muestra una causa accionable antes de intentar guardar
+
+**Commits principales:**
+- `288387d` - `fix: handle nullable campaignId correctly in agent save operation`
+- `34d1050` - `fix: improve agent save with better null handling and error logging`
+- `e12f134` - `fix: use delete+create strategy for agent save to handle nullable campaignId`
+- `4741eef` - `fix: reject duplicate admin agent ids`
+
+---
+
+## [0.3.3] - 2026-05-16
+
+### Fix: Auto-Transfer Inmediato con Warm-Transfer Mode
+
+**Problema:** Después de remover blind-transfer (v0.3.1), el assistant esperaba respuesta del usuario antes de ejecutar el transfer, causando delays de 9-12 segundos y permitiendo interrupciones.
+
+**Solución:** Implementar hook auto-trigger con warm-transfer mode que ejecuta el transfer automáticamente después del firstMessage, manteniendo AMD y failover activos.
+
+**Approach técnico:**
+- **Hook Vapi:** `call.timeElapsed` con 12 segundos (duración del firstMessage)
+- **Transfer mode:** `warm-transfer-experimental` (NO blind-transfer)
+- **Destino dinámico:** Sin destinations hardcoded, usa `transfer-destination-request` webhook
+- **AMD habilitado:** Twilio detecta answering machines y activa failover
+- **Round robin:** Failover automático funciona correctamente
+
+**Comportamiento esperado:**
+1. Assistant dice firstMessage completo (~12 seg)
+2. Hook dispara `transferCall` automáticamente
+3. Vapi solicita destino vía webhook `transfer-destination-request`
+4. Backend responde con número dinámico (round robin o del request)
+5. Transfer se ejecuta con AMD y failover habilitados
+
+**Diferencia vs blind-transfer:**
+| Feature | Blind-transfer (v0.2) | Warm-transfer hook (v0.3.3) |
+|---------|----------------------|----------------------------|
+| Transfer inmediato | ✅ Sí | ✅ Sí |
+| AMD habilitado | ❌ No | ✅ Sí |
+| Failover funciona | ❌ No | ✅ Sí |
+| Destino dinámico | ❌ Hardcoded | ✅ Webhook |
+
+**Archivos modificados:**
+- `apps/api/src/routes/webhooks.ts` - Agregado `buildImmediateWarmTransferHook()`
+- `apps/api/src/routes/webhooks.ts` - Modificado `buildAssistantOverrides()` para incluir hook
+
+**Testing:**
+- ✅ Transfer se dispara inmediatamente después del firstMessage
+- ✅ No espera respuesta del usuario
+- ✅ AMD detecta voicemail y activa failover
+- ✅ Round robin funciona con múltiples agentes
+
+**Reported by:** Marina + testing con assistant `Isla-Blanca_v.corta`
+
+---
+
+## [0.3.2] - 2026-05-14
+
+### Feature: Horario de Llamadas por Campaña
+
+**Nueva funcionalidad:** Configuración de horarios de llamada específicos por campaña desde Admin UI.
+
+**Capacidades:**
+- **Modo Global** (default): Usa el horario configurado en Lab para toda la plataforma
+- **Modo Custom**: Horario personalizado por campaña con:
+  - Timezone específico (13 zonas horarias disponibles)
+  - Horas de inicio/fin (0-23)
+  - Días de la semana activos (Dom-Sáb)
+  - Aplicación automática al failover de round robin
+- **Modo 24/7**: Sin restricciones de horario para campañas específicas
+
+**Backend (Fase 1):**
+- 6 nuevas columnas en `ghl_campaign` (nullable para backward compatibility)
+- Lógica `evaluateCampaignCallWindow()` con 3 modos:
+  - `null` → Usa horario global (backward compatible)
+  - `false` → 24/7 sin restricciones
+  - `true` → Usa configuración específica de campaña
+- Integración en webhook GHL: valida horario antes de iniciar llamada
+
+**Frontend (Fase 2):**
+- Nueva sección "Horario de llamadas" en Admin panel
+- Radio buttons para selección de modo
+- Campos condicionales para modo custom (timezone, horas, días)
+- Persistencia en localStorage para draft state
+- Validación Zod en backend
+
+**Archivos principales:**
+- `apps/api/prisma/migrations/20260514210000_add_call_window_to_campaign/` - Migración DB
+- `apps/api/src/lib/call-window.ts` - Lógica de evaluación (~120 líneas)
+- `apps/api/src/routes/webhooks.ts:1309` - Integración en GHL webhook
+- `apps/api/src/server.ts` - Schema Zod + normalización
+- `apps/admin/public/index.html` - UI de configuración
+- `apps/admin/public/app.js` - Lógica frontend
+
+**Backward compatibility:**
+- ✅ Campañas existentes mantienen comportamiento actual (null = horario global)
+- ✅ Sin necesidad de reconfiguración
+- ✅ Opt-in: solo campañas configuradas usan horarios custom
+
+**Documentación completa:** `docs/CALL-WINDOW-PER-CAMPAIGN-ANALYSIS.md`
+
+**Commits principales:**
+- `ffa5e6a` - Fase 1: Backend y lógica de evaluación
+- `3d1ce34` - Fase 2: Admin UI completo
+- `3aae153` - Fix: Layout de radio buttons y checkboxes
+- `912a32a` - Simplificación: Failover siempre aplicado por default
+
+---
+
 ## [0.3.1] - 2026-05-14
 
 ### Fix: Habilitado Failover Automático para Todos los Flujos
@@ -28,6 +204,14 @@ Todas las llamadas usaban `blind-transfer` (transferencia ciega) via hooks de Va
 - `apps/api/src/server.ts` - Mismo cambio en función duplicada
 - Eliminada función `buildImmediateTransferHook()` (ya no se usa)
 
+**Configuración requerida en Vapi Dashboard:**
+- ⚠️ **CRÍTICO**: Cada assistant debe tener el tool `transferCall` configurado:
+  1. Crear tool `transfer_call_tool` en Tools section
+  2. Agregar el tool al assistant en la sección "Tools"
+  3. Configurar Webhook Server URL: `https://revenioapi-[env].up.railway.app/webhooks/vapi/events`
+  4. El tool NO necesita destinations configuradas (backend responde dinámicamente)
+- Sin esta configuración, las transferencias fallarán silenciosamente
+
 **Impacto:**
 - ✅ Todos los endpoints de llamadas ahora usan AMD + failover automático:
   - `POST /webhooks/gohighlevel` (Webhook GHL)
@@ -38,7 +222,7 @@ Todas las llamadas usaban `blind-transfer` (transferencia ciega) via hooks de Va
 - ✅ Dashboard muestra quién no respondió y por qué
 - ✅ Mejor tasa de conexión con agentes humanos
 
-**Referencia técnica completa:** `docs/BLIND-TRANSFER-FIX-2026-05-14.md`
+**Referencia técnica completa:** `docs/IMPLEMENTED-2026-05-14-blind-transfer-fix.md`
 
 **Nota:** Este fix es **distinto** del trabajo sobre detección de voicemail del cliente implementado en v0.3.0. Ese detecta cuando el **cliente** no contesta. Este fix habilita failover cuando el **agente** no contesta.
 

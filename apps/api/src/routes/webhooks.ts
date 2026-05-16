@@ -61,6 +61,12 @@ type GhlCampaignConfig = {
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
+  callWindowEnabled?: boolean | null;
+  callWindowTimezone?: string | null;
+  callWindowStartHour?: number | null;
+  callWindowEndHour?: number | null;
+  callWindowWeekdays?: string | null;
+  callWindowApplyToFailover?: boolean | null;
   active?: boolean;
   source?: 'db';
 };
@@ -127,6 +133,34 @@ function sanitizeName(name: string): string {
 function normalizePhoneForMatch(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '');
 }
+
+/**
+ * Builds a Vapi hook to automatically trigger warm transfer after firstMessage.
+ * Unlike blind-transfer, warm-transfer respects AMD and enables failover.
+ * Transfer destination is obtained dynamically via transfer-destination-request webhook.
+ */
+export function buildImmediateWarmTransferHook(): Record<string, unknown> {
+  return {
+    on: 'call.timeElapsed',
+    options: { seconds: 12 }, // After firstMessage completes (~12 sec)
+    do: [
+      {
+        type: 'tool',
+        tool: {
+          type: 'transferCall',
+          destinations: [], // No hardcoded destination - uses webhook
+          messages: [
+            {
+              type: 'request-failed',
+              content: 'I apologize, our specialists are currently busy. We will call you back within 30 minutes. Thank you!',
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
@@ -142,10 +176,12 @@ function buildAssistantOverrides(
   const overrides: Record<string, unknown> = { metadata };
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
 
-  // NOTE: We do NOT add blind-transfer hooks here.
-  // Instead, we let Vapi request transfer via transfer-destination-request webhook.
-  // This enables AMD (Answering Machine Detection) and automatic failover when agents don't answer.
-  // The backend already handles transfer-destination-request in processTransferUpdate() (line 2295-2374).
+  // Auto-trigger warm transfer after firstMessage completes
+  // Uses warm-transfer mode to enable AMD and failover (unlike blind-transfer)
+  // Transfer destination obtained dynamically via transfer-destination-request webhook
+  if (transferNumber) {
+    overrides.hooks = [buildImmediateWarmTransferHook()];
+  }
 
   return overrides;
 }
@@ -206,7 +242,7 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration ? Math.max(0, Math.round(duration)) : undefined,
       endedReason,
-      outcome: isEnded ? (endedReason === 'assistant-forwarded-call' ? 'transfer_success' : 'completed') : 'in_progress',
+      outcome: isEnded ? 'completed' : 'in_progress',
       sentiment: isEnded ? 'neutral' : undefined,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
@@ -223,7 +259,7 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration ? Math.max(0, Math.round(duration)) : undefined,
       endedReason,
-      outcome: isEnded ? (endedReason === 'assistant-forwarded-call' ? 'transfer_success' : 'completed') : 'in_progress',
+      outcome: isEnded ? 'completed' : 'in_progress',
       sentiment: isEnded ? 'neutral' : undefined,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
@@ -252,7 +288,7 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
   };
 }
 
-async function resolveGhlCampaign(campaignId: string | null | undefined): Promise<GhlCampaignConfig | null> {
+export async function resolveGhlCampaign(campaignId: string | null | undefined): Promise<GhlCampaignConfig | null> {
   if (!campaignId) return null;
   const dbCampaign = await prisma.ghlCampaign.findUnique({ where: { campaignId } });
   if (dbCampaign) {
@@ -272,6 +308,12 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       ghlOutcomeFieldId: dbCampaign.ghlOutcomeFieldId,
       ghlSellerTalkFieldId: dbCampaign.ghlSellerTalkFieldId,
       ghlRecordingUrlFieldId: dbCampaign.ghlRecordingUrlFieldId,
+      callWindowEnabled: dbCampaign.callWindowEnabled,
+      callWindowTimezone: dbCampaign.callWindowTimezone,
+      callWindowStartHour: dbCampaign.callWindowStartHour,
+      callWindowEndHour: dbCampaign.callWindowEndHour,
+      callWindowWeekdays: dbCampaign.callWindowWeekdays,
+      callWindowApplyToFailover: dbCampaign.callWindowApplyToFailover,
       active: dbCampaign.active,
       source: 'db',
     };
@@ -672,7 +714,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
       const callbackUrlXml = escapeXml(callbackUrl);
       const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
       const fallbackTransferNumberXml = escapeXml(fallbackTransferNumber);
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${fallbackTransferNumberXml}</Number></Dial></Response>`;
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${fallbackTransferNumberXml}</Number></Dial></Response>`;
       const twilioResp = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
         {
@@ -801,7 +843,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   const callbackUrlXml = escapeXml(callbackUrl);
   const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const nextTransferNumberXml = escapeXml(nextAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
@@ -955,7 +997,7 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   const callbackUrlXml = escapeXml(callbackUrl);
   const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const currentTransferNumberXml = escapeXml(currentAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="DetectMessageEnd" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {

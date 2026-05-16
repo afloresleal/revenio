@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { mergeDbAgentsWithFallbackAgents, orderGhlAgentsForAssignment } from "../src/lib/ghl-agents.js";
+import {
+  findDuplicateGhlUserIds,
+  mergeDbAgentsWithFallbackAgents,
+  orderGhlAgentsForAssignment,
+} from "../src/lib/ghl-agents.js";
 
 const fallbackAgents = [
   { name: "Fallback One", ghlUserId: "fallback-1", transferNumber: "+525500000001", priority: 1 },
@@ -26,6 +30,16 @@ assert.deepEqual(
   ordered.map((agent) => agent.ghlUserId),
   ["assigned-1", "marina-1"],
   "assignedTo should be first in the transfer/failover pool",
+);
+
+assert.deepEqual(
+  findDuplicateGhlUserIds([
+    { ghlUserId: "test-1:test-1:agent-3" },
+    { ghlUserId: "assigned-1" },
+    { ghlUserId: " test-1:test-1:agent-3 " },
+  ]),
+  ["test-1:test-1:agent-3"],
+  "duplicate GHL user IDs should be detected after trimming",
 );
 
 console.log("ghl-agents tests passed");
