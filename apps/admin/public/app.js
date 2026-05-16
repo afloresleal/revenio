@@ -1,4 +1,6 @@
 const $ = (id) => document.getElementById(id);
+
+// API base URLs - updated for correct environment detection
 const LOCAL_API_BASE_URL = "http://localhost:3000";
 const STAGING_API_BASE_URL = "https://revenioapi-staging.up.railway.app";
 const PRODUCTION_API_BASE_URL = "https://revenioapi-production.up.railway.app";
@@ -150,8 +152,8 @@ function apiBase() {
   const isLocal = ["localhost", "127.0.0.1", ""].includes(hostname);
   let apiUrl;
   if (isLocal) apiUrl = LOCAL_API_BASE_URL;
-  else if (hostname.includes("production")) apiUrl = PRODUCTION_API_BASE_URL;
-  else apiUrl = STAGING_API_BASE_URL;
+  else if (hostname.includes("staging")) apiUrl = STAGING_API_BASE_URL;
+  else apiUrl = PRODUCTION_API_BASE_URL;
   console.log(`[Admin] hostname: ${hostname} → API: ${apiUrl}`);
   return apiUrl;
 }
@@ -326,7 +328,7 @@ function emptyAgentRows() {
       <label>Nombre<input id="agent_name_${i}" placeholder="Ana" /></label>
       <label>GHL User ID <span class="label-muted">opcional</span><input id="agent_user_${i}" placeholder="Se puede dejar vacio" /></label>
       <label>Teléfono<input id="agent_phone_${i}" placeholder="+5255..." /></label>
-      <label class="toggle-row"><input id="agent_active_${i}" type="checkbox" checked />Activo</label>
+      <label class="toggle-row"><input id="agent_active_${i}" type="checkbox" />Activo</label>
     `;
     agentRowsEl.appendChild(row);
   }

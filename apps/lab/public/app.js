@@ -61,10 +61,16 @@ fields.forEach((k) => {
 });
 
 if (!$('api_base').value) {
-  $('api_base').value =
-    window.location.hostname === "localhost"
-      ? "http://localhost:3000"
-      : "https://revenioapi-production.up.railway.app";
+  const hostname = window.location.hostname;
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  if (isLocal) {
+    $('api_base').value = "http://localhost:3000";
+  } else if (hostname.includes("staging")) {
+    $('api_base').value = "https://revenioapi-staging.up.railway.app";
+  } else {
+    // Default to production if not localhost and not staging
+    $('api_base').value = "https://revenioapi-production.up.railway.app";
+  }
 }
 
 const adminLink = $("admin_link");
