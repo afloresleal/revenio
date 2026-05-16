@@ -61,6 +61,12 @@ type GhlCampaignConfig = {
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
+  callWindowEnabled?: boolean | null;
+  callWindowTimezone?: string | null;
+  callWindowStartHour?: number | null;
+  callWindowEndHour?: number | null;
+  callWindowWeekdays?: string | null;
+  callWindowApplyToFailover?: boolean | null;
   active?: boolean;
   source?: 'db';
 };
@@ -252,7 +258,7 @@ function buildPropertyFromCampaign(campaign: GhlCampaignConfig): GhlPropertyConf
   };
 }
 
-async function resolveGhlCampaign(campaignId: string | null | undefined): Promise<GhlCampaignConfig | null> {
+export async function resolveGhlCampaign(campaignId: string | null | undefined): Promise<GhlCampaignConfig | null> {
   if (!campaignId) return null;
   const dbCampaign = await prisma.ghlCampaign.findUnique({ where: { campaignId } });
   if (dbCampaign) {
@@ -272,6 +278,12 @@ async function resolveGhlCampaign(campaignId: string | null | undefined): Promis
       ghlOutcomeFieldId: dbCampaign.ghlOutcomeFieldId,
       ghlSellerTalkFieldId: dbCampaign.ghlSellerTalkFieldId,
       ghlRecordingUrlFieldId: dbCampaign.ghlRecordingUrlFieldId,
+      callWindowEnabled: dbCampaign.callWindowEnabled,
+      callWindowTimezone: dbCampaign.callWindowTimezone,
+      callWindowStartHour: dbCampaign.callWindowStartHour,
+      callWindowEndHour: dbCampaign.callWindowEndHour,
+      callWindowWeekdays: dbCampaign.callWindowWeekdays,
+      callWindowApplyToFailover: dbCampaign.callWindowApplyToFailover,
       active: dbCampaign.active,
       source: 'db',
     };
