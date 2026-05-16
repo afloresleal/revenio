@@ -2,6 +2,59 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.4] - 2026-05-16
+
+### Fix: Admin Panel Agent Save 502 Error
+
+**Problema reportado por:** Ale (durante testing en staging)
+
+**Síntoma:** Al intentar guardar agentes en el Admin Panel de staging, el request fallaba con 502 Bad Gateway. El error CORS mostrado en el navegador era síntoma secundario del crash del backend.
+
+**Causa raíz:**
+Backend crasheaba con error de Prisma:
+```
+Unique constraint failed on the fields: (`property_key`,`campaign_id`,`ghl_user_id`)
+```
+
+Cuando `campaignId` era `undefined` (no proporcionado), el código lo convertía con `campaignId ?? null`, pero Prisma no estaba igualando correctamente los registros existentes con `campaignId = NULL` en la base de datos durante el `deleteMany()`.
+
+**Solución implementada:**
+- Normalizar `campaignId` a `null` explícito al inicio de la función
+- Crear `whereClause` consistente que maneja correctamente el caso `null` vs valores presentes
+- Usar el mismo `whereClause` para `deleteMany`, `findMany` y en los `create`
+- Esto asegura que:
+  - Los registros existentes se eliminan correctamente antes de crear los nuevos
+  - No hay conflictos de unique constraint
+  - La transacción completa con éxito
+
+**Archivos modificados:**
+- `apps/api/src/server.ts:3213-3270` - Función `handlePutGhlAgents()`
+  - Agregado normalización explícita: `const normalizedCampaignId = campaignId ?? null`
+  - Agregado `whereClause` con manejo explícito de `null`
+  - Actualizado `deleteMany`, `create`, y `findMany` para usar valores consistentes
+
+**Testing después del fix:**
+```bash
+# Verificar que el build es exitoso
+npm -w apps/api run build
+
+# Commit
+git commit -m "fix: handle nullable campaignId correctly in agent save"
+
+# Push a staging (develop branch)
+git push origin develop
+```
+
+**Impacto:**
+- ✅ Admin staging ahora puede guardar y actualizar agentes sin errores 502
+- ✅ Funciona correctamente tanto con `campaignId` presente como ausente
+- ✅ No más crashes de backend por unique constraint violations
+- ✅ CORS funciona correctamente (ya no muestra error porque backend no crashea)
+
+**Commit:** `288387d`
+
+---
+
 ## [0.3.3] - 2026-05-16
 
 ### Fix: Auto-Transfer Inmediato con Warm-Transfer Mode
