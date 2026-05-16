@@ -61,10 +61,15 @@ app.use(cors({
     'http://127.0.0.1:5173',
     'http://127.0.0.1:5175',
     'https://revenio.austack.app',
-    // Railway domains
+    // Railway domains - Production
     'https://revenioapi-production.up.railway.app',
     'https://revenio-lab-production.up.railway.app',
-    /\.up\.railway\.app$/,  // Any Railway subdomain
+    'https://revenio-admin-production.up.railway.app',
+    // Railway domains - Staging
+    'https://revenioapi-staging.up.railway.app',
+    'https://revenio-lab-staging.up.railway.app',
+    'https://revenio-admin-staging.up.railway.app',
+    /\.up\.railway\.app$/,  // Any Railway subdomain (fallback)
     process.env.DASHBOARD_URL,
   ].filter(Boolean) as (string | RegExp)[],
   credentials: true,
