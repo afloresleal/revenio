@@ -148,9 +148,12 @@ function updateCallWindowFieldsVisibility() {
 function apiBase() {
   const hostname = window.location.hostname;
   const isLocal = ["localhost", "127.0.0.1", ""].includes(hostname);
-  if (isLocal) return LOCAL_API_BASE_URL;
-  if (hostname.includes("production")) return PRODUCTION_API_BASE_URL;
-  return STAGING_API_BASE_URL;
+  let apiUrl;
+  if (isLocal) apiUrl = LOCAL_API_BASE_URL;
+  else if (hostname.includes("production")) apiUrl = PRODUCTION_API_BASE_URL;
+  else apiUrl = STAGING_API_BASE_URL;
+  console.log(`[Admin] hostname: ${hostname} → API: ${apiUrl}`);
+  return apiUrl;
 }
 
 function setStatus(message) {
@@ -279,18 +282,22 @@ function validateCampaignPayload(payload) {
 }
 
 async function request(method, path, body) {
+  const url = `${apiBase()}${path}`;
+  console.log(`[Admin] ${method} ${url}`, body ? { payload: body } : '');
   try {
-    const resp = await fetch(`${apiBase()}${path}`, {
+    const resp = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await resp.json().catch(() => ({}));
+    console.log(`[Admin] ${method} ${path} → ${resp.status}`, data);
     if (!resp.ok) {
       throw new Error(data?.error || data?.message || `Error ${resp.status}`);
     }
     return data;
   } catch (error) {
+    console.error(`[Admin] ${method} ${path} failed:`, error);
     // If fetch failed completely (network error, CORS, etc.)
     if (error.message === 'Failed to fetch') {
       throw new Error('Error de conexión. Verifica tu conexión a internet o revisa los logs del servidor.');
@@ -618,6 +625,7 @@ async function saveAgents() {
     ghlUserId: $("fallback_user_id").value.trim() || undefined,
     transferNumber: $("fallback_phone").value.trim() || undefined,
   };
+  console.log("[Admin] Saving agents:", { agents, fallback, campaign: selectedCampaign });
   const validationError = validateAgentPayload(agents, fallback);
   if (validationError) {
     setAgentsFeedback(validationError, "error");
@@ -626,12 +634,13 @@ async function saveAgents() {
   }
   setStatus("Guardando agentes...");
   setAgentsFeedback(`Guardando agentes de ${selectedCampaign.name}...`);
-  await request("PUT", "/api/admin/ghl-agents", {
+  const response = await request("PUT", "/api/admin/ghl-agents", {
     propertyKey: selectedCampaign.propertyKey,
     campaignId: selectedCampaign.campaignId,
     agents,
     fallback,
   });
+  console.log("[Admin] Agents saved response:", response);
   await loadAgents();
   setAgentsFeedback(`Agentes guardados para ${selectedCampaign.name}.`);
   setStatus("Agentes guardados.");
