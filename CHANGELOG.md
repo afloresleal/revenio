@@ -2,56 +2,82 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.5] - 2026-05-16
+
+### Fix: Transferencias a Agentes Humanos y Clasificación de Buzón
+
+**Problemas detectados durante testing en staging:**
+- El assistant confirmaba la transferencia en inglés antes de conectar al asesor.
+- Algunos buzones de voz de agentes humanos seguían siendo tratados como si hubiera contestado una persona.
+- Llamadas conectadas a buzón podían aparecer como `transfer_success` aunque ningún humano hubiera respondido.
+
+**Solución implementada:**
+- Eliminado el mensaje `request-start` que provocaba la frase en inglés durante el handoff.
+- La llamada solo se considera atendida por humano cuando Twilio reporta explícitamente `AnsweredBy=human`.
+- Ajustada la detección AMD de Twilio para buzones cortos con `machineDetectionSpeechEndThreshold="2500"`.
+- Separada la noción de:
+  - llamada transferida/conectada
+  - llamada realmente atendida por humano
+- `transfer_success` ahora se registra solo cuando hay confirmación humana real.
+
+**Comportamiento validado en staging:**
+- Diana -> Arturo -> Marina ejecutó round robin completo.
+- El sistema saltó correctamente los primeros dos intentos fallidos.
+- Cuando ningún agente humano atendió, `roundRobinAnsweredAgentName` quedó en `null`.
+- La llamada dejó de contarse como éxito falso cuando terminó en buzón.
+
+**Archivos principales:**
+- `apps/api/src/routes/webhooks.ts`
+- `apps/api/src/server.ts`
+- `apps/api/src/lib/transfer-failover.ts`
+- `apps/api/src/lib/metric-classification.ts`
+- `apps/api/test/transfer-failover.test.ts`
+- `apps/api/test/metric-classification.test.ts`
+
+**Commits principales:**
+- `84863ae` - `fix: avoid voicemail transfer confirmations`
+- `2d49a11` - `fix: tune amd and require human-confirmed transfers`
+
+---
+
 ## [0.3.4] - 2026-05-16
 
-### Fix: Admin Panel Agent Save 502 Error
+### Fix: Admin Panel Agent Save Error
 
 **Problema reportado por:** Ale (durante testing en staging)
 
-**Síntoma:** Al intentar guardar agentes en el Admin Panel de staging, el request fallaba con 502 Bad Gateway. El error CORS mostrado en el navegador era síntoma secundario del crash del backend.
+**Síntoma:** Al intentar guardar agentes en el Admin Panel de staging, el request fallaba y el backend devolvía error de Prisma por constraint único.
 
 **Causa raíz:**
-Backend crasheaba con error de Prisma:
+El save podía intentar crear dos filas con el mismo `ghl_user_id` dentro del mismo batch, por ejemplo cuando un agente conservaba un ID autogenerado antiguo y otro campo vacío generaba exactamente el mismo valor.
+
+El backend devolvía:
 ```
 Unique constraint failed on the fields: (`property_key`,`campaign_id`,`ghl_user_id`)
 ```
 
-Cuando `campaignId` era `undefined` (no proporcionado), el código lo convertía con `campaignId ?? null`, pero Prisma no estaba igualando correctamente los registros existentes con `campaignId = NULL` en la base de datos durante el `deleteMany()`.
-
 **Solución implementada:**
-- Normalizar `campaignId` a `null` explícito al inicio de la función
-- Crear `whereClause` consistente que maneja correctamente el caso `null` vs valores presentes
-- Usar el mismo `whereClause` para `deleteMany`, `findMany` y en los `create`
-- Esto asegura que:
-  - Los registros existentes se eliminan correctamente antes de crear los nuevos
-  - No hay conflictos de unique constraint
-  - La transacción completa con éxito
+- Mantener el manejo consistente de `campaignId` nullable.
+- Detectar IDs duplicados antes de tocar Prisma.
+- Devolver error claro `duplicate_ghl_user_id` en lugar de dejar que falle la transacción.
+- Validar duplicados también en frontend para que el usuario vea el problema antes de guardar.
 
 **Archivos modificados:**
-- `apps/api/src/server.ts:3213-3270` - Función `handlePutGhlAgents()`
-  - Agregado normalización explícita: `const normalizedCampaignId = campaignId ?? null`
-  - Agregado `whereClause` con manejo explícito de `null`
-  - Actualizado `deleteMany`, `create`, y `findMany` para usar valores consistentes
-
-**Testing después del fix:**
-```bash
-# Verificar que el build es exitoso
-npm -w apps/api run build
-
-# Commit
-git commit -m "fix: handle nullable campaignId correctly in agent save"
-
-# Push a staging (develop branch)
-git push origin develop
-```
+- `apps/api/src/server.ts`
+- `apps/api/src/lib/ghl-agents.ts`
+- `apps/admin/public/app.js`
+- `apps/api/test/ghl-agents.test.ts`
 
 **Impacto:**
-- ✅ Admin staging ahora puede guardar y actualizar agentes sin errores 502
-- ✅ Funciona correctamente tanto con `campaignId` presente como ausente
-- ✅ No más crashes de backend por unique constraint violations
-- ✅ CORS funciona correctamente (ya no muestra error porque backend no crashea)
+- ✅ Admin staging puede guardar y actualizar agentes sin romper por duplicados
+- ✅ El backend ya no expone el error crudo de Prisma para este caso
+- ✅ El formulario muestra una causa accionable antes de intentar guardar
 
-**Commit:** `288387d`
+**Commits principales:**
+- `288387d` - `fix: handle nullable campaignId correctly in agent save operation`
+- `34d1050` - `fix: improve agent save with better null handling and error logging`
+- `e12f134` - `fix: use delete+create strategy for agent save to handle nullable campaignId`
+- `4741eef` - `fix: reject duplicate admin agent ids`
 
 ---
 
