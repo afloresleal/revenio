@@ -587,6 +587,14 @@ function validateAgentPayload(agents, fallback) {
     $("fallback_phone").classList.add("field-error");
     return "Fallback final: el teléfono debe tener al menos 6 caracteres.";
   }
+
+  const seenGhlUserIds = new Set();
+  for (const agent of agents) {
+    if (seenGhlUserIds.has(agent.ghlUserId)) {
+      return `Hay más de un agente con el mismo GHL User ID: ${agent.ghlUserId}.`;
+    }
+    seenGhlUserIds.add(agent.ghlUserId);
+  }
   return firstError;
 }
 

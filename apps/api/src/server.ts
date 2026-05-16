@@ -24,6 +24,7 @@ import {
   normalizeStoredGhlCampaign,
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
+import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -3228,6 +3229,15 @@ async function handlePutGhlAgents(req: express.Request, res: express.Response) {
     priority: agent.priority || index + 1,
     active: agent.active ?? true,
   }));
+
+  const duplicateGhlUserIds = findDuplicateGhlUserIds(normalizedAgents);
+  if (duplicateGhlUserIds.length) {
+    return res.status(400).json({
+      error: "duplicate_ghl_user_id",
+      message: "Cada agente debe tener un GHL User ID distinto.",
+      duplicateGhlUserIds,
+    });
+  }
 
   const savedAgents = await prisma.$transaction(async (tx) => {
     // Strategy: Delete existing agents for this scope, then create fresh ones

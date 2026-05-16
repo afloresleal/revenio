@@ -9,6 +9,10 @@ export type StoredGhlAgentConfig = GhlAgentConfig & {
   active?: boolean | null;
 };
 
+type GhlUserIdLike = {
+  ghlUserId?: string | null;
+};
+
 const MAX_ACTIVE_AGENTS = 5;
 
 function normalizeAgent(agent: StoredGhlAgentConfig): GhlAgentConfig | null {
@@ -51,4 +55,18 @@ export function orderGhlAgentsForAssignment(agents: GhlAgentConfig[], assignedTo
     assignedAgent,
     ...agents.filter((agent) => agent.ghlUserId !== assignedTo),
   ].slice(0, MAX_ACTIVE_AGENTS);
+}
+
+export function findDuplicateGhlUserIds(agents: GhlUserIdLike[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  for (const agent of agents) {
+    const ghlUserId = agent.ghlUserId?.trim();
+    if (!ghlUserId) continue;
+    if (seen.has(ghlUserId)) duplicates.add(ghlUserId);
+    seen.add(ghlUserId);
+  }
+
+  return [...duplicates];
 }
