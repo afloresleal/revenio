@@ -7,6 +7,8 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { normalizeMetricClassification } from '../lib/metric-classification.js';
+import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
+import { pushSuccessfulTransferToGhl } from './webhooks.js';
 
 const router = Router();
 // Minimum duration fallback for transfer connection heuristic.
@@ -1440,6 +1442,7 @@ router.post('/calls/:callId/sync', async (req, res) => {
         twilioTransferCallSid: true,
         transferStatus: true,
         postTransferDurationSec: true,
+        outcome: true,
         cost: true,
       },
     });
@@ -1529,6 +1532,32 @@ router.post('/calls/:callId/sync', async (req, res) => {
               lastEventAt: new Date(),
             },
           });
+          if (shouldPromoteLateTransferSuccess({
+            currentOutcome: metric.outcome,
+            postTransferDurationSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? null,
+          })) {
+            const attempt = await prisma.callAttempt.findFirst({
+              where: { providerId: callId },
+              orderBy: { createdAt: 'desc' },
+              select: { resultJson: true },
+            });
+            await prisma.callMetric.update({
+              where: { callId },
+              data: {
+                outcome: 'transfer_success',
+                sentiment: 'positive',
+              },
+            });
+            await pushSuccessfulTransferToGhl({
+              callId,
+              resultJson: asRecord(attempt?.resultJson),
+              transferNumber: metric.transferNumber,
+              transcript: nextFullTranscript ?? metric.fullTranscript ?? metric.transferTranscript ?? metric.transcript ?? null,
+              outcome: 'transfer_success',
+              sellerTalkSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? null,
+              recordingUrl: effectiveRecordingUrl ?? metric.transferRecordingUrl ?? metric.recordingUrl ?? null,
+            });
+          }
         }
       }
     }
