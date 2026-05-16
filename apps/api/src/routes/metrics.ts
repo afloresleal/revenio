@@ -740,7 +740,9 @@ router.get('/recent', async (req, res) => {
     
     const calls = await prisma.callMetric.findMany({
       where,
-      orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
+      // `startedAt` can be null for older/imported rows. In Postgres, DESC puts nulls first,
+      // which can hide genuinely recent calls from the small dashboard list.
+      orderBy: [{ createdAt: 'desc' }],
       take: limit,
       select: {
         callId: true,

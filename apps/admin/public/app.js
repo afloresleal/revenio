@@ -328,7 +328,7 @@ function emptyAgentRows() {
       <label>Nombre<input id="agent_name_${i}" placeholder="Ana" /></label>
       <label>GHL User ID <span class="label-muted">opcional</span><input id="agent_user_${i}" placeholder="Se puede dejar vacio" /></label>
       <label>Teléfono<input id="agent_phone_${i}" placeholder="+5255..." /></label>
-      <label class="toggle-row"><input id="agent_active_${i}" type="checkbox" checked />Activo</label>
+      <label class="toggle-row"><input id="agent_active_${i}" type="checkbox" />Activo</label>
     `;
     agentRowsEl.appendChild(row);
   }
