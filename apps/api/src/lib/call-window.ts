@@ -1,4 +1,4 @@
-type CallWindowSettings = {
+export type CallWindowSettings = {
   enabled: boolean;
   timezone: string;
   startHour: number;
@@ -7,7 +7,7 @@ type CallWindowSettings = {
   applyToRoundRobinFailover: boolean;
 };
 
-type CallWindowEvaluation = {
+export type CallWindowEvaluation = {
   allowed: boolean;
   reason: 'outside_hours' | 'inactive_weekday' | 'disabled';
   timezone: string;
@@ -67,8 +67,8 @@ function parseWeekdaysEnv(raw: string | undefined): number[] | null {
   return normalized.length ? normalized : null;
 }
 
-function getDateInTimezone(timezone: string): Date {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: timezone }));
+function getDateInTimezone(timezone: string, now: Date = new Date()): Date {
+  return new Date(now.toLocaleString('en-US', { timeZone: timezone }));
 }
 
 function validateTimezone(value: string): string {
@@ -142,7 +142,7 @@ export function evaluateCallWindow(now: Date = new Date()): CallWindowEvaluation
     };
   }
 
-  const zoned = getDateInTimezone(settings.timezone);
+  const zoned = getDateInTimezone(settings.timezone, now);
   const currentHour = zoned.getHours();
   const currentWeekday = zoned.getDay();
   const weekdayAllowed = settings.activeWeekdays.includes(currentWeekday);
@@ -205,7 +205,7 @@ function evaluateCallWindowWithSettings(settings: CallWindowSettings, now: Date 
     };
   }
 
-  const zoned = getDateInTimezone(settings.timezone);
+  const zoned = getDateInTimezone(settings.timezone, now);
   const currentHour = zoned.getHours();
   const currentWeekday = zoned.getDay();
   const weekdayAllowed = settings.activeWeekdays.includes(currentWeekday);

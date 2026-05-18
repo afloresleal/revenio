@@ -10,6 +10,7 @@ import {
   resetCallWindowSettings,
   updateCallWindowSettings,
 } from "./lib/call-window.js";
+import { evaluateRoundRobinFailoverWindow } from "./lib/round-robin-window.js";
 
 // Import route modules
 import metricsRouter from "./routes/metrics.js";
@@ -319,6 +320,17 @@ function asNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+async function resolveAttemptCampaign(resultJson: Record<string, unknown>) {
+  const integration = resultJson.ghlIntegration && typeof resultJson.ghlIntegration === "object"
+    ? (resultJson.ghlIntegration as Record<string, unknown>)
+    : null;
+  const campaignId =
+    asNonEmptyString(integration?.campaignId) ??
+    asNonEmptyString(resultJson.campaignId);
+  if (!campaignId) return null;
+  return prisma.ghlCampaign.findUnique({ where: { campaignId } });
+}
+
 function parseInteger(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
   if (typeof value === "string" && value.trim()) {
@@ -618,15 +630,6 @@ async function executeFailoverToNextAgent(params: {
   currentChildCallSid?: string | null;
   reason: AgentFailoverReason;
 }) {
-  const rrWindow = canRunRoundRobinFailover();
-  if (!rrWindow.allowed) {
-    return {
-      ok: false,
-      reason: "outside_business_hours" as const,
-      policy: rrWindow,
-    };
-  }
-
   const attempt = await prisma.callAttempt.findUnique({
     where: { id: params.attemptId },
     select: {
@@ -642,6 +645,15 @@ async function executeFailoverToNextAgent(params: {
   const result = attempt.resultJson && typeof attempt.resultJson === "object"
     ? (attempt.resultJson as Record<string, unknown>)
     : {};
+  const campaign = await resolveAttemptCampaign(result);
+  const rrWindow = evaluateRoundRobinFailoverWindow({ campaign });
+  if (!rrWindow.allowed) {
+    return {
+      ok: false,
+      reason: "outside_business_hours" as const,
+      policy: rrWindow,
+    };
+  }
   const rr = result.roundRobin && typeof result.roundRobin === "object"
     ? (result.roundRobin as Record<string, unknown>)
     : null;
@@ -859,15 +871,6 @@ async function selectNextRoundRobinAgent(params: {
   currentChildCallSid?: string | null;
   reason: AgentFailoverReason;
 }) {
-  const rrWindow = canRunRoundRobinFailover();
-  if (!rrWindow.allowed) {
-    return {
-      ok: false,
-      reason: "outside_business_hours" as const,
-      policy: rrWindow,
-    };
-  }
-
   const attempt = await prisma.callAttempt.findUnique({
     where: { id: params.attemptId },
     select: {
@@ -882,6 +885,16 @@ async function selectNextRoundRobinAgent(params: {
   const result = attempt.resultJson && typeof attempt.resultJson === "object"
     ? (attempt.resultJson as Record<string, unknown>)
     : {};
+  const campaign = await resolveAttemptCampaign(result);
+  const rrWindow = evaluateRoundRobinFailoverWindow({ campaign });
+  if (!rrWindow.allowed) {
+    return {
+      ok: false,
+      reason: "outside_business_hours" as const,
+      policy: rrWindow,
+    };
+  }
+
   const rr = result.roundRobin && typeof result.roundRobin === "object"
     ? (result.roundRobin as Record<string, unknown>)
     : null;

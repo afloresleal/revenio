@@ -9,7 +9,8 @@ import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
-import { canRunRoundRobinFailover, canStartOutboundCall, evaluateCampaignCallWindow, canCampaignRunRoundRobinFailover } from '../lib/call-window.js';
+import { canStartOutboundCall, evaluateCampaignCallWindow } from '../lib/call-window.js';
+import { evaluateRoundRobinFailoverWindow } from '../lib/round-robin-window.js';
 import {
   type GhlAgentConfig,
   orderGhlAgentsForAssignment,
@@ -664,11 +665,6 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   currentChildCallSid?: string | null;
   parentCallSid?: string | null;
 }) {
-  const rrWindow = canRunRoundRobinFailover();
-  if (!rrWindow.allowed) {
-    return { ok: false, reason: 'outside_business_hours' as const, policy: rrWindow };
-  }
-
   const attempt = await prisma.callAttempt.findFirst({
     where: { providerId: params.callId },
     orderBy: { createdAt: 'desc' },
@@ -677,6 +673,14 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   if (!attempt) return { ok: false, reason: 'missing_attempt' as const };
 
   const result = asRecord(attempt.resultJson) ?? {};
+  const integration = asRecord(result.ghlIntegration);
+  const campaignId = asString(integration?.campaignId) ?? asString(result.campaignId);
+  const campaign = campaignId ? await resolveGhlCampaign(campaignId) : null;
+  const rrWindow = evaluateRoundRobinFailoverWindow({ campaign });
+  if (!rrWindow.allowed) {
+    return { ok: false, reason: 'outside_business_hours' as const, policy: rrWindow };
+  }
+
   const rr = asRecord(result.roundRobin);
   if (!rr || rr.enabled !== true) return { ok: false, reason: 'round_robin_disabled' as const };
 
@@ -950,11 +954,6 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   reason: string;
   parentCallSid?: string | null;
 }) {
-  const rrWindow = canRunRoundRobinFailover();
-  if (!rrWindow.allowed) {
-    return { ok: false, reason: 'outside_business_hours' as const, policy: rrWindow };
-  }
-
   const attempt = await prisma.callAttempt.findFirst({
     where: { providerId: params.callId },
     orderBy: { createdAt: 'desc' },
@@ -963,6 +962,14 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   if (!attempt) return { ok: false, reason: 'missing_attempt' as const };
 
   const result = asRecord(attempt.resultJson) ?? {};
+  const integration = asRecord(result.ghlIntegration);
+  const campaignId = asString(integration?.campaignId) ?? asString(result.campaignId);
+  const campaign = campaignId ? await resolveGhlCampaign(campaignId) : null;
+  const rrWindow = evaluateRoundRobinFailoverWindow({ campaign });
+  if (!rrWindow.allowed) {
+    return { ok: false, reason: 'outside_business_hours' as const, policy: rrWindow };
+  }
+
   const rr = asRecord(result.roundRobin);
   const agents = parseRoundRobinAgents(result);
   if (!rr || rr.enabled !== true || agents.length === 0) {
