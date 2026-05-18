@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
+import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
 import { canStartOutboundCall, evaluateCampaignCallWindow } from '../lib/call-window.js';
@@ -1632,7 +1633,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   };
 }
 
-async function pushSuccessfulTransferToGhl(params: {
+export async function pushSuccessfulTransferToGhl(params: {
   callId: string;
   resultJson: Record<string, unknown> | null;
   transferNumber: string | null;
@@ -2821,6 +2822,7 @@ router.post('/twilio/recording-status', async (req, res) => {
     if (metric) {
       const durationSec = recordingDuration ? parseInt(recordingDuration, 10) : null;
       const fullRecordingUrl = recordingUrl ? `${recordingUrl}.mp3` : null;
+      const nextPostTransferDurationSec = Number.isFinite(durationSec) ? durationSec : metric.postTransferDurationSec;
       
       // Update recording URL first
       await prisma.callMetric.update({
@@ -2830,7 +2832,7 @@ router.post('/twilio/recording-status', async (req, res) => {
           twilioTransferCallSid: metric.twilioTransferCallSid ?? (callSid || undefined),
           transferRecordingUrl: fullRecordingUrl,
           transferRecordingDurationSec: Number.isFinite(durationSec) ? durationSec : null,
-          postTransferDurationSec: Number.isFinite(durationSec) ? durationSec : metric.postTransferDurationSec,
+          postTransferDurationSec: nextPostTransferDurationSec,
           lastEventType: 'twilio-recording-completed',
           lastEventAt: new Date(),
         },
@@ -2841,6 +2843,33 @@ router.post('/twilio/recording-status', async (req, res) => {
         transferRecordingUrl: fullRecordingUrl,
         durationSec,
       });
+
+      if (shouldPromoteLateTransferSuccess({
+        currentOutcome: metric.outcome,
+        postTransferDurationSec: nextPostTransferDurationSec,
+      })) {
+        const attempt = await prisma.callAttempt.findFirst({
+          where: { providerId: metric.callId },
+          orderBy: { createdAt: 'desc' },
+          select: { resultJson: true },
+        });
+        await prisma.callMetric.update({
+          where: { id: metric.id },
+          data: {
+            outcome: 'transfer_success',
+            sentiment: 'positive',
+          },
+        });
+        await pushSuccessfulTransferToGhl({
+          callId: metric.callId,
+          resultJson: asRecord(attempt?.resultJson),
+          transferNumber: metric.transferNumber,
+          transcript: metric.fullTranscript ?? metric.transferTranscript ?? metric.transcript ?? null,
+          outcome: 'transfer_success',
+          sellerTalkSec: nextPostTransferDurationSec ?? null,
+          recordingUrl: fullRecordingUrl ?? metric.transferRecordingUrl ?? metric.recordingUrl ?? null,
+        });
+      }
       
       // Auto-transcribe with OpenAI if available (async, don't block response)
       if (fullRecordingUrl && canTranscribeRecording()) {
