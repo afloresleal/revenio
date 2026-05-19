@@ -2,6 +2,50 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.6] - 2026-05-19
+
+### Hotfix: Producción - Round Robin, Fallback y Lectura Operativa
+
+**Contexto:**
+Durante pruebas en producción con el equipo de Marina, se detectaron diferencias entre la verdad operativa de la llamada y lo mostrado en Dashboard/Admin, además de riesgo de audio filtrado desde intentos fallidos antes de llegar al fallback.
+
+**Cambios implementados:**
+- El failover de round robin ahora respeta el horario personalizado de la campaña cuando la llamada pertenece a una campaña GHL.
+- Las llamadas con confirmación tardía de transfer pueden promocionarse correctamente a `transfer_success` después de sincronizar la grabación/datos de Twilio.
+- Dashboard traduce estados técnicos a lenguaje operativo para el equipo:
+  - `child-never-answered-no-callback` -> `No contestó a tiempo`
+  - `no-answer` -> `No contestó`
+  - `call_attempt_result_json` -> `Registro interno`
+- Dashboard incluye eventos `transfer_fallback` y muestra el fallback final cuando el pool de vendedores se agotó.
+- Twilio `<Dial>` de failover/fallback usa `answerOnBridge="true"` para reducir el riesgo de que el cliente escuche tonos o buzones antes de conectar.
+- Admin Calls/CSV prioriza la verdad de `roundRobin` sobre `metric.transferNumber`, evitando mostrar como vendedor conectado al primer intento cuando la llamada terminó en fallback.
+- Export CSV de llamadas elimina la columna `assigned_to`.
+- Admin mantiene inactivos los renglones vacíos de agentes y ordena llamadas recientes de forma consistente.
+
+**Notas operativas:**
+- Este hotfix fue aplicado directo en `main`/producción para pruebas en caliente.
+- `develop`/staging quedó como backup en `ea6a0ee` durante estas pruebas.
+- `answerOnBridge` reduce el riesgo de audio filtrado, pero no reemplaza una arquitectura completa de sala de espera/screening con `Conference`.
+
+**Archivos principales:**
+- `apps/api/src/routes/webhooks.ts`
+- `apps/api/src/server.ts`
+- `apps/api/src/routes/metrics.ts`
+- `apps/api/src/lib/ghl-campaigns.ts`
+- `apps/api/src/lib/round-robin-window.ts`
+- `dashboard-v2/App.tsx`
+
+**Commits principales:**
+- `224fafc` - `fix: keep empty agents inactive and sort recent calls`
+- `3bb8a17` - `fix: promote late confirmed transfers`
+- `49a6e9f` - `fix: use campaign hours for failover`
+- `ea6a0ee` - `fix: clarify transfer routing details`
+- `d8683fa` - `fix: delay transfer bridge until answer`
+- `e224ab5` - `fix: show fallback in admin calls`
+- `40c7459` - `chore: remove assigned column from calls export`
+
+---
+
 ## [0.3.5] - 2026-05-16
 
 ### Fix: Transferencias a Agentes Humanos y Clasificación de Buzón
