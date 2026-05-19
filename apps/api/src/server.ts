@@ -2776,23 +2776,47 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
     const selectedAgent = adminRecord(result?.selected_agent);
     const metric = attempt.providerId ? metricsByCallId.get(attempt.providerId) : null;
     const startedAt = metric?.startedAt ?? attempt.createdAt;
+    const roundRobinSelectedIndex = adminNumber(roundRobin?.selectedAgentIndex);
+    const roundRobinPoolSize = adminNumber(roundRobin?.poolSize);
+    const fallbackAttempted =
+      adminBoolean(roundRobin?.fallbackTransferAttempted) === true ||
+      (
+        roundRobinSelectedIndex !== null &&
+        roundRobinPoolSize !== null &&
+        roundRobinSelectedIndex >= roundRobinPoolSize
+      );
+    const fallbackName =
+      adminString(roundRobin?.fallbackAgentName) ??
+      adminString(roundRobin?.fallbackName) ??
+      null;
+    const fallbackTransferNumber =
+      adminString(roundRobin?.fallbackTransferNumber) ??
+      adminString(result?.fallbackTransferNumber) ??
+      adminString(result?.fallback_transfer_number) ??
+      null;
     const transferNumber =
-      metric?.transferNumber ??
-      adminString(selectedAgent?.transfer_number) ??
+      (fallbackAttempted ? fallbackTransferNumber : null) ??
       adminString(roundRobin?.selectedTransferNumber) ??
-      adminString(result?.transferNumber);
+      adminString(selectedAgent?.transfer_number) ??
+      adminString(result?.transferNumber) ??
+      metric?.transferNumber;
     const durationSec = metric?.durationSec ?? adminNumber(result?.durationSec);
     const timeToTransferSec = adminDiffSeconds(metric?.startedAt, metric?.transferredAt);
     const sellerTalkSec =
       metric?.postTransferDurationSec ??
       adminDiffSeconds(metric?.transferredAt, metric?.endedAt);
+    const outcome = metric?.outcome ?? attempt.status;
+    const answeredAgentName =
+      adminString(roundRobin?.answeredAgentName) ??
+      (fallbackAttempted && outcome === "transfer_success" ? fallbackName ?? "Fallback final" : null) ??
+      "";
 
     return {
       campaignName: adminString(integration?.campaignName) ?? campaign.name,
       campaignId: adminString(integration?.campaignId) ?? campaign.campaignId,
       startedAt,
       phone: attempt.lead?.phone ?? metric?.phoneNumber ?? "",
-      outcome: metric?.outcome ?? attempt.status,
+      outcome,
       sentiment: metric?.sentiment ?? "",
       assignedTo: adminString(integration?.assignedTo) ?? adminString(result?.assignedTo) ?? "",
       firstAgentName:
@@ -2800,7 +2824,7 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
         adminString(roundRobin?.selectedAgentName) ??
         adminString(selectedAgent?.human_agent_name) ??
         "",
-      answeredAgentName: adminString(roundRobin?.answeredAgentName) ?? "",
+      answeredAgentName,
       transferNumber,
       durationSec,
       timeToTransferSec,
