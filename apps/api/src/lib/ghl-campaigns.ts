@@ -288,7 +288,6 @@ export const CAMPAIGN_CALL_EXPORT_COLUMNS: CampaignCallExportColumn[] = [
   { key: "phone", label: "lead_phone" },
   { key: "outcome", label: "outcome" },
   { key: "sentiment", label: "sentiment" },
-  { key: "assignedTo", label: "assigned_to" },
   { key: "firstAgentName", label: "first_agent" },
   { key: "answeredAgentName", label: "answered_agent" },
   { key: "transferNumber", label: "transfer_number" },
