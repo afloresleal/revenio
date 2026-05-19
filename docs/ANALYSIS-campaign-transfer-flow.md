@@ -27,21 +27,21 @@ flowchart TD
     J --> K["Revenio guarda metricas<br/>transcript, grabacion y detalle"]
 ```
 
-## Que configura Marina en Vapi
+## Que configura <OPERADOR_INTERNO> en Vapi
 
-Marina puede duplicar Brenda para crear los nuevos assistants, pero cada assistant debe quedar limpio para que Revenio controle la parte dinamica.
+<OPERADOR_INTERNO> puede duplicar Assistant EN 1 para crear los nuevos assistants, pero cada assistant debe quedar limpio para que Revenio controle la parte dinamica.
 
 En cada assistant de Vapi:
 
 - Configurar el `First Message` y el `System Prompt` de la campana.
 - Mantener el prompt indicando que el assistant debe ejecutar `transferCall` cuando corresponda.
 - En `Advanced > Messaging`, usar el Server URL correcto:
-  - Staging: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
-  - Production: `https://revenioapi-production.up.railway.app/webhooks/vapi/events`
+  - Staging: `https://<API_STAGING_HOST>/webhooks/vapi/events`
+  - Production: `https://<API_PRODUCTION_HOST>/webhooks/vapi/events`
 - Mantener la configuracion de mensajes de Vapi alineada con Revenio:
   - `Server URL` apunta al ambiente correcto.
   - `Server Messages` permite que Vapi avise a Revenio cuando hay transferencia, transcript y fin de llamada.
-  - `Client Messages` puede quedar segun el template de Brenda, siempre que no agregue un flujo paralelo de transferencia.
+  - `Client Messages` puede quedar segun el template de Assistant EN 1, siempre que no agregue un flujo paralelo de transferencia.
 - Activar Server Messages necesarios:
   - `transfer-update`
   - `transfer-destination-request`
@@ -74,11 +74,11 @@ El numero `<LEGACY_FALLBACK_PHONE>` viene de configuraciones viejas/fallbacks. S
 | Server URL para eventos de Vapi | Vapi `Advanced > Messaging` |
 | Ejecucion de transferencia | Vapi ejecuta `transferCall`, inyectado dinamicamente por Revenio |
 
-## Donde edita Marina los agentes
+## Donde edita <OPERADOR_INTERNO> los agentes
 
 Los numeros del round robin no deben editarse en Railway ni en Vapi.
 
-Para demo/operacion, Marina debe entrar al Lab de Revenio y usar la vista **Agentes GHL**:
+Para demo/operacion, <OPERADOR_INTERNO> debe entrar al Lab de Revenio y usar la vista **Agentes GHL**:
 
 1. Seleccionar propiedad o campana.
 2. Capturar nombre del asesor.
@@ -105,7 +105,7 @@ En nuestro flujo:
 
 1. El assistant correcto existe en Vapi y esta publicado.
 2. El assistant usa Server URL de staging:
-   `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
+   `https://<API_STAGING_HOST>/webhooks/vapi/events`
 3. El assistant no tiene un forwarding/fallback fijo hacia `<LEGACY_FALLBACK_PHONE>`.
 4. No hay un segundo `Transfer Call` tool con destino hardcodeado.
 5. Railway staging tiene el Assistant ID y Phone Number ID de esa campana.

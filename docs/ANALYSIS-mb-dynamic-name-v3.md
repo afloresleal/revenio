@@ -1,16 +1,16 @@
-# Plan: Nombre Dinámico + Deploy Droplet Marina (v3)
+# Plan: Nombre Dinámico + Deploy Droplet <OPERADOR_INTERNO> (v3)
 
-**Objetivo:** Nombre dinámico en llamadas, funcionando en droplet de Marina sin depender de Ale.
+**Objetivo:** Nombre dinámico en llamadas, funcionando en droplet de <OPERADOR_INTERNO> sin depender de <USUARIO_INTERNO>.
 
 ---
 
 ## Mensajes Finales
 
 **CON nombre:**
-> "Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"
+> "Hola, ¿hablo con {{name}}? Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"
 
 **SIN nombre:**
-> "Hola, buenas tardes. Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. Uno de nuestros asesores lo atenderá de manera personal, por favor déme unos segundos que le estoy transfiriendo su llamada."
+> "Hola, buenas tardes. Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>, le llamo porque nos contactó por uno de nuestros desarrollos. Uno de nuestros asesores lo atenderá de manera personal, por favor déme unos segundos que le estoy transfiriendo su llamada."
 
 ---
 
@@ -37,23 +37,23 @@
 |---------|-------|
 | **Objetivo** | Agregar variable `{{name}}` al firstMessage del assistant |
 | **Herramienta** | VAPI API (PATCH /assistant/{id}) |
-| **Assistant ID** | `<VAPI_ASSISTANT_ID_MARINA>` |
-| **firstMessage nuevo** | `"Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"` |
+| **Assistant ID** | `<VAPI_ASSISTANT_ID_ES>` |
+| **firstMessage nuevo** | `"Hola, ¿hablo con {{name}}? Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"` |
 | **Método** | curl PATCH con Authorization Bearer |
 
 **Comando:**
 ```bash
-curl -X PATCH "https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_MARINA>" \
+curl -X PATCH "https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_ES>" \
   -H "Authorization: Bearer <VAPI_API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
-    "firstMessage": "Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"
+    "firstMessage": "Hola, ¿hablo con {{name}}? Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"
   }'
 ```
 
 **Verificación:**
 ```bash
-curl -s "https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_MARINA>" \
+curl -s "https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_ES>" \
   -H "Authorization: Bearer <VAPI_API_KEY>" \
   | jq '.firstMessage'
 # Debe contener {{name}}
@@ -66,7 +66,7 @@ curl -s "https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_MARINA>" \
 | Aspecto | Valor |
 |---------|-------|
 | **Objetivo** | Endpoint standalone para iniciar llamadas VAPI |
-| **Servidor destino** | <DROPLET_IP> (DEV droplet Marina) |
+| **Servidor destino** | <DROPLET_IP> (DEV droplet <OPERADOR_INTERNO>) |
 | **Puerto** | 3001 (nuevo servicio) o integrar en existente |
 | **Stack** | Node.js + Express (mínimo) |
 | **Dependencias** | dotenv, express |
@@ -91,9 +91,9 @@ const VAPI_API_KEY = process.env.VAPI_API_KEY;
 const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID;
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
 
-const FIRST_MESSAGE_WITH_NAME = "Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?";
+const FIRST_MESSAGE_WITH_NAME = "Hola, ¿hablo con {{name}}? Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?";
 
-const FIRST_MESSAGE_NO_NAME = "Hola, buenas tardes. Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. Uno de nuestros asesores lo atenderá de manera personal, por favor déme unos segundos que le estoy transfiriendo su llamada.";
+const FIRST_MESSAGE_NO_NAME = "Hola, buenas tardes. Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>, le llamo porque nos contactó por uno de nuestros desarrollos. Uno de nuestros asesores lo atenderá de manera personal, por favor déme unos segundos que le estoy transfiriendo su llamada.";
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'revenio-caller' });
@@ -171,7 +171,7 @@ curl http://<DROPLET_IP>:3001/health
 **Edge cases cubiertos:**
 | Input | safeName | Mensaje usado |
 |-------|----------|---------------|
-| `"Carlos"` | `"Carlos"` | CON nombre |
+| `"<NOMBRE_DE_EJEMPLO>"` | `"<NOMBRE_DE_EJEMPLO>"` | CON nombre |
 | `"  María  "` | `"María"` | CON nombre |
 | `""` | `null` | SIN nombre |
 | `"   "` | `null` | SIN nombre |
@@ -191,7 +191,7 @@ curl http://<DROPLET_IP>:3001/health
 ```
 VAPI_API_KEY=<VAPI_API_KEY>
 VAPI_PHONE_NUMBER_ID=<VAPI_PHONE_NUMBER_ID>
-VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_MARINA>
+VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_ES>
 PORT=3001
 ```
 
@@ -237,9 +237,9 @@ curl http://<DROPLET_IP>:3001/health
 ```bash
 curl -X POST http://<DROPLET_IP>:3001/call/vapi \
   -H "Content-Type: application/json" \
-  -d '{"to_number": "<LEGACY_FALLBACK_PHONE>", "lead_name": "Marina"}'
+  -d '{"to_number": "<LEGACY_FALLBACK_PHONE>", "lead_name": "<OPERADOR_INTERNO>"}'
 ```
-**Esperado:** Dice "Hola, ¿hablo con Marina?"
+**Esperado:** Dice "Hola, ¿hablo con <OPERADOR_INTERNO>?"
 
 **Test 2: Sin nombre**
 ```bash

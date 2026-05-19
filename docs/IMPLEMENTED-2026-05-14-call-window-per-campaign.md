@@ -583,7 +583,7 @@ describe('evaluateCampaignCallWindow', () => {
 ## Casos de Uso
 
 ### Caso 1: Propiedad en zona horaria diferente
-**Escenario:** Isla Blanca (México) vs propiedad en California (USA)
+**Escenario:** <PROPIEDAD_DEMO_A> (México) vs propiedad en California (USA)
 **Solución:** Cada campaña configura su timezone y horario local
 
 ### Caso 2: Campaña urgente 24/7

@@ -47,7 +47,7 @@ Railway staging detectará el push automáticamente y:
 
 **Resultado esperado:**
 - [ ] Deploy completado sin errores
-- [ ] API staging responde en `https://revenioapi-staging.up.railway.app/health`
+- [ ] API staging responde en `https://<API_STAGING_HOST>/health`
 
 ---
 
@@ -124,7 +124,7 @@ LIMIT 5;
 
 **Prueba B: Crear llamada de prueba desde Lab**
 
-1. Ir a Lab staging: `https://revenio-lab-staging.up.railway.app`
+1. Ir a Lab staging: `https://<LAB_STAGING_HOST>`
 2. Crear llamada con campaña existente
 3. Verificar que respeta horario global (no debe dar error)
 
@@ -162,7 +162,7 @@ LIMIT 5;
 **Logs normales esperados:**
 ```
 [info] POST /webhooks/gohighlevel
-[info] Evaluating call window for campaign: isla-blanca-es
+[info] Evaluating call window for campaign: propiedad-demo-a-es
 [info] Campaign has no specific call window config, using global
 [info] Call window allowed: true
 ```
@@ -183,11 +183,11 @@ LIMIT 5;
 
 ### 5. Verificar API Health ⏳
 
-**Endpoint:** `GET https://revenioapi-staging.up.railway.app/health`
+**Endpoint:** `GET https://<API_STAGING_HOST>/health`
 
 **Request:**
 ```bash
-curl https://revenioapi-staging.up.railway.app/health
+curl https://<API_STAGING_HOST>/health
 ```
 
 **Resultado esperado:**
@@ -265,7 +265,7 @@ Settings → Redeploy
 ```sql
 -- Verificar que Lab tiene horario habilitado
 -- Conectar a Lab staging y verificar configuración
-GET https://revenio-lab-staging.up.railway.app/lab/settings/call-window
+GET https://<LAB_STAGING_HOST>/lab/settings/call-window
 ```
 
 **Solución permanente:** Revisar código de `evaluateCampaignCallWindow()`
@@ -281,12 +281,12 @@ GET https://revenio-lab-staging.up.railway.app/lab/settings/call-window
 -- Verificar que una campaña tiene null
 SELECT campaign_id, call_window_enabled
 FROM ghl_campaign
-WHERE campaign_id = 'isla-blanca-es';
+WHERE campaign_id = 'propiedad-demo-a-es';
 -- Debe devolver: null
 ```
 
 **Test desde Lab:**
-1. Crear llamada para `isla-blanca-es`
+1. Crear llamada para `propiedad-demo-a-es`
 2. Dentro de horario global (7am-10pm CST)
 3. Llamada debe crearse exitosamente
 
@@ -374,12 +374,12 @@ WHERE campaign_id = 'test-1';
 
 ✅ **TODO OK → Continuar con Fase 2 (Admin UI)**
 
-Decirle a Claude:
+Decirle a <AI_ASSISTANT>:
 ```
 "Fase 1 validada exitosamente. Continuemos con Fase 2 (Admin UI)"
 ```
 
-Claude implementará:
+<AI_ASSISTANT> implementará:
 1. Formulario en Admin con 3 modos (global/custom/24-7)
 2. Campos específicos (timezone, horas, días)
 3. Validación frontend
@@ -391,12 +391,12 @@ Claude implementará:
 
 ❌ **Encontraste problemas → Reportar**
 
-Decirle a Claude:
+Decirle a <AI_ASSISTANT>:
 ```
 "Encontré este problema durante validación: [describir problema]"
 ```
 
-Claude ayudará a diagnosticar y solucionar.
+<AI_ASSISTANT> ayudará a diagnosticar y solucionar.
 
 ---
 
@@ -415,4 +415,4 @@ Claude ayudará a diagnosticar y solucionar.
 
 **Commit:** `ffa5e6a`
 **Branch:** `develop`
-**Staging URL:** `https://revenioapi-staging.up.railway.app`
+**Staging URL:** `https://<API_STAGING_HOST>`

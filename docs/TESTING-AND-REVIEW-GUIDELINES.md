@@ -448,5 +448,5 @@ assert.equal(
 ---
 
 **Última actualización:** 2026-05-16
-**Mantenido por:** Ale + Claude
+**Mantenido por:** <USUARIO_INTERNO> + <AI_ASSISTANT>
 **Feedback:** Agregar issues/PRs cuando encuentres mejoras a este proceso

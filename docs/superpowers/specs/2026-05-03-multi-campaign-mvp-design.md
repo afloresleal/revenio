@@ -2,14 +2,14 @@
 
 ## Goal
 
-Support the KRP demo with four GHL campaigns in one Revenio API deployment, without changing Railway variables between tests.
+Support the <CLIENTE_DEMO> demo with four GHL campaigns in one Revenio API deployment, without changing Railway variables between tests.
 
 The four campaign slugs are:
 
-- `isla-blanca-es`
-- `isla-blanca-en`
-- `nikki-ocean-es`
-- `nikki-ocean-en`
+- `propiedad-demo-a-es`
+- `propiedad-demo-a-en`
+- `propiedad-demo-b-es`
+- `propiedad-demo-b-en`
 
 ## Scope
 
@@ -35,7 +35,7 @@ GHL sends `campaignId` in webhook Custom Data:
 
 ```json
 {
-  "campaignId": "isla-blanca-es"
+  "campaignId": "propiedad-demo-a-es"
 }
 ```
 
@@ -60,19 +60,19 @@ Campaigns use short stable codes:
 Each campaign supports:
 
 ```env
-GHL_CAMPAIGN_IB_ES_ID=isla-blanca-es
+GHL_CAMPAIGN_IB_ES_ID=propiedad-demo-a-es
 GHL_CAMPAIGN_IB_ES_PROPERTY_KEY=isla_blanca
 GHL_CAMPAIGN_IB_ES_VAPI_ASSISTANT_ID=...
 GHL_CAMPAIGN_IB_ES_VAPI_PHONE_NUMBER_ID=...
 ```
 
-Agent overrides are optional for the MVP. If campaign-specific agents are not configured, the campaign uses the parent property agents already defined for Isla Blanca or Nikki Ocean.
+Agent overrides are optional for the MVP. If campaign-specific agents are not configured, the campaign uses the parent property agents already defined for <PROPIEDAD_DEMO_A> or <PROPIEDAD_DEMO_B>.
 
 ## Vapi Requirements
 
 Each Vapi assistant used by the four campaigns must be configured for the matching environment:
 
-- Staging Server URL: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
+- Staging Server URL: `https://<API_STAGING_HOST>/webhooks/vapi/events`
 - `phone-call-control` disabled.
 - No hardcoded forwarding/fallback advisor for GHL flow.
 - No duplicate native `transferCall` tool with a hardcoded destination when Revenio sends `assistantOverrides.model.tools`.

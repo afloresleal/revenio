@@ -51,7 +51,7 @@
 ### 3. Twilio
 
 **Responsabilidades:**
-- Número de salida (+1 350 216 9412)
+- Número de salida (`<PHONE_E164>`)
 - Routing de llamadas
 - Recording (opcional)
 

@@ -1,4 +1,4 @@
-# Integracion GoHighLevel - KRP Estate Group
+# Integracion GoHighLevel - <CLIENTE_DEMO>
 
 > **Estado 2026-05-06:** documento histórico. El flujo operativo actual usa Admin/BD para campañas, vendedores humanos y fallback final. No configurar `GHL_TEST_*`, `GHL_ISLA_*`, `GHL_NIKKI_*` ni `GHL_CAMPAIGN_*` en Railway para demos nuevos.
 
@@ -25,7 +25,7 @@ Para el demo multi-campaña, cada workflow de GHL debe mandar `campaignId` en Cu
 
 ```json
 {
-  "campaignId": "isla-blanca-es"
+  "campaignId": "propiedad-demo-a-es"
 }
 ```
 
@@ -33,21 +33,21 @@ Para el demo multi-campaña, cada workflow de GHL debe mandar `campaignId` en Cu
 
 ```text
 GoHighLevel Test: <GHL_TEST_LOCATION_ID>
-Isla Blanca: <GHL_ISLA_BLANCA_LOCATION_ID>
-Nikki Ocean: <GHL_NIKKI_OCEAN_LOCATION_ID>
+<PROPIEDAD_DEMO_A>: <GHL_ISLA_BLANCA_LOCATION_ID>
+<PROPIEDAD_DEMO_B>: <GHL_NIKKI_OCEAN_LOCATION_ID>
 ```
 
-Los agentes del alcance quedaron cargados en `apps/api/src/routes/webhooks.ts`. Para Nikki Ocean se respetan los primeros 5 por prioridad porque el RR actual de Revenio limita el pool a 5 agentes.
+Los agentes del alcance quedaron cargados en `apps/api/src/routes/webhooks.ts`. Para <PROPIEDAD_DEMO_B> se respetan los primeros 5 por prioridad porque el RR actual de Revenio limita el pool a 5 agentes.
 
 La cuenta `GoHighLevel Test` usa agentes configurables por variables de entorno para evitar hardcodear usuarios de prueba.
 
 ## Campañas configuradas para demo
 
 ```text
-isla-blanca-es -> Isla Blanca / assistant Vapi ES
-isla-blanca-en -> Isla Blanca / assistant Vapi EN
-nikki-ocean-es -> Nikki Ocean / assistant Vapi ES
-nikki-ocean-en -> Nikki Ocean / assistant Vapi EN
+propiedad-demo-a-es -> <PROPIEDAD_DEMO_A> / assistant Vapi ES
+propiedad-demo-a-en -> <PROPIEDAD_DEMO_A> / assistant Vapi EN
+propiedad-demo-b-es -> <PROPIEDAD_DEMO_B> / assistant Vapi ES
+propiedad-demo-b-en -> <PROPIEDAD_DEMO_B> / assistant Vapi EN
 ```
 
 Si `campaignId` viene y hace match, Revenio usa el assistant Vapi y phone number configurados para esa campaña. Si falta `campaignId`, el sistema usa el flujo anterior por `locationId` y las variables globales `VAPI_ASSISTANT_ID` / `VAPI_PHONE_NUMBER_ID`.
@@ -101,22 +101,22 @@ GHL_NIKKI_OCEAN_TRIGGER_STAGE_ID=...
 Vapi por campaña:
 
 ```bash
-GHL_CAMPAIGN_IB_ES_ID=isla-blanca-es
+GHL_CAMPAIGN_IB_ES_ID=propiedad-demo-a-es
 GHL_CAMPAIGN_IB_ES_PROPERTY_KEY=isla_blanca
 GHL_CAMPAIGN_IB_ES_VAPI_ASSISTANT_ID=...
 GHL_CAMPAIGN_IB_ES_VAPI_PHONE_NUMBER_ID=...
 
-GHL_CAMPAIGN_IB_EN_ID=isla-blanca-en
+GHL_CAMPAIGN_IB_EN_ID=propiedad-demo-a-en
 GHL_CAMPAIGN_IB_EN_PROPERTY_KEY=isla_blanca
 GHL_CAMPAIGN_IB_EN_VAPI_ASSISTANT_ID=...
 GHL_CAMPAIGN_IB_EN_VAPI_PHONE_NUMBER_ID=...
 
-GHL_CAMPAIGN_NO_ES_ID=nikki-ocean-es
+GHL_CAMPAIGN_NO_ES_ID=propiedad-demo-b-es
 GHL_CAMPAIGN_NO_ES_PROPERTY_KEY=nikki_ocean
 GHL_CAMPAIGN_NO_ES_VAPI_ASSISTANT_ID=...
 GHL_CAMPAIGN_NO_ES_VAPI_PHONE_NUMBER_ID=...
 
-GHL_CAMPAIGN_NO_EN_ID=nikki-ocean-en
+GHL_CAMPAIGN_NO_EN_ID=propiedad-demo-b-en
 GHL_CAMPAIGN_NO_EN_PROPERTY_KEY=nikki_ocean
 GHL_CAMPAIGN_NO_EN_VAPI_ASSISTANT_ID=...
 GHL_CAMPAIGN_NO_EN_VAPI_PHONE_NUMBER_ID=...
@@ -164,7 +164,7 @@ Si nadie contesta, no se empuja nada a GHL.
 - Confirmar ID del custom field `Llamada de contacto inicial` para ambas propiedades.
 - Para la cuenta test, crear/confirmar un stage destino y custom field equivalentes si se quiere probar el push de regreso.
 - Para la cuenta test, configurar al menos un agente con `GHL_TEST_AGENT_1_*`.
-- Confirmar si Omar Sanchez queda fuera del pool de Nikki Ocean o si se amplia Revenio a mas de 5 agentes.
+- Confirmar si Agente fuera de pool queda fuera del pool de <PROPIEDAD_DEMO_B> o si se amplia Revenio a mas de 5 agentes.
 - Confirmar payload real del webhook en producción.
 - Configurar `campaignId` en Custom Data para los 4 workflows de demo.
 - Cargar los 4 `GHL_CAMPAIGN_*_VAPI_ASSISTANT_ID` correctos en Railway.

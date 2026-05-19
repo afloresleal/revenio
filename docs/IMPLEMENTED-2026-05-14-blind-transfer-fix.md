@@ -1,8 +1,8 @@
 # Fix: Habilitar Failover Automático en Todos los Flujos
 
 > **Fecha:** 2026-05-14
-> **Problema reportado por:** Marina (equipo)
-> **Caso específico:** Llamada a Marina (+525527326714) → Gaby sin señal → buzón sin failover
+> **Problema reportado por:** <OPERADOR_INTERNO> (equipo)
+> **Caso específico:** Llamada a <OPERADOR_INTERNO> (`<PHONE_E164>`) → Agente A sin señal → buzón sin failover
 > **Impacto:** TODOS los flujos de llamadas (GHL, /call/vapi, /call/test, test-campaign)
 
 ## Nota Importante: Distinción con Trabajo Anterior
@@ -14,7 +14,7 @@
 - ✅ **YA ESTÁ IMPLEMENTADO Y FUNCIONA**
 
 **Problema actual (2026-05-14):**
-- ❌ Detectar cuando el **AGENTE** (Gaby) no contesta → hacer **failover automático** al siguiente agente (Diana)
+- ❌ Detectar cuando el **AGENTE** (Agente A) no contesta → hacer **failover automático** al siguiente agente (Agente B)
 - ❌ El round robin está configurado pero **no se ejecuta** porque se usa `blind-transfer`
 - ❌ Archivos: `apps/api/src/routes/webhooks.ts` y `apps/api/src/server.ts`
 - ❌ **NECESITA SER IMPLEMENTADO**
@@ -29,7 +29,7 @@ El sistema de round robin con failover automático está **completamente impleme
 
 ## Evidencia del Problema
 
-### Log de la llamada a Marina (2026-05-14)
+### Log de la llamada a <OPERADOR_INTERNO> (2026-05-14)
 
 ```json
 {
@@ -43,7 +43,7 @@ El sistema de round robin con failover automático está **completamente impleme
           "type": "transferCall",
           "destinations": [{
             "type": "number",
-            "number": "+529988650335",  // Gaby
+            "number": "<PHONE_E164>",  // Agente A
             "transferPlan": {
               "mode": "blind-transfer",  // ❌ PROBLEMA
               "sipVerb": "dial"
@@ -56,20 +56,20 @@ El sistema de round robin con failover automático está **completamente impleme
   "roundRobin": {
     "strategy": "sequential_failover",
     "agents": [
-      { "name": "Gaby", "priority": 1, "transferNumber": "+529988650335" },
-      { "name": "Diana", "priority": 2, "transferNumber": "+525569708325" },
-      { "name": "Arturo", "priority": 3, "transferNumber": "+525529009523" }
+      { "name": "Agente A", "priority": 1, "transferNumber": "<PHONE_E164>" },
+      { "name": "Agente B", "priority": 2, "transferNumber": "<PHONE_E164>" },
+      { "name": "Agente C", "priority": 3, "transferNumber": "<PHONE_E164>" }
     ]
   }
 }
 ```
 
 **Qué pasó:**
-1. ✅ Vapi contestó llamada a Marina (+525527326714)
+1. ✅ Vapi contestó llamada a <OPERADOR_INTERNO> (`<PHONE_E164>`)
 2. ✅ Después de 1 segundo ejecutó el hook con `blind-transfer`
-3. ❌ Transfirió directamente a Gaby (+529988650335) SIN AMD
-4. ❌ Gaby no tenía señal → llamada cayó en su buzón
-5. ❌ **NO hubo failover** a Diana ni Arturo
+3. ❌ Transfirió directamente a Agente A (`<PHONE_E164>`) SIN AMD
+4. ❌ Agente A no tenía señal → llamada cayó en su buzón
+5. ❌ **NO hubo failover** a Agente B ni Agente C
 6. ❌ Round robin configurado pero **nunca se ejecutó**
 
 **Razón:** `blind-transfer` NO permite detección de voicemail ni failover. La llamada se transfiere y se queda ahí, sin importar si el agente contesta o no.
@@ -294,8 +294,8 @@ export function selectCampaignTestTransfer(params: {
 
 **En Vapi Dashboard → Assistants → [tu assistant] → Webhook Server:**
 - **Server URL:**
-  - Staging: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
-  - Production: `https://revenioapi-production.up.railway.app/webhooks/vapi/events`
+  - Staging: `https://<API_STAGING_HOST>/webhooks/vapi/events`
+  - Production: `https://<API_PRODUCTION_HOST>/webhooks/vapi/events`
 
 ### 4. Server Messages (en Vapi dashboard)
 
@@ -354,40 +354,40 @@ npm run lab                # Levantar Lab para pruebas
 ### Test 1: Primer agente no contesta (voicemail)
 
 **Setup:**
-- Agentes: Gaby (1), Diana (2), Arturo (3)
-- Gaby sin señal / no contesta
+- Agentes: Agente A (1), Agente B (2), Agente C (3)
+- Agente A sin señal / no contesta
 
 **Resultado esperado:**
-1. ✅ Transfiere a Gaby
+1. ✅ Transfiere a Agente A
 2. ✅ Detecta voicemail/no-answer
-3. ✅ Failover automático a Diana
-4. ✅ Si Diana contesta → llamada exitosa
-5. ✅ Dashboard muestra: Gaby (no-answer/voicemail), Diana (answered)
+3. ✅ Failover automático a Agente B
+4. ✅ Si Agente B contesta → llamada exitosa
+5. ✅ Dashboard muestra: Agente A (no-answer/voicemail), Agente B (answered)
 
 ### Test 2: Todos los agentes no contestan
 
 **Setup:**
-- Agentes: Gaby (1), Diana (2), Arturo (3)
+- Agentes: Agente A (1), Agente B (2), Agente C (3)
 - NINGUNO contesta
 
 **Resultado esperado:**
-1. ✅ Intenta Gaby → no contesta
-2. ✅ Intenta Diana → no contesta
-3. ✅ Intenta Arturo → no contesta
+1. ✅ Intenta Agente A → no contesta
+2. ✅ Intenta Agente B → no contesta
+3. ✅ Intenta Agente C → no contesta
 4. ✅ Llamada termina (sin agentes disponibles)
 5. ✅ Dashboard muestra: todos con razón (voicemail/no-answer)
 
 ### Test 3: Segundo agente contesta
 
 **Setup:**
-- Agentes: Gaby (1), Diana (2), Arturo (3)
-- Gaby ocupado, Diana contesta
+- Agentes: Agente A (1), Agente B (2), Agente C (3)
+- Agente A ocupado, Agente B contesta
 
 **Resultado esperado:**
-1. ✅ Transfiere a Gaby → detecta busy
-2. ✅ Failover a Diana → contesta
-3. ✅ Llamada continúa con Diana
-4. ✅ Dashboard muestra: Gaby (busy), Diana (answered)
+1. ✅ Transfiere a Agente A → detecta busy
+2. ✅ Failover a Agente B → contesta
+3. ✅ Llamada continúa con Agente B
+4. ✅ Dashboard muestra: Agente A (busy), Agente B (answered)
 
 ## Validación Post-Deploy
 
@@ -419,18 +419,18 @@ npm run lab                # Levantar Lab para pruebas
 
 **Con failover funcionando:**
 ```
-1. DialCallStatus=no-answer, To=+529988650335 (Gaby)
-   → Backend inicia failover a Diana
-2. DialCallStatus=completed, To=+525569708325 (Diana)
+1. DialCallStatus=no-answer, To=`<PHONE_E164>` (Agente A)
+   → Backend inicia failover a Agente B
+2. DialCallStatus=completed, To=`<PHONE_E164>` (Agente B)
    → Transfer exitoso
 ```
 
 ### Métricas en Dashboard
 
 **Campos poblados correctamente:**
-- `firstAgentName`: "Gaby"
-- `answeredAgentName`: "Diana"
-- `failoverSteps`: ["Gaby: no-answer", "Diana: answered"]
+- `firstAgentName`: "Agente A"
+- `answeredAgentName`: "Agente B"
+- `failoverSteps`: ["Agente A: no-answer", "Agente B: answered"]
 - `transferStatus`: "connected"
 - `sellerTalkSec`: > 0
 

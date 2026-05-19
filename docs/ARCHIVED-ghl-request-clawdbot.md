@@ -1,4 +1,4 @@
-# Solicitud Para Marina / Clawdbot - GoHighLevel Test
+# Solicitud Para <OPERADOR_INTERNO> / Clawdbot - GoHighLevel Test
 
 Necesitamos completar la configuracion de la cuenta de pruebas de GoHighLevel para probar la integracion con Revenio en staging.
 
@@ -7,13 +7,13 @@ Necesitamos completar la configuracion de la cuenta de pruebas de GoHighLevel pa
 API staging de Revenio:
 
 ```text
-https://revenioapi-staging.up.railway.app
+https://<API_STAGING_HOST>
 ```
 
 Webhook que debe recibir eventos desde GHL:
 
 ```text
-https://revenioapi-staging.up.railway.app/webhooks/gohighlevel
+https://<API_STAGING_HOST>/webhooks/gohighlevel
 ```
 
 Cuenta/location de pruebas:
@@ -131,7 +131,7 @@ Esperamos algo parecido a:
     "id": "<contact_id>",
     "firstName": "Juan",
     "lastName": "Perez",
-    "phone": "+525512345678",
+    "phone": "<PHONE_E164>",
     "email": "juan@example.com",
     "assignedTo": "<ghl_user_id>"
   },

@@ -18,7 +18,7 @@ Revenio es un sistema de llamadas outbound con IA. El flujo actual:
 3. La llamada llega a un agente humano de ventas
 4. Se registran métricas: duración, resultado, sentimiento, transcripción
 
-**Decisión actual:** la configuración operativa de campañas GHL ya no debe vivir en variables de entorno ni en código. Marina y su equipo deben crear campañas, seleccionar asistentes de Vapi, cargar vendedores humanos y configurar fallback desde Admin.
+**Decisión actual:** la configuración operativa de campañas GHL ya no debe vivir en variables de entorno ni en código. <OPERADOR_INTERNO> y su equipo deben crear campañas, seleccionar asistentes de Vapi, cargar vendedores humanos y configurar fallback desde Admin.
 
 **Avance actual:** Admin ya existe separado de Lab. Lab queda para monitoreo técnico, pruebas manuales y debugging; Admin queda como interfaz operativa para marketing.
 
@@ -47,7 +47,7 @@ Esto evita que el equipo tenga que entrar a Railway para cambiar números o agre
 - Si `assignedTo` viene vacío o no coincide, Revenio empieza con el primer vendedor activo del pool de la campaña.
 - Si no hay vendedores activos, Revenio usa el fallback final si está configurado.
 - No debe haber datos de clientes, campañas, vendedores ni teléfonos hardcodeados en `apps/api/src/routes/webhooks.ts`.
-- Admin apunta a staging para demos mientras terminamos pruebas: `https://revenioapi-staging.up.railway.app`.
+- Admin apunta a staging para demos mientras terminamos pruebas: `https://<API_STAGING_HOST>`.
 
 ---
 
@@ -79,8 +79,8 @@ Esto permite respetar la asignacion de GHL sin perder la proteccion del round ro
 ## Jerarquía propuesta
 
 ```
-Cliente  (ej: "Caribbean Luxury Homes")
-  └── Campaña GHL  (ej: "isla-blanca-es", "nikki-ocean-en")
+Cliente  (ej: "<CLIENTE_DEMO>")
+  └── Campaña GHL  (ej: "propiedad-demo-a-es", "propiedad-demo-b-en")
         ├── Config Vapi          → assistant ID, phone number ID, idioma, status
         ├── Config GHL           → Location ID visible; API key y pipeline/stage en avanzado si aplica
         ├── Vendedores humanos   → hasta 5 asesores con GHL User ID + teléfono
@@ -89,9 +89,9 @@ Cliente  (ej: "Caribbean Luxury Homes")
 
 Un cliente puede tener una o varias campañas. Cada campaña es independiente: tiene su propio assistant de Vapi, su número de salida, su pool de vendedores y su fallback final. Para GHL, la campaña se identifica por `campaignId` porque ese es el valor que llega en el webhook.
 
-En real estate, una campaña puede representar una propiedad o desarrollo específico, por ejemplo `Isla Blanca ES`. Ese significado debe vivir en el **nombre de la campaña**, no en un campo adicional de propiedad. El dato operativo de GHL para recibir leads de esa campaña es `Location ID`.
+En real estate, una campaña puede representar una propiedad o desarrollo específico, por ejemplo `<PROPIEDAD_DEMO_A> ES`. Ese significado debe vivir en el **nombre de la campaña**, no en un campo adicional de propiedad. El dato operativo de GHL para recibir leads de esa campaña es `Location ID`.
 
-La `GHL API key` no es necesaria para que GHL mande el webhook inicial a Revenio. Segun el alcance de KRP, se necesita por campaña/propiedad cuando Revenio haga el push post-llamada hacia GHL: asignar owner, mover stage y escribir transcript en el campo custom. Por eso debe quedar como dato avanzado, no como campo principal del alta de campaña.
+La `GHL API key` no es necesaria para que GHL mande el webhook inicial a Revenio. Segun el alcance de <CLIENTE_DEMO>, se necesita por campaña/propiedad cuando Revenio haga el push post-llamada hacia GHL: asignar owner, mover stage y escribir transcript en el campo custom. Por eso debe quedar como dato avanzado, no como campo principal del alta de campaña.
 
 ---
 
@@ -99,7 +99,7 @@ La `GHL API key` no es necesaria para que GHL mande el webhook inicial a Revenio
 
 ### Lab
 
-Lab se conserva como herramienta interna para Ale/equipo técnico:
+Lab se conserva como herramienta interna para <USUARIO_INTERNO>/equipo técnico:
 
 - monitorear llamadas;
 - revisar respuestas y payloads;
@@ -112,7 +112,7 @@ Lab puede mantener vistas técnicas porque su audiencia es interna.
 
 ### Admin
 
-Admin será la herramienta para Marina y su equipo:
+Admin será la herramienta para <OPERADOR_INTERNO> y su equipo:
 
 - crear campañas;
 - configurar Vapi Assistant ID y Phone Number ID;
@@ -160,7 +160,7 @@ Antes de hacer el modelo completo de clientes, el MVP operativo en Admin queda a
    - Fallback final configurado.
    - Instrucciones de webhook GHL listas para copiar campo por campo.
 
-Este MVP es suficiente para que Marina y su equipo operen demos sin Railway ni Lab.
+Este MVP es suficiente para que <OPERADOR_INTERNO> y su equipo operen demos sin Railway ni Lab.
 
 ---
 
@@ -176,15 +176,15 @@ El entregable debe mostrarse en formato operativo:
 | --- | --- |
 | Action name | `Webhook` o `Revenio - Crear llamada` |
 | Method | `POST` |
-| URL staging | `https://revenioapi-staging.up.railway.app/webhooks/gohighlevel` |
-| URL production | `https://revenioapi-production.up.railway.app/webhooks/gohighlevel` |
+| URL staging | `https://<API_STAGING_HOST>/webhooks/gohighlevel` |
+| URL production | `https://<API_PRODUCTION_HOST>/webhooks/gohighlevel` |
 
 ### Custom Data
 
 | Key | Value |
 | --- | --- |
 | `type` | `OpportunityAssignedTo` |
-| `campaignId` | valor exacto creado en Admin, ej. `isla-blanca-es` |
+| `campaignId` | valor exacto creado en Admin, ej. `propiedad-demo-a-es` |
 | `locationId` | ID de la location de GHL |
 | `id` | `{{ opportunity.id }}` |
 | `assignedTo` | usuario asignado en GHL, ej. `{{ opportunity.assigned_to }}` o valor equivalente disponible |
@@ -223,7 +223,7 @@ La visión completa agrega estos modelos. Para el MVP de demo podemos implementa
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | id | string | ID interno |
-| name | string | Nombre legible (ej: "Caribbean Luxury Homes") |
+| name | string | Nombre legible (ej: "<CLIENTE_DEMO>") |
 | slug | string único | Identificador URL-friendly |
 | status | enum | `active` / `paused` / `inactive` |
 
@@ -232,8 +232,8 @@ La visión completa agrega estos modelos. Para el MVP de demo podemos implementa
 |-------|------|-------------|
 | id | string | ID interno |
 | clientId | FK → Client | Cliente al que pertenece |
-| name | string | Nombre legible (ej: "Casalba Español") |
-| campaignId | string único | Identificador que llega desde GHL (ej: `isla-blanca-es`) |
+| name | string | Nombre legible (ej: "<CLIENTE_DEMO> Español") |
+| campaignId | string único | Identificador que llega desde GHL (ej: `propiedad-demo-a-es`) |
 | ghlLocationId | string opcional | Location ID de GHL para esta campaña |
 | ghlApiKey | string secreto opcional | API key de GHL para esta campaña; Admin no debe mostrarla después de guardarla |
 | ghlPipelineId | string opcional | Pipeline ID esperado en GHL |
@@ -247,7 +247,7 @@ La visión completa agrega estos modelos. Para el MVP de demo podemos implementa
 | campaignId | FK → Campaign | Campaña a la que pertenece |
 | name | string | Nombre del agente (ej: "Ana García") |
 | ghlUserId | string | ID del usuario en GHL; debe coincidir con `assignedTo` |
-| phoneNumber | string | Número E.164 (ej: `+525512345678`) |
+| phoneNumber | string | Número E.164 (ej: `<PHONE_E164>`) |
 | isActive | boolean | Si está disponible para recibir llamadas |
 | sortOrder | integer | Orden de prioridad en el round-robin |
 
@@ -266,7 +266,7 @@ La visión completa agrega estos modelos. Para el MVP de demo podemos implementa
 | campaignId | FK → Campaign | Campaña a la que pertenece |
 | vapiAssistantId | string | ID del asistente de voz |
 | vapiPhoneNumberId | string | ID del número de salida en VAPI |
-| assistantName | string | Nombre legible del asistente (ej: "Brenda") |
+| assistantName | string | Nombre legible del asistente (ej: "Assistant EN 1") |
 | language | enum | `es` / `en` |
 
 > Para el MVP no se recomienda guardar la API Key de Vapi por campaña. La API Key puede seguir como secreto de infraestructura. Lo que sí debe moverse a BD/UI son Assistant ID y Phone Number ID.
@@ -318,7 +318,7 @@ El webhook de GHL debe aceptar `campaignId` y resolver la campaña desde BD:
 
 ```json
 {
-  "campaignId": "isla-blanca-es",
+  "campaignId": "propiedad-demo-a-es",
   "assignedTo": "ghl-user-id-del-vendedor",
   "lead": { "phone": "+52...", "name": "Juan" }
 }
@@ -412,8 +412,8 @@ Lab se mantiene como herramienta de testing y monitoreo interno. Admin será una
 - Cuando haya un cliente sin CRM, se puede volver a mostrar la pestaña de prueba.
 
 ### Fase 3 — Migración del cliente actual
-- Crear el cliente "Caribbean Luxury Homes" en el nuevo sistema
-- Crear campañas actuales: Isla Blanca ES/EN y Nikki Ocean ES/EN.
+- Crear el cliente "<CLIENTE_DEMO>" en el nuevo sistema
+- Crear campañas actuales: <PROPIEDAD_DEMO_A> ES/EN y <PROPIEDAD_DEMO_B> ES/EN.
 - Migrar Assistant IDs, Phone Number IDs, vendedores y fallback final.
 - Verificar que las llamadas funcionen con el nuevo flujo
 - Las variables de entorno quedan como respaldo
@@ -443,7 +443,7 @@ Lab se mantiene como herramienta de testing y monitoreo interno. Admin será una
 | Config persistente | Los agentes y credenciales de una campaña se guardan y cargan automáticamente |
 | Multi-campaña | Se puede crear una segunda campaña sin tocar código ni variables de entorno |
 | Panel funcional | El equipo de marketing puede crear y configurar una campaña sin asistencia técnica |
-| Retrocompatibilidad | Las llamadas existentes de Casalba siguen funcionando sin cambios |
+| Retrocompatibilidad | Las llamadas existentes de <CLIENTE_DEMO> siguen funcionando sin cambios |
 | Aislamiento | Las métricas y datos de cada campaña son independientes |
 | Fallback final | Si ningún vendedor contesta, la llamada escala al gerente configurado en Admin |
 | AssignedTo primero | Si GHL manda un vendedor asignado y coincide con Admin, Revenio lo intenta primero |

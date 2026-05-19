@@ -25,7 +25,7 @@ Scripts helper para validar código antes de commit y detectar errores comunes.
 
 **Cuándo usar:**
 - Antes de cada commit
-- Claude lo corre automáticamente antes de decir "feature completa"
+- <AI_ASSISTANT> lo corre automáticamente antes de decir "feature completa"
 
 ---
 
@@ -98,14 +98,14 @@ Verify that callWindowEndHour exists in:
 
 **Cuándo usar:**
 - Después de agregar un campo nuevo a un modelo
-- Claude lo corre automáticamente cuando agrega campos
+- <AI_ASSISTANT> lo corre automáticamente cuando agrega campos
 - Antes de crear PR con cambios en modelos
 
 ---
 
-## 🚀 Uso en Workflow de Claude
+## 🚀 Uso en Workflow de <AI_ASSISTANT>
 
-### Cuando Claude implementa una feature:
+### Cuando <AI_ASSISTANT> implementa una feature:
 
 **PASO 1:** Antes de escribir código
 ```bash
@@ -228,4 +228,4 @@ npm -w apps/api exec tsc --noEmit
 ---
 
 **Última actualización:** 2026-05-16
-**Mantenido por:** Ale + Claude
+**Mantenido por:** <USUARIO_INTERNO> + <AI_ASSISTANT>

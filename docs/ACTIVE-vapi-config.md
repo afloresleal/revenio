@@ -1,12 +1,12 @@
 # VAPI Config Producción — Revenio Voice Agent
 
 > Nota de handoff técnico (2026-04-08): ver [CALL-TRANSFER-HANDOFF-2026-04-08.md](./CALL-TRANSFER-HANDOFF-2026-04-08.md) para reglas de no-regresión del flujo Vapi+Twilio.
-> Nota de staging GHL (2026-05-03): ver [GHL-DEMO-HANDOFF-2026-05-03.md](./GHL-DEMO-HANDOFF-2026-05-03.md) para la configuración validada de Brenda + GoHighLevel.
+> Nota de staging GHL (2026-05-03): ver [GHL-DEMO-HANDOFF-2026-05-03.md](./GHL-DEMO-HANDOFF-2026-05-03.md) para la configuración validada de Assistant EN 1 + GoHighLevel.
 > Nota Admin (2026-05-06): para demos nuevos con GHL, los `Vapi Assistant ID` y `Vapi Phone Number ID` por campaña se configuran en Admin/BD, no con variables `GHL_CAMPAIGN_*` en Railway.
 
 > **Última actualización:** 2026-05-03
-> **Optimizado por:** Julia + Marina (canal #revenio-mvp-voice-agent)
-> **Brand:** Caribbean Luxury Homes (Riviera Maya)
+> **Optimizado por:** <CLAWDBOT_INTERNO> + <OPERADOR_INTERNO> (canal #revenio-mvp-voice-agent)
+> **Brand:** <CLIENTE_DEMO> (<MERCADO_DEMO>)
 > **North Star:** Transfer exitoso con confirmación inteligente
 
 ---
@@ -17,9 +17,9 @@
 
 | Agente | ID | Idioma | Nombre | Comportamiento |
 |--------|-----|--------|--------|----------------|
-| **1-ES-F** | `<VAPI_ASSISTANT_ID_MARINA>` | Español | Marina | Transfer inmediato |
-| **2-EN-F** | `<VAPI_ASSISTANT_ID_BRENDA>` | English | **Brenda** | Transfer inmediato (sin confirmación) |
-| **3-EN-F** | `<VAPI_ASSISTANT_ID_BELLA>` | English | **Bella** | Con confirmación antes de transfer |
+| **1-ES-F** | `<VAPI_ASSISTANT_ID_ES>` | Español | <OPERADOR_INTERNO> | Transfer inmediato |
+| **2-EN-F** | `<VAPI_ASSISTANT_ID_EN_1>` | English | **Assistant EN 1** | Transfer inmediato (sin confirmación) |
+| **3-EN-F** | `<VAPI_ASSISTANT_ID_EN_2>` | English | **Assistant EN 2** | Con confirmación antes de transfer |
 
 ### Infraestructura Compartida
 
@@ -33,17 +33,17 @@
 
 | Ambiente | Vapi Assistant Server URL |
 |----------|---------------------------|
-| Staging | `https://revenioapi-staging.up.railway.app/webhooks/vapi/events` |
-| Production | `https://revenioapi-production.up.railway.app/webhooks/vapi/events` |
+| Staging | `https://<API_STAGING_HOST>/webhooks/vapi/events` |
+| Production | `https://<API_PRODUCTION_HOST>/webhooks/vapi/events` |
 
 Regla operativa: si la llamada se crea desde staging, el assistant usado en Vapi debe apuntar al webhook staging. Si apunta a production, los eventos de transferencia se procesan en el backend equivocado y Vapi puede usar fallback/config vieja.
 
 ### Checklist Vapi para pruebas GHL staging
 
-- Assistant correcto: `Brenda - EN - Caribbean Luxury` (`<VAPI_ASSISTANT_ID_BRENDA>`).
-- Railway staging: `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_BRENDA>`.
+- Assistant correcto: `Assistant EN 1 - EN - <CLIENTE_DEMO>` (`<VAPI_ASSISTANT_ID_EN_1>`).
+- Railway staging: `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_EN_1>`.
 - Para multi-campaña nueva, usar Admin para guardar el `Vapi Assistant ID` por campaña. Las variables `GHL_CAMPAIGN_*_VAPI_ASSISTANT_ID` quedaron como referencia histórica del demo anterior.
-- Server URL: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
+- Server URL: `https://<API_STAGING_HOST>/webhooks/vapi/events`.
 - Timeout recomendado: `10` a `30` segundos.
 - Server Messages:
   - Activar: `transfer-update`, `transfer-destination-request`, `speech-update`, `tool-calls`, `end-of-call-report`.
@@ -55,17 +55,17 @@ Regla operativa: si la llamada se crea desde staging, el assistant usado en Vapi
 
 ## 2. First Messages
 
-### Brenda (2-EN-F) — Transfer Inmediato
+### Assistant EN 1 (2-EN-F) — Transfer Inmediato
 ```
-Hi {name} — we just received the request you submitted a moment ago about Riviera Maya properties. This is Brenda, a virtual assistant with Caribbean Luxury Homes. Let me connect you with one of our property specialists right now. One moment while I connect you.
-```
-
-### Bella (3-EN-F) — Con Confirmación
-```
-Hi {name} — we just received your request for information about Riviera Maya properties. This is Bella, a virtual assistant with Caribbean Luxury Homes. Did you just submit that request a moment ago?
+Hi {name} — we just received the request you submitted a moment ago about <MERCADO_DEMO> properties. This is Assistant EN 1, a virtual assistant with <CLIENTE_DEMO>. Let me connect you with one of our property specialists right now. One moment while I connect you.
 ```
 
-### Marina (1-ES-F) — Español
+### Assistant EN 2 (3-EN-F) — Con Confirmación
+```
+Hi {name} — we just received your request for information about <MERCADO_DEMO> properties. This is Assistant EN 2, a virtual assistant with <CLIENTE_DEMO>. Did you just submit that request a moment ago?
+```
+
+### <OPERADOR_INTERNO> (1-ES-F) — Español
 ```
 Hola, ¿hablo con {name}?
 ```
@@ -74,14 +74,14 @@ Hola, ¿hablo con {name}?
 
 ## 3. System Prompts
 
-### Brenda (Transfer Inmediato)
+### Assistant EN 1 (Transfer Inmediato)
 ```
-You are Brenda from Caribbean Luxury Homes. After delivering the first message, execute transferCall immediately. Do not wait for a response. Do not generate any additional message after initiating the transfer.
+You are Assistant EN 1 from <CLIENTE_DEMO>. After delivering the first message, execute transferCall immediately. Do not wait for a response. Do not generate any additional message after initiating the transfer.
 ```
 
-### Bella (Con Confirmación + Edge Cases)
+### Assistant EN 2 (Con Confirmación + Edge Cases)
 ```
-You are Bella from Caribbean Luxury Homes. After delivering the first message, wait for the customer's response.
+You are Assistant EN 2 from <CLIENTE_DEMO>. After delivering the first message, wait for the customer's response.
 
 AFFIRMATIVE RESPONSES (execute transfer):
 - yes, yeah, sure, correct, that's right, yep, uh-huh, speaking, I did, that's me, absolutely, right, yup, indeed, of course, certainly
@@ -94,32 +94,32 @@ NEGATIVE RESPONSES (end call politely):
 - End the call.
 
 NO RESPONSE (timeout ~5 seconds):
-- Say: "I'm sorry, I didn't catch that. Did you just submit a request about properties in Riviera Maya?"
+- Say: "I'm sorry, I didn't catch that. Did you just submit a request about properties in <MERCADO_DEMO>?"
 - Wait for response. If still no response after second attempt, say: "No problem, feel free to reach out when you're ready. Goodbye!" and end call.
 
 UNCLEAR/AMBIGUOUS RESPONSES:
 - what, huh, sorry, pardon, can you repeat
-- Say: "Of course! I'm Bella from Caribbean Luxury Homes. We received your request about Riviera Maya properties. Would you like me to connect you with a specialist?"
+- Say: "Of course! I'm Assistant EN 2 from <CLIENTE_DEMO>. We received your request about <MERCADO_DEMO> properties. Would you like me to connect you with a specialist?"
 - Then follow affirmative/negative flow above.
 ```
 
-### Marina (Español)
+### <OPERADOR_INTERNO> (Español)
 ```
-Eres Marina de Casalba. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool.
+Eres <OPERADOR_INTERNO> de <CLIENTE_DEMO>. Cuando el usuario responda, ejecuta transferCall inmediatamente. No digas nada, solo ejecuta el tool.
 ```
 
 ---
 
 ## 4. Transfer Messages
 
-### English (Brenda/Bella)
+### English (Assistant EN 1/Assistant EN 2)
 ```
-This is a virtual assistant with Caribbean Luxury Homes. We received your request about Riviera Maya properties. Please hold while I connect you with a property specialist.
+This is a virtual assistant with <CLIENTE_DEMO>. We received your request about <MERCADO_DEMO> properties. Please hold while I connect you with a property specialist.
 ```
 
-### Español (Marina)
+### Español (<OPERADOR_INTERNO>)
 ```
-Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propiedades en Los Cabos. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.
+Habla <OPERADOR_INTERNO> de <CLIENTE_DEMO>, asistente virtual. Nos dejaste tus datos sobre propiedades en <MERCADO_DEMO>. Un asesor lo atenderá de manera personal, por favor deme unos segundos que le estoy transfiriendo su llamada.
 ```
 
 ---
@@ -140,7 +140,7 @@ Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propieda
 {
   "provider": "11labs",
   "model": "eleven_turbo_v2_5",
-  "voiceId": "<ELEVENLABS_VOICE_ID_MARINA>",
+  "voiceId": "<ELEVENLABS_VOICE_ID_ES>",
   "speed": 1.15,
   "stability": 0.5,
   "similarityBoost": 0.75
@@ -150,9 +150,9 @@ Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propieda
 ### Voice IDs por Agente
 | Agente | Voice ID | Descripción |
 |--------|----------|-------------|
-| Marina | `<ELEVENLABS_VOICE_ID_MARINA>` | ElevenLabs mujer ES |
-| Brenda (Rachel) | `<ELEVENLABS_VOICE_ID_RACHEL>` | ElevenLabs Rachel EN |
-| Bella | `<ELEVENLABS_VOICE_ID_BELLA>` | ElevenLabs Bella EN |
+| <OPERADOR_INTERNO> | `<ELEVENLABS_VOICE_ID_ES>` | ElevenLabs mujer ES |
+| Assistant EN 1 (Voice EN 1) | `<ELEVENLABS_VOICE_ID_EN_1>` | ElevenLabs Voice EN 1 EN |
+| Assistant EN 2 | `<ELEVENLABS_VOICE_ID_EN_2>` | ElevenLabs Assistant EN 2 EN |
 
 ---
 
@@ -196,7 +196,7 @@ Habla Marina de Casalba, asistente virtual. Nos dejaste tus datos sobre propieda
 
 ---
 
-## 9. Edge Cases (Bella)
+## 9. Edge Cases (Assistant EN 2)
 
 | Escenario | Trigger | Respuesta |
 |-----------|---------|-----------|
@@ -255,10 +255,10 @@ GHL debe enviar `campaignId` en Custom Data. Revenio lo usa para elegir el assis
 
 | Campaign ID | Codigo Railway | Propiedad |
 |-------------|----------------|-----------|
-| `isla-blanca-es` | `IB_ES` | Isla Blanca |
-| `isla-blanca-en` | `IB_EN` | Isla Blanca |
-| `nikki-ocean-es` | `NO_ES` | Nikki Ocean |
-| `nikki-ocean-en` | `NO_EN` | Nikki Ocean |
+| `propiedad-demo-a-es` | `IB_ES` | <PROPIEDAD_DEMO_A> |
+| `propiedad-demo-a-en` | `IB_EN` | <PROPIEDAD_DEMO_A> |
+| `propiedad-demo-b-es` | `NO_ES` | <PROPIEDAD_DEMO_B> |
+| `propiedad-demo-b-en` | `NO_EN` | <PROPIEDAD_DEMO_B> |
 
 Variables por campaña:
 
@@ -306,7 +306,7 @@ Cliente contesta → Bot saluda → Transfer iniciado
 | Tipo | Mensaje (English) |
 |------|-------------------|
 | `request-start` | "Please hold while I connect you with a property specialist." |
-| `request-failed` | "I apologize, our property specialists are currently assisting other clients. We have your contact information and someone will call you back within the next 30 minutes. Thank you for your interest in Caribbean Luxury Homes!" |
+| `request-failed` | "I apologize, our property specialists are currently assisting other clients. We have your contact information and someone will call you back within the next 30 minutes. Thank you for your interest in <CLIENTE_DEMO>!" |
 
 ### Tool Structure historico (VAPI)
 
@@ -329,11 +329,11 @@ Nota: esta estructura con destino fijo no debe usarse para el flujo GHL staging 
 
 | Fecha | Cambio | Autor |
 |-------|--------|-------|
-| 2026-05-03 | Documentado flujo GHL staging con Brenda, Server URL staging, `phone-call-control` off y transferencia dinamica desde Revenio | Codex + Ale |
-| 2026-03-05 | Fix {{name}} interpolación + Transfer fallback behavior | Julia |
-| 2026-03-04 | Rebrand a Caribbean Luxury Homes, nuevos scripts Brenda/Bella | Julia |
-| 2026-03-04 | Edge cases para Bella (negativo, timeout, ambiguo) | Julia |
-| 2026-02-18 | Agregado "NO generes mensaje" al prompt | Julia |
-| 2026-02-17 | Optimización latencia (turbo + tiempos bajos) | Julia |
-| 2026-02-17 | Documentado bug desync | Julia |
-| 2026-02-16 | Configuración inicial | Marina + Ale |
+| 2026-05-03 | Documentado flujo GHL staging con Assistant EN 1, Server URL staging, `phone-call-control` off y transferencia dinamica desde Revenio | Codex + <USUARIO_INTERNO> |
+| 2026-03-05 | Fix {{name}} interpolación + Transfer fallback behavior | <CLAWDBOT_INTERNO> |
+| 2026-03-04 | Rebrand a <CLIENTE_DEMO>, nuevos scripts Assistant EN 1/Assistant EN 2 | <CLAWDBOT_INTERNO> |
+| 2026-03-04 | Edge cases para Assistant EN 2 (negativo, timeout, ambiguo) | <CLAWDBOT_INTERNO> |
+| 2026-02-18 | Agregado "NO generes mensaje" al prompt | <CLAWDBOT_INTERNO> |
+| 2026-02-17 | Optimización latencia (turbo + tiempos bajos) | <CLAWDBOT_INTERNO> |
+| 2026-02-17 | Documentado bug desync | <CLAWDBOT_INTERNO> |
+| 2026-02-16 | Configuración inicial | <OPERADOR_INTERNO> + <USUARIO_INTERNO> |

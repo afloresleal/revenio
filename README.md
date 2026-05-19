@@ -9,15 +9,15 @@ Incluye:
 
 ---
 
-## ⚠️ IMPORTANTE: Para Developers / Claude AI
+## ⚠️ IMPORTANTE: Para Developers / <AI_ASSISTANT> AI
 
 **Este es código de producción que maneja llamadas telefónicas en vivo.**
 
-### 🤖 Si eres Claude AI trabajando en este repo:
+### 🤖 Si eres <AI_ASSISTANT> AI trabajando en este repo:
 
 **ANTES de escribir código, DEBES leer:**
 
-1. **`.claude/README.md`** ⭐ - Instrucciones MANDATORY para Claude
+1. **`.claude/README.md`** ⭐ - Instrucciones MANDATORY para <AI_ASSISTANT>
 2. **`.claude-checklist.md`** ⭐ - Checklist paso a paso (NO omitir)
 3. **`docs/TESTING-AND-REVIEW-GUIDELINES.md`** - Estrategia de testing
 
@@ -274,7 +274,7 @@ Recordings proxy:
 - `GET /api/recordings/:recordingSid`
 
 ### Guardrails (transfer/failover)
-- `BRENDA_TRANSFER_TRIGGER_STATUS=stopped` recomendado para auto-transfer estable.
+- `ASSISTANT_EN_TRANSFER_TRIGGER_STATUS=stopped` recomendado para auto-transfer estable.
 - En callbacks de Twilio `Dial action` (`/webhooks/twilio/transfer-status`), la respuesta debe ser TwiML válido.
   - Si se responde texto plano, Twilio puede cortar con mensaje de error de aplicación.
 - RR debe escalar también en `status-update: ended` (no esperar solo `DialCallStatus`).
@@ -292,7 +292,7 @@ Recordings proxy:
 ## 9) Contexto rápido (para retomar en nuevo chat)
 
 Estado operativo al cierre (2026-04-13):
-- Brenda auto-transfiere en `speech-update` (`assistantId` fijo de Brenda, sin depender de `turn`).
+- Assistant EN 1 auto-transfiere en `speech-update` (`assistantId` fijo de Assistant EN 1, sin depender de `turn`).
 - Backend no sobreescribe prompt/firstMessage/model/tools de Vapi (Vapi manda el guion).
 - Round robin secuencial activo (1 -> 2 -> 3), con failover por:
   - `busy/no-answer/failed/voicemail`
@@ -460,7 +460,7 @@ git commit -m "feat: add newField to GhlCampaign model"
 ```
 
 **Archivos clave para consultar:**
-- `.claude-checklist.md` - Checklist paso a paso (mandatory para Claude)
+- `.claude-checklist.md` - Checklist paso a paso (mandatory para <AI_ASSISTANT>)
 - `docs/TESTING-AND-REVIEW-GUIDELINES.md` - Proceso completo de testing
 - `scripts/README.md` - Documentación de scripts de validación
 

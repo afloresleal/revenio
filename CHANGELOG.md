@@ -7,7 +7,7 @@ Todos los cambios notables en este proyecto serán documentados aquí.
 ### Hotfix: Producción - Round Robin, Fallback y Lectura Operativa
 
 **Contexto:**
-Durante pruebas en producción con el equipo de Marina, se detectaron diferencias entre la verdad operativa de la llamada y lo mostrado en Dashboard/Admin, además de riesgo de audio filtrado desde intentos fallidos antes de llegar al fallback.
+Durante pruebas en producción con el equipo de <OPERADOR_INTERNO>, se detectaron diferencias entre la verdad operativa de la llamada y lo mostrado en Dashboard/Admin, además de riesgo de audio filtrado desde intentos fallidos antes de llegar al fallback.
 
 **Cambios implementados:**
 - El failover de round robin ahora respeta el horario personalizado de la campaña cuando la llamada pertenece a una campaña GHL.
@@ -65,7 +65,7 @@ Durante pruebas en producción con el equipo de Marina, se detectaron diferencia
 - `transfer_success` ahora se registra solo cuando hay confirmación humana real.
 
 **Comportamiento validado en staging:**
-- Diana -> Arturo -> Marina ejecutó round robin completo.
+- Agente B -> Agente C -> <OPERADOR_INTERNO> ejecutó round robin completo.
 - El sistema saltó correctamente los primeros dos intentos fallidos.
 - Cuando ningún agente humano atendió, `roundRobinAnsweredAgentName` quedó en `null`.
 - La llamada dejó de contarse como éxito falso cuando terminó en buzón.
@@ -88,7 +88,7 @@ Durante pruebas en producción con el equipo de Marina, se detectaron diferencia
 
 ### Fix: Admin Panel Agent Save Error
 
-**Problema reportado por:** Ale (durante testing en staging)
+**Problema reportado por:** <USUARIO_INTERNO> (durante testing en staging)
 
 **Síntoma:** Al intentar guardar agentes en el Admin Panel de staging, el request fallaba y el backend devolvía error de Prisma por constraint único.
 
@@ -165,7 +165,7 @@ Unique constraint failed on the fields: (`property_key`,`campaign_id`,`ghl_user_
 - ✅ AMD detecta voicemail y activa failover
 - ✅ Round robin funciona con múltiples agentes
 
-**Reported by:** Marina + testing con assistant `Isla-Blanca_v.corta`
+**Reported by:** <OPERADOR_INTERNO> + testing con assistant `Isla-Blanca_v.corta`
 
 ---
 
@@ -226,13 +226,13 @@ Unique constraint failed on the fields: (`property_key`,`campaign_id`,`ghl_user_
 
 ### Fix: Habilitado Failover Automático para Todos los Flujos
 
-**Problema reportado por:** Marina (equipo)
+**Problema reportado por:** <OPERADOR_INTERNO> (equipo)
 
 **Caso específico:**
-- Llamada a Marina (+525527326714) transferida a Gaby (+529988650335)
-- Gaby sin señal → llamada cayó en buzón de voz de Gaby
-- Round robin configurado con 3 agentes (Gaby, Diana, Arturo) pero **NO se ejecutó failover**
-- Marina terminó en el buzón sin que se intentara con Diana o Arturo
+- Llamada a <OPERADOR_INTERNO> (`<PHONE_E164>`) transferida a Agente A (`<PHONE_E164>`)
+- Agente A sin señal → llamada cayó en buzón de voz de Agente A
+- Round robin configurado con 3 agentes (Agente A, Agente B, Agente C) pero **NO se ejecutó failover**
+- <OPERADOR_INTERNO> terminó en el buzón sin que se intentara con Agente B o Agente C
 
 **Causa raíz:**
 Todas las llamadas usaban `blind-transfer` (transferencia ciega) via hooks de Vapi, lo que bypaseaba completamente el sistema de failover automático ya implementado en el backend.
@@ -350,7 +350,7 @@ El admin tenía 7 campos confusos para stage mapping que no tenía sentido para 
 
 ### Reorganizado
 - Proyecto adoptado como base principal para Voice Agent MVP
-- Auditoría técnica completada (Julia + Codex)
+- Auditoría técnica completada (<CLAWDBOT_INTERNO> + Codex)
 - Documentación consolidada
 
 ### Identificado (Gaps)
@@ -366,7 +366,7 @@ El admin tenía 7 campos confusos para stage mapping que no tenía sentido para 
 
 ## [0.1.0] - 2026-02-06
 
-### Inicial (Ale)
+### Inicial (<USUARIO_INTERNO>)
 - Backend Express + TypeScript
 - Prisma schema (Lead, CallAttempt, Event)
 - Integración VAPI para llamadas outbound

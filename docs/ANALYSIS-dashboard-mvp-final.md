@@ -556,4 +556,4 @@ CÓDIGO:
 
 ✅ **Revisado por Codex** — 2026-02-18
 ✅ **Incorporadas sugerencias críticas**
-📋 **Listo para revisión de Marina**
+📋 **Listo para revisión de <OPERADOR_INTERNO>**

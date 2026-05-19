@@ -10,7 +10,7 @@ Antes de tomar las capturas, necesitas:
 2. Configurar al menos 2-3 agentes con datos ficticios
 3. Tener algunos registros de llamadas (si es posible)
 
-**URL del admin**: https://revenio-admin.up.railway.app/
+**URL del admin**: https://<ADMIN_HOST>/
 
 ---
 
@@ -48,9 +48,9 @@ Antes de tomar las capturas, necesitas:
 **Formulario de campaña con datos de ejemplo**
 - Cómo tomar:
   1. Llena TODOS los campos básicos de la campaña con datos ficticios:
-     - Cliente: "Caribbean Luxury Homes"
-     - Nombre de la campaña: "Isla Blanca ES"
-     - Campaign ID: "isla-blanca-es"
+     - Cliente: "<CLIENTE_DEMO>"
+     - Nombre de la campaña: "<PROPIEDAD_DEMO_A> ES"
+     - Campaign ID: "propiedad-demo-a-es"
      - GHL Location ID: "abc123def456"
      - Vapi Assistant ID: "12345678-1234-1234-1234-123456789012"
      - Vapi Phone Number ID: "87654321-4321-4321-4321-210987654321"
@@ -87,21 +87,21 @@ Antes de tomar las capturas, necesitas:
      - **Agente 1**:
        - Nombre: "Ana"
        - GHL User ID: "user_123abc"
-       - Teléfono: "+525512345678"
+       - Teléfono: "<PHONE_E164>"
        - Activo: ✓
      - **Agente 2**:
        - Nombre: "Luis"
        - GHL User ID: "user_456def"
-       - Teléfono: "+525587654321"
+       - Teléfono: "<PHONE_E164>"
        - Activo: ✓
      - **Agente 3** (opcional):
        - Nombre: "Sofía"
        - GHL User ID: "user_789ghi"
-       - Teléfono: "+525598765432"
+       - Teléfono: "<PHONE_E164>"
        - Activo: ✓
   2. Llena el **Fallback final**:
      - Nombre: "Gerente de marketing"
-     - Teléfono: "+525555555555"
+     - Teléfono: "<PHONE_E164>"
      - GHL User ID: (dejar vacío o poner "user_fallback")
   3. Desplázate para mostrar todos los agentes y el fallback
   4. Toma captura de todo el formulario de agentes

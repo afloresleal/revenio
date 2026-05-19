@@ -13,15 +13,15 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
 ### Request Body
 ```json
 {
-  "to_number": "+521234567890",    // required
-  "lead_name": "Marina",           // optional - determina flujo
+  "to_number": "<PHONE_E164>",    // required
+  "lead_name": "<OPERADOR_INTERNO>",           // optional - determina flujo
   "lead_id": "uuid",               // optional - usa lead existente
   "lead_source": "facebook",       // optional - default "vapi-call"
   "round_robin_enabled": true,     // optional
   "round_robin_agents": [          // optional - max 5
     {
       "name": "Ana",               // optional
-      "transfer_number": "+525512345678" // required
+      "transfer_number": "<PHONE_E164>" // required
     }
   ]
 }
@@ -81,14 +81,14 @@ Inicia una llamada VAPI con validación de horario y flujo dinámico.
 
 --- — Revenio
 
-Base URL: `https://revenio-api.up.railway.app` (producción)
+Base URL: `https://<API_PRODUCTION_HOST>` (producción)
 
 ## Health
 
 ### GET /health
 
 ```bash
-curl https://revenio-api.up.railway.app/health
+curl https://<API_PRODUCTION_HOST>/health
 ```
 
 **Response:**
@@ -105,9 +105,9 @@ curl https://revenio-api.up.railway.app/health
 Crear un nuevo lead.
 
 ```bash
-curl -X POST https://revenio-api.up.railway.app/api/leads \
+curl -X POST https://<API_PRODUCTION_HOST>/api/leads \
   -H "Content-Type: application/json" \
-  -d '{"phone": "+525512345678", "name": "Juan Pérez", "campaign": "casalba"}'
+  -d '{"phone": "<PHONE_E164>", "name": "<NOMBRE_DE_EJEMPLO>", "campaign": "campana-demo"}'
 ```
 
 **Body:**
@@ -123,8 +123,8 @@ curl -X POST https://revenio-api.up.railway.app/api/leads \
 ```json
 {
   "id": "uuid",
-  "phone": "+525512345678",
-  "name": "Juan Pérez",
+  "phone": "<PHONE_E164>",
+  "name": "<NOMBRE_DE_EJEMPLO>",
   "status": "NEW",
   "createdAt": "2026-02-17T..."
 }
@@ -135,7 +135,7 @@ curl -X POST https://revenio-api.up.railway.app/api/leads \
 Listar leads con paginación.
 
 ```bash
-curl "https://revenio-api.up.railway.app/api/leads?limit=20&offset=0"
+curl "https://<API_PRODUCTION_HOST>/api/leads?limit=20&offset=0"
 ```
 
 **Query params:**
@@ -152,9 +152,9 @@ curl "https://revenio-api.up.railway.app/api/leads?limit=20&offset=0"
 Disparar una llamada de prueba.
 
 ```bash
-curl -X POST https://revenio-api.up.railway.app/call/test \
+curl -X POST https://<API_PRODUCTION_HOST>/call/test \
   -H "Content-Type: application/json" \
-  -d '{"lead_id": "uuid", "to_number": "+525512345678"}'
+  -d '{"lead_id": "uuid", "to_number": "<PHONE_E164>"}'
 ```
 
 **Body:**
@@ -180,9 +180,9 @@ curl -X POST https://revenio-api.up.railway.app/call/test \
 Llamada directa sin lead previo.
 
 ```bash
-curl -X POST https://revenio-api.up.railway.app/call/test/direct \
+curl -X POST https://<API_PRODUCTION_HOST>/call/test/direct \
   -H "Content-Type: application/json" \
-  -d '{"phone": "+525512345678", "name": "Test User"}'
+  -d '{"phone": "<PHONE_E164>", "name": "Test User"}'
 ```
 
 ---

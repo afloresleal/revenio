@@ -36,7 +36,7 @@ El nombre de campaña puede representar la propiedad o desarrollo inmobiliario. 
 Por campaña, capturar hasta 5 vendedores:
 
 - Nombre
-- Teléfono en formato E.164, por ejemplo `+525512345678`
+- Teléfono en formato E.164, por ejemplo `<PHONE_E164>`
 - `GHL User ID`
 - Activo/inactivo
 
@@ -49,7 +49,7 @@ Admin genera el entregable para configurar la acción Webhook en GoHighLevel.
 Para staging:
 
 ```text
-POST https://revenioapi-staging.up.railway.app/webhooks/gohighlevel
+POST https://<API_STAGING_HOST>/webhooks/gohighlevel
 ```
 
 Custom Data mínimo:

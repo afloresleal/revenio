@@ -1,6 +1,6 @@
 # Roadmap — Revenio MVP
 
-> Basado en auditoría técnica 2026-02-17 (Julia + Codex)
+> Basado en auditoría técnica 2026-02-17 (<CLAWDBOT_INTERNO> + Codex)
 
 ## 🎯 North Star
 

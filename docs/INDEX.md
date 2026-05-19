@@ -61,8 +61,8 @@ Documentos obsoletos, reemplazados por versiones nuevas, o que no se implementar
 | [ARCHIVED-clawdbot-handoff-inicial.md](ARCHIVED-clawdbot-handoff-inicial.md) | Handoff técnico inicial de desarrollo (arquitectura evolucionó) | 2026-05-14 |
 | [ARCHIVED-mb-dynamic-name-v1.md](ARCHIVED-mb-dynamic-name-v1.md) | Reemplazado por v3 | 2026-05-12 |
 | [ARCHIVED-mb-dynamic-name-v2.md](ARCHIVED-mb-dynamic-name-v2.md) | Reemplazado por v3 | 2026-05-12 |
-| [ARCHIVED-ghl-krp-integration.md](ARCHIVED-ghl-krp-integration.md) | Integración específica no continuada | 2026-05-12 |
-| [ARCHIVED-ghl-request-marina-clawdbot.md](ARCHIVED-ghl-request-marina-clawdbot.md) | Request específico completado | 2026-05-12 |
+| [ARCHIVED-ghl-client-integration.md](ARCHIVED-ghl-client-integration.md) | Integración específica no continuada | 2026-05-12 |
+| [ARCHIVED-ghl-request-clawdbot.md](ARCHIVED-ghl-request-clawdbot.md) | Request específico completado | 2026-05-12 |
 | [ARCHIVED-prompt-ui-sentiment.md](ARCHIVED-prompt-ui-sentiment.md) | Prompts experimentales no usados | 2026-05-07 |
 | [ARCHIVED-resumen-inicial.md](ARCHIVED-resumen-inicial.md) | Resumen inicial de onboarding (ya no necesario) | 2026-05-07 |
 | [ARCHIVED-roadmap-viejo.md](ARCHIVED-roadmap-viejo.md) | Roadmap obsoleto (ver CHANGELOG para features actuales) | 2026-05-07 |
@@ -112,4 +112,4 @@ Para detalles técnicos de una feature, buscar en: `docs/IMPLEMENTED-*`
 
 ---
 
-**Última revisión del índice:** 2026-05-14 por Claude Sonnet 4.5
+**Última revisión del índice:** 2026-05-14 por <AI_ASSISTANT> Sonnet 4.5

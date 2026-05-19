@@ -26,9 +26,9 @@
 |---------|-------|
 | **Objetivo** | Definir `{{name}}` como variable dinámica en firstMessage |
 | **Herramienta** | VAPI Dashboard → Assistant → First Message |
-| **Assistant ID** | `<VAPI_ASSISTANT_ID_MARINA>` |
-| **firstMessage actual** | `"Hola, ¿hablo con Valeria? Soy Marina de Casalba..."` |
-| **firstMessage nuevo** | `"Hola, ¿hablo con {{name}}? Soy Marina de Casalba, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"` |
+| **Assistant ID** | `<VAPI_ASSISTANT_ID_ES>` |
+| **firstMessage actual** | `"Hola, ¿hablo con <NOMBRE_DE_EJEMPLO>? Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>..."` |
+| **firstMessage nuevo** | `"Hola, ¿hablo con {{name}}? Soy <OPERADOR_INTERNO> de <CLIENTE_DEMO>, le llamo porque nos contactó por uno de nuestros desarrollos. ¿Me permite transferirle con uno de nuestros asesores?"` |
 | **Fallback en VAPI** | Configurar default value para `{{name}}` = vacío (el backend manejará) |
 | **Verificación** | GET /assistant/{id} → confirmar `firstMessage` contiene `{{name}}` |
 | **Riesgo** | Bajo — cambio en dashboard, no afecta código |
@@ -36,7 +36,7 @@
 **Comando de verificación:**
 ```bash
 curl -s -H "Authorization: Bearer $VAPI_API_KEY" \
-  https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_MARINA> \
+  https://api.vapi.ai/assistant/<VAPI_ASSISTANT_ID_ES> \
   | jq '.firstMessage'
 ```
 
@@ -141,10 +141,10 @@ curl -X POST http://localhost:3000/call/test/direct \
   -H "Content-Type: application/json" \
   -d '{
     "to_number": "<TEST_LEAD_PHONE>",
-    "lead_name": "Carlos"
+    "lead_name": "<NOMBRE_DE_EJEMPLO>"
   }'
 ```
-**Resultado esperado:** Marina dice "Hola, ¿hablo con Carlos?"
+**Resultado esperado:** <OPERADOR_INTERNO> dice "Hola, ¿hablo con <NOMBRE_DE_EJEMPLO>?"
 
 **Test Case 2: Sin nombre**
 ```bash
@@ -154,7 +154,7 @@ curl -X POST http://localhost:3000/call/test/direct \
     "to_number": "<TEST_LEAD_PHONE>"
   }'
 ```
-**Resultado esperado:** Marina dice "Hola, ¿hablo con la persona indicada?"
+**Resultado esperado:** <OPERADOR_INTERNO> dice "Hola, ¿hablo con la persona indicada?"
 
 **Test Case 3: Nombre vacío**
 ```bash
@@ -165,7 +165,7 @@ curl -X POST http://localhost:3000/call/test/direct \
     "lead_name": "   "
   }'
 ```
-**Resultado esperado:** Marina dice "Hola, ¿hablo con la persona indicada?"
+**Resultado esperado:** <OPERADOR_INTERNO> dice "Hola, ¿hablo con la persona indicada?"
 
 **Verificación adicional:**
 - Escuchar la llamada

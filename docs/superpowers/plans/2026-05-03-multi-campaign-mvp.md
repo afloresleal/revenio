@@ -46,7 +46,7 @@
 **Files:**
 - Modify: `docs/GHL-DEMO-HANDOFF-2026-05-03.md`
 - Modify: `docs/VAPI-CONFIG.md`
-- Modify: `docs/GHL-KRP-INTEGRATION.md`
+- Modify: `docs/GHL-<CLIENTE_DEMO>-INTEGRATION.md`
 
 - [ ] Document `campaignId` Custom Data in GHL.
 - [ ] Document the four campaign slugs.

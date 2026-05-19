@@ -1,10 +1,10 @@
-# Resumen para Ale — Integración VAPI
+# Resumen para <USUARIO_INTERNO> — Integración VAPI
 
 > **TL;DR:** El voice agent está optimizado y funcionando. Tu trabajo es asegurar que el backend pase las variables correctas y maneje los webhooks.
 
 ---
 
-## Lo que ya está hecho (Marina lo optimizó)
+## Lo que ya está hecho (<OPERADOR_INTERNO> lo optimizó)
 
 ✅ Assistant configurado en VAPI Dashboard (gpt-4o, voice settings, prompt)  
 ✅ Tool de transfer con mensaje automático  
@@ -109,8 +109,8 @@ Ver `docs/vapi-config-prod.md` para:
 1. Revisar Lab UI → `/` → Historial
 2. Usar "Sincronizar transcript" si no llegó webhook
 3. Revisar logs de Railway
-4. Preguntar a Marina — ella tiene contexto de todas las pruebas
+4. Preguntar a <OPERADOR_INTERNO> — ella tiene contexto de todas las pruebas
 
 ---
 
-**Pregunta clave para Marina:** ¿De dónde sacamos el presupuesto del lead? ¿Viene del CRM, del formulario de campaña, o se asigna fijo?
+**Pregunta clave para <OPERADOR_INTERNO>:** ¿De dónde sacamos el presupuesto del lead? ¿Viene del CRM, del formulario de campaña, o se asigna fijo?

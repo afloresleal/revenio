@@ -16,10 +16,10 @@ What changed in the commit:
 
 - `apps/api/src/routes/webhooks.ts` now accepts `campaignId` from GHL Custom Data.
 - Known campaign IDs:
-  - `isla-blanca-es`
-  - `isla-blanca-en`
-  - `nikki-ocean-es`
-  - `nikki-ocean-en`
+  - `propiedad-demo-a-es`
+  - `propiedad-demo-a-en`
+  - `propiedad-demo-b-es`
+  - `propiedad-demo-b-en`
 - `campaignId` selects campaign-specific Vapi assistant and phone number through Railway variables.
 - If `campaignId` is missing or unknown, the old `locationId` + global `VAPI_ASSISTANT_ID` / `VAPI_PHONE_NUMBER_ID` fallback remains.
 - GHL still assigns the human seller with `assignedTo`; Revenio maps `assignedTo` to the human transfer number.
@@ -27,7 +27,7 @@ What changed in the commit:
 Immediate next steps:
 
 1. Create/configure the four Vapi assistants.
-2. For each assistant, set the staging Server URL to `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
+2. For each assistant, set the staging Server URL to `https://<API_STAGING_HOST>/webhooks/vapi/events`.
 3. Disable `phone-call-control` in Vapi Server Messages.
 4. Avoid hardcoded Vapi forwarding/fallback numbers and duplicate native `transferCall` tools.
 5. Add the four campaign-specific Vapi IDs in Railway staging.
@@ -50,20 +50,20 @@ GHL_CAMPAIGN_NO_EN_VAPI_PHONE_NUMBER_ID=
 Optional but recommended for auditability:
 
 ```bash
-GHL_CAMPAIGN_IB_ES_ID=isla-blanca-es
+GHL_CAMPAIGN_IB_ES_ID=propiedad-demo-a-es
 GHL_CAMPAIGN_IB_ES_PROPERTY_KEY=isla_blanca
-GHL_CAMPAIGN_IB_EN_ID=isla-blanca-en
+GHL_CAMPAIGN_IB_EN_ID=propiedad-demo-a-en
 GHL_CAMPAIGN_IB_EN_PROPERTY_KEY=isla_blanca
-GHL_CAMPAIGN_NO_ES_ID=nikki-ocean-es
+GHL_CAMPAIGN_NO_ES_ID=propiedad-demo-b-es
 GHL_CAMPAIGN_NO_ES_PROPERTY_KEY=nikki_ocean
-GHL_CAMPAIGN_NO_EN_ID=nikki-ocean-en
+GHL_CAMPAIGN_NO_EN_ID=propiedad-demo-b-en
 GHL_CAMPAIGN_NO_EN_PROPERTY_KEY=nikki_ocean
 ```
 
 Files most relevant for next chat:
 
 - `apps/api/src/routes/webhooks.ts`
-- `docs/GHL-KRP-INTEGRATION.md`
+- `docs/GHL-<CLIENTE_DEMO>-INTEGRATION.md`
 - `docs/VAPI-CONFIG.md`
 - `docs/CALL-TRANSFER-HANDOFF-2026-04-08.md`
 - `docs/GHL-DEMO-HANDOFF-2026-05-03.md`
@@ -81,12 +81,12 @@ Demo de integracion GoHighLevel -> Revenio -> Vapi:
 
 ## Ambientes
 
-- API staging Railway: `https://revenioapi-staging.up.railway.app`
-- Lab staging Railway: `https://revenio-lab-staging.up.railway.app`
-- Dashboard staging Railway: `https://revenio-dashboard-staging.up.railway.app`
+- API staging Railway: `https://<API_STAGING_HOST>`
+- Lab staging Railway: `https://<LAB_STAGING_HOST>`
+- Dashboard staging Railway: `https://<DASHBOARD_STAGING_HOST>`
 - GHL webhook: `POST /webhooks/gohighlevel`
-- Vapi events webhook staging: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
-- Vapi events webhook production: `https://revenioapi-production.up.railway.app/webhooks/vapi/events`
+- Vapi events webhook staging: `https://<API_STAGING_HOST>/webhooks/vapi/events`
+- Vapi events webhook production: `https://<API_PRODUCTION_HOST>/webhooks/vapi/events`
 - Branch principal usado: `develop`
 
 ## GHL test config
@@ -95,35 +95,35 @@ Demo de integracion GoHighLevel -> Revenio -> Vapi:
 - Pipeline ID: `<GHL_PIPELINE_ID>`
 - Trigger stage `New Lead`: `<GHL_TRIGGER_STAGE_ID>`
 - Connected stage `Contacted`: `<GHL_CONNECTED_STAGE_ID>`
-- Test GHL user Ale: `<GHL_USER_ID>`
+- Test GHL user <USUARIO_INTERNO>: `<GHL_USER_ID>`
 
 ## Multi-campaign Custom Data
 
-For the KRP demo, every GHL workflow must send one `campaignId` in the webhook Custom Data.
+For the <CLIENTE_DEMO> demo, every GHL workflow must send one `campaignId` in the webhook Custom Data.
 
 Validated campaign IDs:
 
-- `isla-blanca-es`
-- `isla-blanca-en`
-- `nikki-ocean-es`
-- `nikki-ocean-en`
+- `propiedad-demo-a-es`
+- `propiedad-demo-a-en`
+- `propiedad-demo-b-es`
+- `propiedad-demo-b-en`
 
 Example GHL Custom Data row:
 
 ```text
-campaignId = nikki-ocean-en
+campaignId = propiedad-demo-b-en
 ```
 
 Revenio uses `campaignId` to select the Vapi assistant and phone number. GHL still assigns the human agent through `assignedTo`, and Revenio maps that `assignedTo` to the transfer phone.
 
 ## Vapi test config validated on staging
 
-- Assistant: `Brenda - EN - Caribbean Luxury`
-- Assistant ID: `<VAPI_ASSISTANT_ID_BRENDA>`
+- Assistant: `Assistant EN 1 - EN - <CLIENTE_DEMO>`
+- Assistant ID: `<VAPI_ASSISTANT_ID_EN_1>`
 - Phone number ID: `<VAPI_PHONE_NUMBER_ID>`
-- Phone number name: `Twilio - Marina Casalba`
+- Phone number name: `Twilio - <OPERADOR_INTERNO> <CLIENTE_DEMO>`
 - Railway staging variable:
-  - `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_BRENDA>`
+  - `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_EN_1>`
 - For multi-campaign staging, prefer campaign-specific Railway variables:
   - `GHL_CAMPAIGN_IB_ES_VAPI_ASSISTANT_ID`
   - `GHL_CAMPAIGN_IB_EN_VAPI_ASSISTANT_ID`
@@ -131,7 +131,7 @@ Revenio uses `campaignId` to select the Vapi assistant and phone number. GHL sti
   - `GHL_CAMPAIGN_NO_EN_VAPI_ASSISTANT_ID`
   - matching `GHL_CAMPAIGN_*_VAPI_PHONE_NUMBER_ID`
 - Required Vapi assistant settings for staging tests:
-  - Server URL: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
+  - Server URL: `https://<API_STAGING_HOST>/webhooks/vapi/events`
   - Timeout: prefer `10` to `30` seconds, not `1` second.
   - `phone-call-control` must be disabled in Server Messages.
   - Keep `transfer-update`, `transfer-destination-request`, `speech-update`, `end-of-call-report`, and `tool-calls` enabled.
@@ -195,13 +195,13 @@ The GHL webhook should create Vapi calls with this shape:
 - Revenio injects dynamic transfer destination.
 - Vapi accepts the call creation request with `201`.
 - Vapi calls the lead.
-- Brenda calls `transferCall` after the first message.
+- Assistant EN 1 calls `transferCall` after the first message.
 - Vapi transfers to the GHL/Revenio-selected advisor number when the assistant Server URL points to staging.
 - Dashboard/API can show new Vapi call records via `/api/metrics/recent`.
 - Validated successful staging call:
   - Vapi call creation response ID: `<VAPI_CALL_ID>`
-  - Assistant ID: `<VAPI_ASSISTANT_ID_BRENDA>`
-  - Selected agent: `Ale Flores`
+  - Assistant ID: `<VAPI_ASSISTANT_ID_EN_1>`
+  - Selected agent: `<USUARIO_INTERNO>`
   - Dynamic transfer number: `<SELECTED_ADVISOR_PHONE>`
 
 ## Resolved issues from 2026-05-03 testing
@@ -215,7 +215,7 @@ Observed error:
 ```json
 {
   "statusCode": 400,
-  "message": "Invalid Configuration. Assistant 'Marina - Casalba Los Cabos' has more than one tool of type 'transferCall'."
+  "message": "Invalid Configuration. Assistant '<OPERADOR_INTERNO> - <CLIENTE_DEMO> <MERCADO_DEMO>' has more than one tool of type 'transferCall'."
 }
 ```
 
@@ -236,10 +236,10 @@ Required setting:
 
 ### Staging assistant was pointing events to production
 
-One failed test used the correct Brenda assistant and accepted the dynamic transfer number, but the assistant Server URL pointed to production:
+One failed test used the correct Assistant EN 1 assistant and accepted the dynamic transfer number, but the assistant Server URL pointed to production:
 
-- Wrong for staging: `https://revenioapi-production.up.railway.app/webhooks/vapi/events`
-- Correct for staging: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
+- Wrong for staging: `https://<API_PRODUCTION_HOST>/webhooks/vapi/events`
+- Correct for staging: `https://<API_STAGING_HOST>/webhooks/vapi/events`
 
 Symptom:
 
@@ -256,9 +256,9 @@ Fix:
 
 Before running a GHL staging test:
 
-1. Railway `revenioapi-staging` has `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_BRENDA>`.
-2. Vapi Assistant `Brenda - EN - Caribbean Luxury` is published.
-3. Vapi Assistant Server URL is `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
+1. Railway `revenioapi-staging` has `VAPI_ASSISTANT_ID=<VAPI_ASSISTANT_ID_EN_1>`.
+2. Vapi Assistant `Assistant EN 1 - EN - <CLIENTE_DEMO>` is published.
+3. Vapi Assistant Server URL is `https://<API_STAGING_HOST>/webhooks/vapi/events`.
 4. Vapi Assistant Server timeout is at least `10` seconds.
 5. `phone-call-control` is disabled in Server Messages.
 6. There is no hardcoded `Forwarding Phone Number` / fallback advisor number on the assistant for this flow.
@@ -272,13 +272,13 @@ Before running a GHL staging test:
 After the GHL test:
 
 - GHL/Revenio returns `201`.
-- Request assistant ID is `<VAPI_ASSISTANT_ID_BRENDA>`.
+- Request assistant ID is `<VAPI_ASSISTANT_ID_EN_1>`.
 - Request includes:
   - `transferPlan.mode = blind-transfer`
   - `transferPlan.sipVerb = dial`
   - destination number equal to the selected GHL/Revenio advisor.
 - Vapi final call log has:
-  - `assistantId = <VAPI_ASSISTANT_ID_BRENDA>`
+  - `assistantId = <VAPI_ASSISTANT_ID_EN_1>`
   - `endedReason = assistant-forwarded-call`
   - `forwardedPhoneNumber` equal to the selected advisor, not the lead/fallback phone.
 - Dashboard/API shows the call via `/api/metrics/recent`.

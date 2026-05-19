@@ -16,7 +16,7 @@
 
 ## Acceso al Admin
 
-**URL de producción**: `https://revenio-admin.up.railway.app/`
+**URL de producción**: `https://<ADMIN_HOST>/`
 
 El admin es donde configuras todas las campañas de llamadas de Revenio. Desde aquí puedes:
 - Crear y editar campañas
@@ -46,15 +46,15 @@ El admin es donde configuras todas las campañas de llamadas de Revenio. Desde a
 Llena los siguientes campos:
 
 #### **Cliente**
-- Nombre del cliente (ejemplo: "Caribbean Luxury Homes")
+- Nombre del cliente (ejemplo: "<CLIENTE_DEMO>")
 - Este es solo para tu referencia interna
 
 #### **Nombre de la campaña**
-- Nombre descriptivo de la campaña (ejemplo: "Isla Blanca ES")
+- Nombre descriptivo de la campaña (ejemplo: "<PROPIEDAD_DEMO_A> ES")
 - También es solo para tu referencia
 
 #### **Campaign ID**
-- Un identificador único (ejemplo: "isla-blanca-es")
+- Un identificador único (ejemplo: "propiedad-demo-a-es")
 - Debe ser corto, sin espacios, solo letras minúsculas y guiones
 - **Importante**: Este ID se usará en GoHighLevel para conectar el workflow
 
@@ -114,7 +114,7 @@ Para cada agente, llena:
 
 #### **Teléfono**
 - Número de teléfono del vendedor en formato E.164
-- Ejemplo: `+52551234567`
+- Ejemplo: `<PHONE_E164>`
 - **Debe incluir** el código de país (+52 para México)
 
 #### **Activo**
@@ -300,9 +300,9 @@ El sistema hace lo siguiente:
 ### ¿Puedo tener múltiples campañas para el mismo cliente?
 
 Sí, puedes crear todas las campañas que necesites. Por ejemplo:
-- `isla-blanca-es` (campaña en español)
-- `isla-blanca-en` (campaña en inglés)
-- `nikki-ocean-es` (otro proyecto)
+- `propiedad-demo-a-es` (campaña en español)
+- `propiedad-demo-a-en` (campaña en inglés)
+- `propiedad-demo-b-es` (otro proyecto)
 
 Cada campaña tiene:
 - Su propio pool de vendedores
@@ -332,7 +332,7 @@ Para conectar GHL con Revenio:
 2. Agrega una acción **Webhook**
 
 3. Configura el webhook con estos datos:
-   - **URL**: `https://revenioapi-production.up.railway.app/webhooks/gohighlevel`
+   - **URL**: `https://<API_PRODUCTION_HOST>/webhooks/gohighlevel`
    - **Method**: POST
    - **Custom Data**:
      ```

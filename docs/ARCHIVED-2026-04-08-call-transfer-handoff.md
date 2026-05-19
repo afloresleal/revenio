@@ -29,11 +29,11 @@
 
 ## Decisiones Críticas (NO romper)
 1. `transfer-destination-request` debe responder `destination` a Vapi (no iniciar Twilio-first inicial aquí).
-2. Mantener auto-transfer por `speech-update` para Brenda, para evitar bucles de confirmación.
-   - Default recomendado: `BRENDA_TRANSFER_TRIGGER_STATUS=stopped`.
+2. Mantener auto-transfer por `speech-update` para Assistant EN 1, para evitar bucles de confirmación.
+   - Default recomendado: `ASSISTANT_EN_TRANSFER_TRIGGER_STATUS=stopped`.
    - No cambiar a `started` sin prueba real end-to-end.
 3. En pruebas staging, el Assistant de Vapi debe apuntar al webhook staging:
-   - `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`
+   - `https://<API_STAGING_HOST>/webhooks/vapi/events`
    - No usar el webhook production para llamadas creadas por staging.
 4. En Vapi Server Messages, mantener `phone-call-control` desactivado.
    - Este setting bloqueó/rompió transfers en pruebas reales del 2026-05-03.
@@ -69,15 +69,15 @@
 - `TRANSFER_CHILD_CALL_MAX_ATTEMPTS=12`
 - `TRANSFER_CHILD_CALL_POLL_INTERVAL_MS=1200`
 - `TRANSFER_CHILD_CALL_MAX_WAIT_MS` opcional (si se usa, no exceder lo necesario)
-- `BRENDA_TRANSFER_TRIGGER_STATUS=stopped`
+- `ASSISTANT_EN_TRANSFER_TRIGGER_STATUS=stopped`
 - `VAPI_ASSISTANT_ID`
-  - Staging GHL validado: `<VAPI_ASSISTANT_ID_BRENDA>` (`Brenda - EN - Caribbean Luxury`)
+  - Staging GHL validado: `<VAPI_ASSISTANT_ID_EN_1>` (`Assistant EN 1 - EN - <CLIENTE_DEMO>`)
 - `PUBLIC_API_BASE_URL` / `API_BASE_URL` recomendado
   - fallback automático: `RAILWAY_PUBLIC_DOMAIN`
 
 ### Vapi Assistant para pruebas GHL staging
-- Assistant: `Brenda - EN - Caribbean Luxury`.
-- Server URL: `https://revenioapi-staging.up.railway.app/webhooks/vapi/events`.
+- Assistant: `Assistant EN 1 - EN - <CLIENTE_DEMO>`.
+- Server URL: `https://<API_STAGING_HOST>/webhooks/vapi/events`.
 - Timeout recomendado: `10` a `30` segundos.
 - Server Messages:
   - Activar: `transfer-update`, `transfer-destination-request`, `speech-update`, `tool-calls`, `end-of-call-report`.
@@ -146,7 +146,7 @@ Debe incluir:
 
 ## Commits de Referencia
 - `935728d` Improve RR failover visibility, AMD voicemail handling, and faster child-call timeout
-- `ac7ebe1` Restore Brenda auto-transfer and force Vapi destination flow
+- `ac7ebe1` Restore Assistant EN 1 auto-transfer and force Vapi destination flow
 - `1eee20b` Fix(vapi): backend deja de sobreescribir prompt/firstMessage/model/tools
 - `41e282b` Fix(twiml): escapar callback URLs en atributos XML de `<Dial>`
 - `32f02df` Fix(twilio): grabar transfer leg desde `<Dial>` con `recordingStatusCallback`

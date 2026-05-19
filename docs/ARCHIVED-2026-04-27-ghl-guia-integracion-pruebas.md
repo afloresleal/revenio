@@ -25,10 +25,10 @@ Accept: application/json
 ───
 
 3. Estado de la cuenta
-• 5 contactos de ejemplo (Casey Morgan, Taylor Reynolds, Jordan Smith, Alex Carter, Riley Bennett)
+• 5 contactos de ejemplo (Contacto A, Contacto B, Contacto C, Contacto D, Contacto E)
 • 1 Pipeline: "Marketing Pipeline" (<GHL_PIPELINE_ID>)
 → Stages: New Lead → Contacted → Qualified → Proposal Sent → Negotiation → Closed
-• 1 Calendario: "Ale Flores's Personal Calendar" (<GHL_CALENDAR_ID>)
+• 1 Calendario: "<USUARIO_INTERNO>'s Personal Calendar" (<GHL_CALENDAR_ID>)
 
 ───
 
@@ -40,7 +40,7 @@ POST https://services.leadconnectorhq.com/contacts/upsert
 {
   "firstName": "Juan",
   "lastName": "Pérez",
-  "phone": "+525512345678",
+  "phone": "<PHONE_E164>",
   "locationId": "<GHL_TEST_LOCATION_ID>"
 }
 Crear oportunidad en pipeline:
@@ -49,7 +49,7 @@ POST https://services.leadconnectorhq.com/opportunities/
 {
   "pipelineId": "<GHL_PIPELINE_ID>",
   "locationId": "<GHL_TEST_LOCATION_ID>",
-  "name": "Lead: Juan Pérez",
+  "name": "Lead: <NOMBRE_DE_EJEMPLO>",
   "contactId": "<id del contacto>",
   "status": "open"
 }
@@ -74,7 +74,7 @@ POST https://services.leadconnectorhq.com/calendars/events/appointments
 
 5. Flujo Voice Agent → GHL
 
-Brenda habla con lead
+Assistant EN 1 habla con lead
   1. POST /contacts/upsert      → crear/actualizar lead
   2. POST /opportunities/        → agregar a pipeline
   3. POST /contacts/{id}/notes   → guardar resumen de llamada
