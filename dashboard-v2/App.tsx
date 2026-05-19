@@ -450,6 +450,43 @@ export default function App() {
     return typeof value === 'boolean' ? value : null;
   };
 
+  const formatTransferResult = (value?: string | null): string => {
+    switch (value) {
+      case 'child-never-answered-no-callback':
+      case 'child-never-answered':
+      case 'ring-timeout':
+        return 'No contestó a tiempo';
+      case 'no-answer':
+        return 'No contestó';
+      case 'voicemail':
+      case 'machine':
+      case 'machine_start':
+      case 'machine_end_beep':
+      case 'machine_end_silence':
+      case 'machine_end_other':
+        return 'Buzón detectado';
+      case 'busy':
+        return 'Ocupado';
+      case 'failed':
+        return 'Falló la llamada';
+      case 'human-answered':
+        return 'Conectó';
+      default:
+        return value || 'Sin dato';
+    }
+  };
+
+  const formatSelectionSource = (value?: string | null): string => {
+    switch (value) {
+      case 'call_attempt_result_json':
+        return 'Registro interno';
+      case 'call_metric':
+        return 'Métrica de llamada';
+      default:
+        return value || 'Registro interno';
+    }
+  };
+
   const getTotalDurationDisplay = (
     call: RecentCall,
     detail?: Record<string, unknown>
@@ -752,9 +789,45 @@ export default function App() {
           })
           .filter((agent): agent is { name: string | null; number: string | null; result: string | null } => !!agent)
       : [];
+    const detailFailoverSteps = Array.isArray(detail?.roundRobinFailoverSteps)
+      ? detail.roundRobinFailoverSteps
+          .map((step) => {
+            if (!step || typeof step !== 'object') return null;
+            const row = step as Record<string, unknown>;
+            const failedName = asNonEmptyString(row.failedAgentName);
+            const failedNumber = asNonEmptyString(row.failedAgentNumber);
+            const nextName = asNonEmptyString(row.nextAgentName);
+            const nextNumber = asNonEmptyString(row.nextTransferNumber);
+            return {
+              failedName,
+              failedNumber,
+              result: asNonEmptyString(row.failedAgentResult) ?? asNonEmptyString(row.reason),
+              nextName,
+              nextNumber,
+              fallback: asBoolean(row.fallback) === true,
+            };
+          })
+          .filter((step): step is {
+            failedName: string | null;
+            failedNumber: string | null;
+            result: string | null;
+            nextName: string | null;
+            nextNumber: string | null;
+            fallback: boolean;
+          } => !!step && (!!step.failedName || !!step.failedNumber || !!step.nextName || !!step.nextNumber))
+      : [];
     const selectionSource = asNonEmptyString(detail?.selectionSource);
     const transferNumberToShow = detailTransferNumber ?? call.transferNumber ?? '--';
     const answeredAgentLabel = detailAnsweredAgentName ?? detailHumanAgentName ?? null;
+    const isFallbackTransfer =
+      detailRoundRobinEnabled === true &&
+      detailRoundRobinIndex !== null &&
+      detailRoundRobinPoolSize !== null &&
+      detailRoundRobinIndex >= detailRoundRobinPoolSize;
+    const fallbackStep = detailFailoverSteps.find((step) => step.fallback) ?? null;
+    const fallbackLabel = isFallbackTransfer
+      ? fallbackStep?.nextName ?? detailHumanAgentName ?? 'Fallback final'
+      : null;
     const answeredAgentSubLabel = detailAnsweredAgentNumber && detailAnsweredAgentNumber !== transferNumberToShow
       ? detailAnsweredAgentNumber
       : null;
@@ -762,27 +835,33 @@ export default function App() {
       ? detailFailedAgents
           .map((agent) => {
             const identity = agent.name ?? agent.number ?? '--';
-            return agent.result ? `${identity} (${agent.result})` : identity;
+            return agent.result ? `${identity} (${formatTransferResult(agent.result)})` : identity;
           })
           .join(', ')
       : null;
+    const attemptedOrder = detailFailoverSteps.length
+      ? detailFailoverSteps
+          .map((step, index) => {
+            const identity = step.failedName ?? step.failedNumber ?? `Intento ${index + 1}`;
+            return `${index + 1}. ${identity} - ${formatTransferResult(step.result)}`;
+          })
+          .join(' · ')
+      : null;
+    const fallbackOrderLabel = fallbackStep
+      ? `${fallbackStep.nextName ?? fallbackStep.nextNumber ?? 'Fallback final'} - Conectó como fallback`
+      : null;
     const roundRobinSummary =
       detailRoundRobinEnabled === true
-        ? `Activo • ${detailRoundRobinIndex !== null ? `Turno ${detailRoundRobinIndex + 1}` : 'Turno --'}${
-            detailRoundRobinPoolSize !== null ? ` de ${detailRoundRobinPoolSize}` : ''
-          }`
+        ? isFallbackTransfer
+          ? `Activo • Fallback final${detailRoundRobinPoolSize !== null ? ` después de ${detailRoundRobinPoolSize} vendedores` : ''}`
+          : `Activo • ${detailRoundRobinIndex !== null ? `Intento ${detailRoundRobinIndex + 1}` : 'Intento --'}${
+              detailRoundRobinPoolSize !== null ? ` de ${detailRoundRobinPoolSize}` : ''
+            }`
         : detailRoundRobinEnabled === false
           ? 'No activo'
           : '--';
     const firstAgentResultLabel = detailFirstAgentResultRaw
-      ? ({
-          voicemail: 'Buzón de voz',
-          'no-answer': 'No respondió',
-          busy: 'Ocupado',
-          failed: 'Falló',
-          'ring-timeout': 'Timeout de timbrado',
-          'human-answered': 'Respondió humano',
-        } as Record<string, string>)[detailFirstAgentResultRaw] ?? detailFirstAgentResultRaw
+      ? formatTransferResult(detailFirstAgentResultRaw)
       : null;
     const firstAgentIdentity = detailFirstAgentName ?? detailFirstAgentNumber ?? null;
 
@@ -811,10 +890,13 @@ export default function App() {
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-            <div className="text-slate-500">Vendedor (transfer)</div>
+            <div className="text-slate-500">Transferencia</div>
             <div className="font-mono text-slate-300">{transferNumberToShow}</div>
+            {fallbackLabel && (
+              <div className="text-[11px] text-amber-300 mt-1">Conectó con: {fallbackLabel}</div>
+            )}
             {answeredAgentLabel && (
-              <div className="text-[11px] text-slate-500 mt-1">Agente que respondió: {answeredAgentLabel}</div>
+              <div className="text-[11px] text-slate-500 mt-1">Conectó con: {answeredAgentLabel}</div>
             )}
             {answeredAgentSubLabel && (
               <div className="text-[11px] text-slate-500 mt-1">Número: {answeredAgentSubLabel}</div>
@@ -824,15 +906,21 @@ export default function App() {
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-            <div className="text-slate-500">Round robin (humano)</div>
+            <div className="text-slate-500">Reparto de vendedores</div>
             <div className="text-slate-300">{roundRobinSummary}</div>
             {firstAgentResultLabel && (
               <div className="text-[11px] text-slate-500 mt-1">
-                Primer agente: {firstAgentIdentity ? `${firstAgentIdentity} • ` : ''}{firstAgentResultLabel}
+                Primer intento: {firstAgentIdentity ? `${firstAgentIdentity} • ` : ''}{firstAgentResultLabel}
               </div>
             )}
+            {attemptedOrder && (
+              <div className="text-[11px] text-slate-500 mt-1">Orden intentado: {attemptedOrder}</div>
+            )}
+            {fallbackOrderLabel && (
+              <div className="text-[11px] text-amber-300 mt-1">Fallback final: {fallbackOrderLabel}</div>
+            )}
             {selectionSource && (
-              <div className="text-[11px] text-slate-500 mt-1">Fuente: {selectionSource}</div>
+              <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSelectionSource(selectionSource)}</div>
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">

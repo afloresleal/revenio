@@ -1075,10 +1075,11 @@ router.get('/calls/:callId', async (req, res) => {
       ? await prisma.event.findMany({
           where: {
             leadId: attempt.leadId,
-            type: 'transfer_failover',
+            type: { in: ['transfer_failover', 'transfer_fallback'] },
           },
           orderBy: { createdAt: 'asc' },
           select: {
+            type: true,
             createdAt: true,
             detail: true,
           },
@@ -1100,6 +1101,7 @@ router.get('/calls/:callId', async (req, res) => {
           nextIndex: asNumber(detail.nextIndex) ?? null,
           nextAgentName: asString(detail.nextAgentName) ?? null,
           nextTransferNumber: asString(detail.nextTransferNumber) ?? null,
+          fallback: event.type === 'transfer_fallback' || asBoolean(detail.fallback) === true,
         };
       })
       .filter((x): x is {
@@ -1112,6 +1114,7 @@ router.get('/calls/:callId', async (req, res) => {
         nextIndex: number | null;
         nextAgentName: string | null;
         nextTransferNumber: string | null;
+        fallback: boolean;
       } => !!x);
     const firstFailoverStep = failoverSteps.find((step) => step.failedAgentIndex === 0) ?? null;
 
