@@ -719,7 +719,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
       const callbackUrlXml = escapeXml(callbackUrl);
       const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
       const fallbackTransferNumberXml = escapeXml(fallbackTransferNumber);
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${fallbackTransferNumberXml}</Number></Dial></Response>`;
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial answerOnBridge="true" timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${fallbackTransferNumberXml}</Number></Dial></Response>`;
       const twilioResp = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
         {
@@ -848,7 +848,7 @@ async function triggerRoundRobinFailoverFromCallId(params: {
   const callbackUrlXml = escapeXml(callbackUrl);
   const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const nextTransferNumberXml = escapeXml(nextAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial answerOnBridge="true" timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${nextTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
@@ -1005,7 +1005,7 @@ async function triggerInitialTwilioTransferFromCallId(params: {
   const callbackUrlXml = escapeXml(callbackUrl);
   const recordingCallbackUrlXml = escapeXml(recordingCallbackUrl);
   const currentTransferNumberXml = escapeXml(currentAgent.transferNumber);
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial answerOnBridge="true" timeout="${FAILOVER_RING_TIMEOUT_SEC}" action="${callbackUrlXml}" method="POST" record="record-from-answer-dual" recordingStatusCallback="${recordingCallbackUrlXml}" recordingStatusCallbackMethod="POST"><Number statusCallback="${callbackUrlXml}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed busy no-answer failed canceled" machineDetection="Enable" machineDetectionSpeechEndThreshold="2500" amdStatusCallback="${callbackUrlXml}" amdStatusCallbackMethod="POST">${currentTransferNumberXml}</Number></Dial></Response>`;
   const twilioResp = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${encodeURIComponent(parentSid)}.json`,
     {
