@@ -7,7 +7,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { deriveSentiment, determineOutcome } from '../lib/sentiment.js';
-import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
+import { LATE_TRANSFER_SUCCESS_MIN_SEC, shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-recording.js';
 import { canStartOutboundCall, evaluateCampaignCallWindow } from '../lib/call-window.js';
@@ -21,8 +21,7 @@ import { buildGhlOpportunityUpdateBody, getGhlCampaignRuntimeStatus } from '../l
 const router = Router();
 
 const FAILOVER_RING_TIMEOUT_SEC = Math.max(1, Number(process.env.TRANSFER_FAILOVER_RING_TIMEOUT_SEC ?? 15));
-const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
-const TRANSFER_CONNECTED_STATUSES = new Set(['in-progress', 'answered', 'completed']);
+const TRANSFER_CONNECTED_MIN_SEC = LATE_TRANSFER_SUCCESS_MIN_SEC;
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID ?? '';
 const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? '';
@@ -2196,11 +2195,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     existing?.postTransferDurationSec ??
     transferDurationFromTimestamps;
   const effectiveTransferStatus = transferStatusFromLookup ?? existing?.transferStatus ?? null;
-  const hasTwilioTransferEvidence = Boolean(
-    effectiveTransferStatus && TRANSFER_CONNECTED_STATUSES.has(effectiveTransferStatus),
-  );
   const hasDurationEvidence = (effectivePostTransferDurationSec ?? 0) >= TRANSFER_CONNECTED_MIN_SEC;
-  const confirmedTransfer = hasTwilioTransferEvidence || hasDurationEvidence;
+  const confirmedTransfer = hasDurationEvidence;
 
   outcome = determineOutcome(confirmedTransfer, endedReason ?? null);
 
@@ -2210,7 +2206,7 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     `effectiveTransferStatus: ${effectiveTransferStatus}`,
     `effectivePostTransferDurationSec: ${effectivePostTransferDurationSec}`,
     `minRequired: ${TRANSFER_CONNECTED_MIN_SEC}`,
-    `hasTwilioEvidence: ${hasTwilioTransferEvidence}`,
+    `effectiveTransferStatusIsInformational: ${effectiveTransferStatus ?? 'none'}`,
     `hasDurationEvidence: ${hasDurationEvidence}`,
     `confirmedTransfer: ${confirmedTransfer}`,
     `determinedOutcome: ${outcome}`,

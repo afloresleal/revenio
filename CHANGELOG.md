@@ -2,6 +2,30 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.7] - 2026-06-02
+
+### Fix: Contactado GHL requiere 30 segundos con agente humano
+
+**Contexto:**
+La clasificación post-llamada estaba marcando `transfer_success` demasiado pronto: un `AnsweredBy=human`, `answered` o `completed` podía bastar aunque el cliente no hubiera hablado suficiente tiempo con el agente humano.
+
+**Cambios implementados:**
+- `transfer_success` / "contactado" para GHL ahora requiere al menos 30 segundos de duración post-transfer.
+- `AnsweredBy=human` se conserva como metadata de qué agente contestó, pero ya no promueve la llamada a éxito por sí solo.
+- La confirmación tardía por grabación/Twilio usa el mismo umbral de 30 segundos.
+- Dashboard/métricas ya no tratan cualquier status `answered`/`completed` como conexión válida sin duración suficiente.
+- `README.md` documenta `TRANSFER_CONNECTED_MIN_SEC=30` como valor operativo.
+
+**Archivos principales:**
+- `apps/api/src/routes/webhooks.ts`
+- `apps/api/src/server.ts`
+- `apps/api/src/lib/late-transfer-confirmation.ts`
+- `apps/api/src/lib/metric-classification.ts`
+- `apps/api/test/late-transfer-confirmation.test.ts`
+- `apps/api/test/metric-classification.test.ts`
+
+---
+
 ## [0.3.6] - 2026-05-19
 
 ### Hotfix: Producción - Round Robin, Fallback y Lectura Operativa

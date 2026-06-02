@@ -13,10 +13,19 @@ assert.equal(
 assert.equal(
   shouldPromoteLateTransferSuccess({
     currentOutcome: "abandoned",
-    postTransferDurationSec: 8,
+    postTransferDurationSec: 29,
   }),
   false,
-  "short transfer legs should not be promoted late",
+  "transfer legs under 30 seconds should not be promoted late",
+);
+
+assert.equal(
+  shouldPromoteLateTransferSuccess({
+    currentOutcome: "abandoned",
+    postTransferDurationSec: 30,
+  }),
+  true,
+  "transfer legs at 30 seconds should be promoted late",
 );
 
 assert.equal(

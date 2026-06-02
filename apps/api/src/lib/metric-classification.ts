@@ -1,4 +1,4 @@
-const CONNECTED_TRANSFER_STATUSES = new Set(["in-progress", "answered", "completed"]);
+const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 30);
 
 function diffSeconds(start: Date | null, end: Date | null): number | null {
   if (!start || !end) return null;
@@ -17,12 +17,10 @@ export function normalizeMetricClassification(input: {
   transferStatus: string | null;
   postTransferDurationSec: number | null;
 }) {
-  const transferStatus = (input.transferStatus || "").toLowerCase();
   const timeAfterTransferSec = diffSeconds(input.transferredAt, input.endedAt) ?? 0;
+  const postTransferDurationSec = input.postTransferDurationSec ?? timeAfterTransferSec;
   const hasConnectedTransfer =
-    (input.postTransferDurationSec ?? 0) > 0 ||
-    CONNECTED_TRANSFER_STATUSES.has(transferStatus) ||
-    (!!input.transferredAt && timeAfterTransferSec > 0);
+    postTransferDurationSec >= TRANSFER_CONNECTED_MIN_SEC;
 
   const outcome = input.outcome ?? "completed";
 

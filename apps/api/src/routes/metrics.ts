@@ -11,9 +11,6 @@ import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmat
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
 
 const router = Router();
-// Minimum duration fallback for transfer connection heuristic.
-// Some providers report duration=0 even when transfer is successful.
-const TRANSFER_CONNECTED_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
 const DASHBOARD_TIMEZONE = 'America/Mexico_City';
 const DEFAULT_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_LIMIT ?? 100);
 const MAX_BACKFILL_LIMIT = Number(process.env.METRICS_BACKFILL_MAX_LIMIT ?? 500);

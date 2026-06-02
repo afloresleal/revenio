@@ -10,14 +10,14 @@ assert.deepEqual(
     endedAt: new Date("2026-05-16T18:30:28.538Z"),
     twilioTransferCallSid: "CA-transfer",
     transferStatus: "completed",
-    postTransferDurationSec: 8,
+    postTransferDurationSec: 29,
   }),
   {
     outcome: "completed",
     sentiment: "neutral",
-    hasConnectedTransfer: true,
+    hasConnectedTransfer: false,
   },
-  "a completed transfer leg without confirmed human answer must not become transfer_success",
+  "a completed transfer leg under 30 seconds must not count as connected",
 );
 
 assert.deepEqual(
@@ -29,14 +29,14 @@ assert.deepEqual(
     endedAt: new Date("2026-05-16T18:30:28.538Z"),
     twilioTransferCallSid: "CA-transfer",
     transferStatus: "completed",
-    postTransferDurationSec: 8,
+    postTransferDurationSec: 30,
   }),
   {
     outcome: "transfer_success",
     sentiment: "positive",
     hasConnectedTransfer: true,
   },
-  "explicit human-confirmed successes must remain transfer_success",
+  "30 seconds with a human agent should count as connected",
 );
 
 console.log("metric classification tests passed");

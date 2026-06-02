@@ -1413,15 +1413,6 @@ async function handleTwilioStatusWebhook(req: express.Request, res: express.Resp
                 } as any,
               },
             });
-            if (callIdForMetrics) {
-              await prisma.callMetric.updateMany({
-                where: { callId: callIdForMetrics },
-                data: {
-                  outcome: "transfer_success",
-                  sentiment: "positive",
-                },
-              });
-            }
           }
         } catch (error) {
           console.warn("round_robin_answered_agent_update_failed", {

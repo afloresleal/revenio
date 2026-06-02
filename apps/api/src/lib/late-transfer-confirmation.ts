@@ -1,4 +1,4 @@
-export const LATE_TRANSFER_SUCCESS_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 10);
+export const LATE_TRANSFER_SUCCESS_MIN_SEC = Number(process.env.TRANSFER_CONNECTED_MIN_SEC ?? 30);
 
 export function shouldPromoteLateTransferSuccess(params: {
   currentOutcome: string | null;

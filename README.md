@@ -135,7 +135,8 @@ DASHBOARD_URL=http://localhost:5173
 # Round robin humano opcional (fallback final se manda por request como transfer_number)
 HUMAN_AGENT_NUMBERS=+5255...,+5255...,+5255...
 HUMAN_AGENT_NAMES=Ana,Luis,Sofia
-TRANSFER_CONNECTED_MIN_SEC=10
+# Minimo para calificar "contactado" en GHL despues de hablar con agente humano
+TRANSFER_CONNECTED_MIN_SEC=30
 
 # Twilio (duracion post-transfer, grabaciones, callbacks)
 TWILIO_ACCOUNT_SID=AC...
