@@ -41,6 +41,7 @@ Documentos de análisis, planes futuros o features parcialmente implementadas.
 | Documento | Descripción | Estado |
 |-----------|-------------|--------|
 | [ANALYSIS-2026-plan-multi-cliente.md](ANALYSIS-2026-plan-multi-cliente.md) | Plan de arquitectura multi-cliente | Pendiente |
+| [ANALYSIS-2026-plan-remarketing-campaigns.md](ANALYSIS-2026-plan-remarketing-campaigns.md) | Propuesta compartible para módulo de remarketing por campaña | Planeación |
 | [ANALYSIS-dashboard-mvp-final.md](ANALYSIS-dashboard-mvp-final.md) | Plan final para Dashboard MVP | En progreso |
 | [ANALYSIS-dashboard-mvp-draft.md](ANALYSIS-dashboard-mvp-draft.md) | Draft del plan de Dashboard MVP | Draft |
 | [ANALYSIS-codex-review-dashboard.md](ANALYSIS-codex-review-dashboard.md) | Review técnico del dashboard | Review |
