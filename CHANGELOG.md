@@ -4,39 +4,62 @@ Todos los cambios notables en este proyecto serán documentados aquí.
 
 ## [0.3.7] - 2026-06-02
 
-### Fix: Contactado GHL requiere 30 segundos con agente humano
+### Fix: Umbral de 30 segundos para contactos válidos en GHL
 
 **Contexto:**
-La clasificación post-llamada estaba marcando `transfer_success` demasiado pronto: un `AnsweredBy=human`, `answered` o `completed` podía bastar aunque el cliente no hubiera hablado suficiente tiempo con el agente humano.
+La clasificación de llamadas como "contactado" en GHL estaba siendo demasiado permisiva. Cualquier llamada transferida se marcaba como éxito aunque durara menos de 30 segundos, generando datos inexactos de conversión.
 
-**Cambios implementados:**
-- `transfer_success` / "contactado" para GHL ahora requiere al menos 30 segundos de duración post-transfer.
-- `AnsweredBy=human` se conserva como metadata de qué agente contestó, pero ya no promueve la llamada a éxito por sí solo.
-- La confirmación tardía por grabación/Twilio usa el mismo umbral de 30 segundos.
-- Dashboard/métricas ya no tratan cualquier status `answered`/`completed` como conexión válida sin duración suficiente.
-- `README.md` documenta `TRANSFER_CONNECTED_MIN_SEC=30` como valor operativo.
+**Problema 1 - Clasificación prematura:**
+- `AnsweredBy=human`, `answered` o `completed` bastaba para marcar como `transfer_success`.
+- No se validaba duración mínima de conversación con agente humano.
+- Métricas inflaban artificialmente la tasa de contactos exitosos.
 
-**Archivos principales:**
-- `apps/api/src/routes/webhooks.ts`
-- `apps/api/src/server.ts`
-- `apps/api/src/lib/late-transfer-confirmation.ts`
-- `apps/api/src/lib/metric-classification.ts`
-- `apps/api/test/late-transfer-confirmation.test.ts`
-- `apps/api/test/metric-classification.test.ts`
+**Solución implementada:**
+- **Umbral de 30 segundos:** `transfer_success` / "contactado" ahora requiere mínimo 30 segundos post-transfer.
+- **Metadata vs Clasificación:** `AnsweredBy=human` se conserva como información de qué agente contestó, pero no determina el éxito por sí solo.
+- **Confirmación tardía:** La validación por grabación/Twilio usa el mismo umbral de 30 segundos.
+- **Métricas actualizadas:** Dashboard ya no trata `answered`/`completed` como conexión válida sin duración suficiente.
+- **Documentación:** `README.md` documenta `TRANSFER_CONNECTED_MIN_SEC=30` como valor operativo.
 
-**Hotfix adicional (2026-06-02 tarde):**
+**Problema 2 - Stage mapping incorrecto:**
+- Aunque el outcome se clasificaba como "abandoned" (< 30 seg), GHL movía el contacto a "contacted" por el fallback de `connectedStageId`.
+- Ejemplo real: llamada con 22 seg post-transfer se marcaba como contacto exitoso.
 
-**1. Stage mapping en GHL:**
-- Se detectó que aunque el outcome se clasificaba correctamente como "abandoned" cuando la duración < 30 seg, GHL seguía moviendo al contacto a "contacted" por el fallback de `connectedStageId`.
-- Corregido: `pushSuccessfulTransferToGhl` ahora solo usa `connectedStageId` como fallback cuando el outcome es `transfer_success` o `voicemail`.
-- Ejemplo: Llamada con 22 seg post-transfer ahora correctamente NO mueve a "contacted" en GHL.
+**Solución implementada:**
+- `pushSuccessfulTransferToGhl` ahora solo usa `connectedStageId` como fallback cuando el outcome es `transfer_success` o `voicemail`.
+- Llamadas con outcome `abandoned`, `completed` o `failed` ya NO mueven a stage "contacted" automáticamente.
 
-**2. Admin Panel - Recordings requieren autenticación:**
-- El botón "Abrir recording" en la sección Llamadas abría URLs directas de Twilio que pedían usuario/contraseña.
-- Corregido: Admin ahora usa el mismo proxy de recordings que Dashboard (`/api/recordings/:recordingSid`).
-- Las grabaciones de Twilio ahora se reproducen directamente sin autenticación.
-- CSV descargado también convierte URLs privadas de Twilio a URLs públicas del proxy.
-- Archivos: `apps/admin/public/app.js`, `apps/api/src/server.ts`
+**Problema 3 - Recordings en Admin requieren autenticación:**
+- Botón "Abrir recording" en sección Llamadas usaba URLs directas de Twilio.
+- CSV descargado contenía URLs privadas que pedían usuario/contraseña.
+- UX inconsistente vs Dashboard que usa proxy público.
+
+**Solución implementada:**
+- Admin panel usa proxy de recordings (`/api/recordings/:recordingSid`) igual que Dashboard.
+- CSV export convierte URLs de Twilio a URLs públicas del proxy automáticamente.
+- Grabaciones se reproducen directamente sin autenticación.
+- Función helper `convertToPublicRecordingUrl()` agregada al backend.
+
+**Impacto:**
+- ✅ Clasificación de contactos GHL ahora refleja conversaciones reales (30+ seg)
+- ✅ Métricas precisas: llamadas cortas correctamente clasificadas como "abandoned"
+- ✅ UX mejorada: grabaciones accesibles sin credenciales en Admin y CSV
+- ✅ Datos exportados listos para análisis externo sin barreras de autenticación
+
+**Archivos modificados:**
+- `apps/api/src/routes/webhooks.ts` - Lógica de clasificación y stage mapping
+- `apps/api/src/server.ts` - CSV export con URLs públicas
+- `apps/api/src/lib/late-transfer-confirmation.ts` - Umbral de 30 segundos
+- `apps/api/src/lib/metric-classification.ts` - Validación de duración
+- `apps/admin/public/app.js` - Proxy de recordings en UI
+- Tests: `late-transfer-confirmation.test.ts`, `metric-classification.test.ts`
+
+**Commits:**
+- `2c5091c` - fix: require 30s human conversation for transfer success
+- `02d7aa8` - fix: only move to connected stage for valid outcomes
+- `c9d9d03` - fix: use recording proxy in admin to avoid auth prompt
+- `f28e151` - fix: use correct function name apiBase() instead of getApiUrl()
+- `4269a8a` - fix: use public recording URLs in admin CSV export
 
 ---
 
