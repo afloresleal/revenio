@@ -35,7 +35,8 @@ La clasificación post-llamada estaba marcando `transfer_success` demasiado pron
 - El botón "Abrir recording" en la sección Llamadas abría URLs directas de Twilio que pedían usuario/contraseña.
 - Corregido: Admin ahora usa el mismo proxy de recordings que Dashboard (`/api/recordings/:recordingSid`).
 - Las grabaciones de Twilio ahora se reproducen directamente sin autenticación.
-- Archivos: `apps/admin/public/app.js`
+- CSV descargado también convierte URLs privadas de Twilio a URLs públicas del proxy.
+- Archivos: `apps/admin/public/app.js`, `apps/api/src/server.ts`
 
 ---
 

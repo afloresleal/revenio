@@ -39,6 +39,21 @@ function resolvePublicApiBaseUrl(): string {
   return "https://revenioapi-production.up.railway.app";
 }
 const PUBLIC_API_BASE_URL = resolvePublicApiBaseUrl();
+
+/**
+ * Converts Twilio recording URLs to public proxy URLs to avoid auth prompts
+ * Converts: https://api.twilio.com/.../Recordings/REyyy.mp3
+ * To:       https://revenioapi-production.up.railway.app/api/recordings/REyyy
+ */
+function convertToPublicRecordingUrl(twilioUrl: string | null | undefined): string {
+  if (!twilioUrl) return "";
+  const match = String(twilioUrl).match(/Recordings\/(RE[a-f0-9]+)/i);
+  if (match && match[1]) {
+    return `${PUBLIC_API_BASE_URL}/api/recordings/${match[1]}`;
+  }
+  return twilioUrl;
+}
+
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
@@ -2821,7 +2836,7 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       timeToTransferSec,
       sellerTalkSec,
       transcript: metric?.fullTranscript ?? metric?.transferTranscript ?? metric?.transcript ?? "",
-      recordingUrl: metric?.transferRecordingUrl ?? metric?.recordingUrl ?? "",
+      recordingUrl: convertToPublicRecordingUrl(metric?.transferRecordingUrl ?? metric?.recordingUrl),
     };
   });
 }
