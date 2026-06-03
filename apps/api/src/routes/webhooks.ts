@@ -1709,7 +1709,11 @@ export async function pushSuccessfulTransferToGhl(params: {
   // Determine stage to move to based on outcome mapping
   const stageMapping = asRecord(property.stageMapping);
   const outcomeStageId = params.outcome && stageMapping ? asString(stageMapping[params.outcome]) : null;
-  const finalStageId = outcomeStageId || (answeredGhlUserId && connectedStageId ? connectedStageId : null);
+
+  // Only use connectedStageId fallback for valid connected outcomes
+  const isValidConnectedOutcome = params.outcome === 'transfer_success' || params.outcome === 'voicemail';
+  const finalStageId = outcomeStageId ||
+    (isValidConnectedOutcome && answeredGhlUserId && connectedStageId ? connectedStageId : null);
 
   const storedCustomFieldIds = asRecord(integration.customFieldIds);
   const customFieldIds = {

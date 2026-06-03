@@ -24,6 +24,11 @@ La clasificación post-llamada estaba marcando `transfer_success` demasiado pron
 - `apps/api/test/late-transfer-confirmation.test.ts`
 - `apps/api/test/metric-classification.test.ts`
 
+**Hotfix adicional (2026-06-02 tarde):**
+- Se detectó que aunque el outcome se clasificaba correctamente como "abandoned" cuando la duración < 30 seg, GHL seguía moviendo al contacto a "contacted" por el fallback de `connectedStageId`.
+- Corregido: `pushSuccessfulTransferToGhl` ahora solo usa `connectedStageId` como fallback cuando el outcome es `transfer_success` o `voicemail`.
+- Ejemplo: Llamada con 22 seg post-transfer ahora correctamente NO mueve a "contacted" en GHL.
+
 ---
 
 ## [0.3.6] - 2026-05-19
