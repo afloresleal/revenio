@@ -25,9 +25,17 @@ La clasificación post-llamada estaba marcando `transfer_success` demasiado pron
 - `apps/api/test/metric-classification.test.ts`
 
 **Hotfix adicional (2026-06-02 tarde):**
+
+**1. Stage mapping en GHL:**
 - Se detectó que aunque el outcome se clasificaba correctamente como "abandoned" cuando la duración < 30 seg, GHL seguía moviendo al contacto a "contacted" por el fallback de `connectedStageId`.
 - Corregido: `pushSuccessfulTransferToGhl` ahora solo usa `connectedStageId` como fallback cuando el outcome es `transfer_success` o `voicemail`.
 - Ejemplo: Llamada con 22 seg post-transfer ahora correctamente NO mueve a "contacted" en GHL.
+
+**2. Admin Panel - Recordings requieren autenticación:**
+- El botón "Abrir recording" en la sección Llamadas abría URLs directas de Twilio que pedían usuario/contraseña.
+- Corregido: Admin ahora usa el mismo proxy de recordings que Dashboard (`/api/recordings/:recordingSid`).
+- Las grabaciones de Twilio ahora se reproducen directamente sin autenticación.
+- Archivos: `apps/admin/public/app.js`
 
 ---
 

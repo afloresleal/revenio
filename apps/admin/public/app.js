@@ -158,6 +158,18 @@ function apiBase() {
   return apiUrl;
 }
 
+// Converts direct Twilio recording URLs to our proxy endpoint
+function getTwilioProxyUrl(twilioUrl) {
+  // Extract Recording SID from URL like:
+  // https://api.twilio.com/2010-04-01/Accounts/ACxxx/Recordings/REyyy.mp3
+  const match = twilioUrl.match(/Recordings\/(RE[a-f0-9]+)/i);
+  if (match && match[1]) {
+    const apiUrl = getApiUrl();
+    return `${apiUrl}/api/recordings/${match[1]}`;
+  }
+  return twilioUrl; // Fallback to original if can't parse
+}
+
 function setStatus(message) {
   if (statusEl) statusEl.textContent = message;
 }
@@ -223,7 +235,8 @@ function renderCallsTable(columns = [], calls = []) {
       } else if (column.key === "recordingUrl" && value) {
         td.className = "cell-long";
         const link = document.createElement("a");
-        link.href = value;
+        // Use proxy URL if it's a Twilio recording to avoid authentication prompt
+        link.href = value.includes('twilio.com') ? getTwilioProxyUrl(value) : value;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.textContent = "Abrir recording";
