@@ -164,7 +164,7 @@ function getTwilioProxyUrl(twilioUrl) {
   // https://api.twilio.com/2010-04-01/Accounts/ACxxx/Recordings/REyyy.mp3
   const match = twilioUrl.match(/Recordings\/(RE[a-f0-9]+)/i);
   if (match && match[1]) {
-    const apiUrl = getApiUrl();
+    const apiUrl = apiBase();
     return `${apiUrl}/api/recordings/${match[1]}`;
   }
   return twilioUrl; // Fallback to original if can't parse
