@@ -31,9 +31,9 @@ assert.deepEqual(
     name: "Ileana",
     number: "+529841679017",
     index: 1,
-    inferred: false,
+    inferred: true,
   },
-  "explicit answered agent metadata should win",
+  "the final connected number should remain the canonical answered agent identity",
 );
 
 const staleExplicit = resolveRoundRobinAnsweredAgent({
@@ -68,6 +68,40 @@ assert.deepEqual(
     inferred: true,
   },
   "stale answeredAgent metadata should be overridden by the final connected transfer number",
+);
+
+const staleExplicitSameNumber = resolveRoundRobinAnsweredAgent({
+  resultJson: {
+    roundRobin: {
+      enabled: true,
+      answeredAgentName: "Ileana",
+      answeredAgentNumber: "+529841679017",
+      answeredAgentIndex: 0,
+      agents: [
+        { name: "Ileana", transferNumber: "+529843174525", ghlUserId: "ileana-ghl" },
+        { name: "Matias", transferNumber: "+529841679017", ghlUserId: "matias-ghl" },
+      ],
+    },
+  },
+  transferNumber: "+529841679017",
+  hasHumanConnectionEvidence: hasHumanTransferEvidence({
+    transferStatus: "ringing",
+    postTransferDurationSec: 174,
+    transferTranscript: "Hola, ¿Matias?",
+    transferRecordingUrl: "https://example.com/rec.mp3",
+  }),
+});
+
+assert.deepEqual(
+  staleExplicitSameNumber,
+  {
+    ghlUserId: "matias-ghl",
+    name: "Matias",
+    number: "+529841679017",
+    index: 1,
+    inferred: true,
+  },
+  "a stale answered name/index must not override the agent mapped by the final connected number",
 );
 
 const inferred = resolveRoundRobinAnsweredAgent({

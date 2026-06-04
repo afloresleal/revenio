@@ -26,6 +26,7 @@ import {
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
 import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
+import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent } from "./lib/round-robin-resolution.js";
 import { classifyTransferAnswer } from "./lib/transfer-failover.js";
 
 const prisma = new PrismaClient();
@@ -2812,8 +2813,18 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       metric?.postTransferDurationSec ??
       adminDiffSeconds(metric?.transferredAt, metric?.endedAt);
     const outcome = metric?.outcome ?? attempt.status;
+    const resolvedAnsweredAgent = resolveRoundRobinAnsweredAgent({
+      resultJson: result,
+      transferNumber: transferNumber ?? null,
+      hasHumanConnectionEvidence: hasHumanTransferEvidence({
+        transferStatus: metric?.transferStatus ?? null,
+        postTransferDurationSec: metric?.postTransferDurationSec ?? null,
+        transferTranscript: metric?.transferTranscript ?? null,
+        transferRecordingUrl: metric?.transferRecordingUrl ?? null,
+      }),
+    });
     const answeredAgentName =
-      adminString(roundRobin?.answeredAgentName) ??
+      resolvedAnsweredAgent?.name ??
       (fallbackAttempted && outcome === "transfer_success" ? fallbackName ?? "Fallback final" : null) ??
       "";
 
