@@ -70,6 +70,11 @@ export function resolveRoundRobinAnsweredAgent(params: {
   const rr = asRecord(params.resultJson?.roundRobin);
   if (rr?.enabled !== true) return null;
 
+  const matchedFinalTransferAgent =
+    params.hasHumanConnectionEvidence
+      ? findRoundRobinAgentByTransferNumber(params.resultJson, params.transferNumber)
+      : null;
+
   const explicitName = asString(rr.answeredAgentName);
   const explicitNumber = asString(rr.answeredAgentNumber);
   const explicitIndexRaw = rr.answeredAgentIndex;
@@ -77,17 +82,34 @@ export function resolveRoundRobinAnsweredAgent(params: {
     typeof explicitIndexRaw === "number" && Number.isFinite(explicitIndexRaw) ? Math.trunc(explicitIndexRaw) : null;
 
   if (explicitName || explicitNumber || explicitIndex !== null) {
+    const explicitMatchedAgent = findRoundRobinAgentByTransferNumber(
+      params.resultJson,
+      explicitNumber ?? params.transferNumber,
+    );
+
+    // If stale answer metadata disagrees with the final connected transfer number,
+    // prefer the agent that owns the final number once we have human-connection evidence.
+    if (
+      matchedFinalTransferAgent &&
+      explicitMatchedAgent &&
+      matchedFinalTransferAgent.index !== explicitMatchedAgent.index
+    ) {
+      return {
+        ...matchedFinalTransferAgent,
+        inferred: true,
+      };
+    }
+
     return {
-      name: explicitName,
-      number: explicitNumber ?? params.transferNumber ?? "",
-      index: explicitIndex ?? findRoundRobinAgentByTransferNumber(params.resultJson, explicitNumber ?? params.transferNumber)?.index ?? 0,
+      ghlUserId: explicitMatchedAgent?.ghlUserId ?? null,
+      name: explicitName ?? explicitMatchedAgent?.name ?? null,
+      number: explicitNumber ?? explicitMatchedAgent?.number ?? params.transferNumber ?? "",
+      index: explicitIndex ?? explicitMatchedAgent?.index ?? 0,
       inferred: false,
     };
   }
 
-  if (!params.hasHumanConnectionEvidence) return null;
-
-  const inferred = findRoundRobinAgentByTransferNumber(params.resultJson, params.transferNumber);
+  const inferred = matchedFinalTransferAgent;
   if (!inferred) return null;
 
   return {
