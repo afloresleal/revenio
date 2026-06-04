@@ -773,6 +773,7 @@ export default function App() {
     const detailRoundRobinPoolSize = asFiniteNumber(detail?.roundRobinPoolSize);
     const detailAnsweredAgentName = asNonEmptyString(detail?.roundRobinAnsweredAgentName);
     const detailAnsweredAgentNumber = asNonEmptyString(detail?.roundRobinAnsweredAgentNumber);
+    const detailAnsweredAgentIndex = asFiniteNumber(detail?.roundRobinAnsweredAgentIndex);
     const detailFirstAgentResultRaw = asNonEmptyString(detail?.roundRobinFirstAgentResult);
     const detailFirstAgentName = asNonEmptyString(detail?.roundRobinFirstAgentName);
     const detailFirstAgentNumber = asNonEmptyString(detail?.roundRobinFirstAgentNumber);
@@ -818,12 +819,14 @@ export default function App() {
       : [];
     const selectionSource = asNonEmptyString(detail?.selectionSource);
     const transferNumberToShow = detailTransferNumber ?? call.transferNumber ?? '--';
-    const answeredAgentLabel = detailAnsweredAgentName ?? detailHumanAgentName ?? null;
+    const answeredAgentLabel = detailAnsweredAgentName ?? null;
+    const selectedAgentLabel = !detailAnsweredAgentName ? detailHumanAgentName : null;
+    const effectiveRoundRobinIndex = detailAnsweredAgentIndex ?? detailRoundRobinIndex;
     const isFallbackTransfer =
       detailRoundRobinEnabled === true &&
-      detailRoundRobinIndex !== null &&
+      effectiveRoundRobinIndex !== null &&
       detailRoundRobinPoolSize !== null &&
-      detailRoundRobinIndex >= detailRoundRobinPoolSize;
+      effectiveRoundRobinIndex >= detailRoundRobinPoolSize;
     const fallbackStep = detailFailoverSteps.find((step) => step.fallback) ?? null;
     const fallbackLabel = isFallbackTransfer
       ? fallbackStep?.nextName ?? detailHumanAgentName ?? 'Fallback final'
@@ -852,9 +855,9 @@ export default function App() {
       : null;
     const roundRobinSummary =
       detailRoundRobinEnabled === true
-        ? isFallbackTransfer
+          ? isFallbackTransfer
           ? `Activo • Fallback final${detailRoundRobinPoolSize !== null ? ` después de ${detailRoundRobinPoolSize} vendedores` : ''}`
-          : `Activo • ${detailRoundRobinIndex !== null ? `Intento ${detailRoundRobinIndex + 1}` : 'Intento --'}${
+          : `Activo • ${effectiveRoundRobinIndex !== null ? `Intento ${effectiveRoundRobinIndex + 1}` : 'Intento --'}${
               detailRoundRobinPoolSize !== null ? ` de ${detailRoundRobinPoolSize}` : ''
             }`
         : detailRoundRobinEnabled === false
@@ -897,6 +900,9 @@ export default function App() {
             )}
             {answeredAgentLabel && (
               <div className="text-[11px] text-slate-500 mt-1">Conectó con: {answeredAgentLabel}</div>
+            )}
+            {selectedAgentLabel && (
+              <div className="text-[11px] text-slate-500 mt-1">Transferido a: {selectedAgentLabel}</div>
             )}
             {answeredAgentSubLabel && (
               <div className="text-[11px] text-slate-500 mt-1">Número: {answeredAgentSubLabel}</div>
