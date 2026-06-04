@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { normalizeMetricClassification } from '../lib/metric-classification.js';
 import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
+import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent } from '../lib/round-robin-resolution.js';
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
 
 const router = Router();
@@ -868,9 +869,19 @@ router.get('/recent', async (req, res) => {
         asNumber(selectedAgent?.round_robin_pool_size) ??
         asNumber(roundRobin?.poolSize) ??
         null;
-      const answeredAgentName = asString(roundRobin?.answeredAgentName) ?? null;
-      const answeredAgentNumber = asString(roundRobin?.answeredAgentNumber) ?? null;
-      const answeredAgentIndex = asNumber(roundRobin?.answeredAgentIndex) ?? null;
+      const resolvedAnsweredAgent = resolveRoundRobinAnsweredAgent({
+        resultJson: attemptResult,
+        transferNumber: c.transferNumber,
+        hasHumanConnectionEvidence: hasHumanTransferEvidence({
+          transferStatus: c.transferStatus,
+          postTransferDurationSec: c.postTransferDurationSec,
+          transferTranscript: c.transferTranscript,
+          transferRecordingUrl: c.transferRecordingUrl,
+        }),
+      });
+      const answeredAgentName = resolvedAnsweredAgent?.name ?? null;
+      const answeredAgentNumber = resolvedAnsweredAgent?.number ?? null;
+      const answeredAgentIndex = resolvedAnsweredAgent?.index ?? null;
       const failoverSteps = failoverEventsByCallId.get(c.callId) ?? [];
       const firstFailoverStep = failoverSteps.find((step) => step.failedAgentIndex === 0) ?? null;
       const failedAgents = failoverSteps
@@ -1042,10 +1053,11 @@ router.get('/calls/:callId', async (req, res) => {
     const selectedAgent = asRecord(attemptResult?.selected_agent);
     const roundRobin = asRecord(attemptResult?.roundRobin);
     const selectedTransferNumber =
+      call.transferNumber ??
       asString(selectedAgent?.transfer_number) ??
+      asString(roundRobin?.selectedTransferNumber) ??
       asString(attemptResult?.transferNumber) ??
       asString(attemptResult?.transfer_number) ??
-      call.transferNumber ??
       null;
     const humanAgentName =
       asString(selectedAgent?.human_agent_name) ??
@@ -1064,9 +1076,19 @@ router.get('/calls/:callId', async (req, res) => {
       asNumber(selectedAgent?.round_robin_pool_size) ??
       asNumber(roundRobin?.poolSize) ??
       null;
-    const answeredAgentName = asString(roundRobin?.answeredAgentName) ?? null;
-    const answeredAgentNumber = asString(roundRobin?.answeredAgentNumber) ?? null;
-    const answeredAgentIndex = asNumber(roundRobin?.answeredAgentIndex) ?? null;
+    const resolvedAnsweredAgent = resolveRoundRobinAnsweredAgent({
+      resultJson: attemptResult,
+      transferNumber: call.transferNumber,
+      hasHumanConnectionEvidence: hasHumanTransferEvidence({
+        transferStatus: call.transferStatus,
+        postTransferDurationSec: call.postTransferDurationSec,
+        transferTranscript: call.transferTranscript,
+        transferRecordingUrl: call.transferRecordingUrl,
+      }),
+    });
+    const answeredAgentName = resolvedAnsweredAgent?.name ?? null;
+    const answeredAgentNumber = resolvedAnsweredAgent?.number ?? null;
+    const answeredAgentIndex = resolvedAnsweredAgent?.index ?? null;
 
     const transferFailoverEvents = attempt?.leadId
       ? await prisma.event.findMany({

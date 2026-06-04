@@ -17,6 +17,7 @@ import {
   orderGhlAgentsForAssignment,
 } from '../lib/ghl-agents.js';
 import { buildGhlOpportunityUpdateBody, getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
+import { findRoundRobinAgentByTransferNumber, hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent } from '../lib/round-robin-resolution.js';
 
 const router = Router();
 
@@ -129,10 +130,6 @@ function sanitizeName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80);
-}
-
-function normalizePhoneForMatch(value: string | null | undefined): string {
-  return (value ?? '').replace(/\D/g, '');
 }
 
 /**
@@ -395,21 +392,6 @@ async function fetchGhlContact(property: GhlPropertyConfig, contactId: string): 
   if (!resp.ok) return null;
   const data = asRecord(await resp.json().catch(() => null));
   return asRecord(data?.contact) ?? data;
-}
-
-function findGhlAgentByTransferNumber(resultJson: Record<string, unknown> | null, transferNumber: string | null): Record<string, unknown> | null {
-  if (!transferNumber) return null;
-  const rr = asRecord(resultJson?.roundRobin);
-  const agents = Array.isArray(rr?.agents) ? rr.agents : [];
-  const normalizedTransferNumber = normalizePhoneForMatch(transferNumber);
-  for (const agent of agents) {
-    const rec = asRecord(agent);
-    const agentNumber = asString(rec?.transferNumber) ?? asString(rec?.transfer_number);
-    if (agentNumber && normalizePhoneForMatch(agentNumber) === normalizedTransferNumber) {
-      return rec;
-    }
-  }
-  return null;
 }
 
 function buildTranscriptFromMessages(messages: unknown): string | null {
@@ -1698,11 +1680,21 @@ export async function pushSuccessfulTransferToGhl(params: {
     return { ok: false, skipped: true, reason: 'missing_ghl_api_key', locationId, opportunityId };
   }
 
-  const answeredAgent = findGhlAgentByTransferNumber(params.resultJson, params.transferNumber);
-  const rawGhlUserId = asString(answeredAgent?.ghlUserId);
+  const answeredAgent = resolveRoundRobinAnsweredAgent({
+    resultJson: params.resultJson,
+    transferNumber: params.transferNumber,
+    hasHumanConnectionEvidence: hasHumanTransferEvidence({
+      transferStatus: params.outcome === 'transfer_success' ? 'completed' : null,
+      postTransferDurationSec: params.sellerTalkSec,
+      transferTranscript: params.transcript,
+      transferRecordingUrl: params.recordingUrl,
+    }),
+  });
+  const answeredAgentRecord = findRoundRobinAgentByTransferNumber(params.resultJson, answeredAgent?.number ?? params.transferNumber);
+  const rawGhlUserId = answeredAgentRecord?.ghlUserId ?? null;
   // Only use ghlUserId if it's a valid GHL user ID (not a test placeholder like "test-1:test-1:agent-1")
   const answeredGhlUserId = rawGhlUserId && !rawGhlUserId.includes(':') ? rawGhlUserId : null;
-  const answeredAgentName = asString(answeredAgent?.name) ?? asString(answeredAgent?.human_agent_name) ?? rawGhlUserId ?? null;
+  const answeredAgentName = answeredAgent?.name ?? rawGhlUserId ?? null;
 
   const connectedStageId = asString(integration.connectedStageId) ?? property.connectedStageId;
 
