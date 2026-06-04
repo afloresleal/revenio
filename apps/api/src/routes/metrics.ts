@@ -882,6 +882,12 @@ router.get('/recent', async (req, res) => {
       const answeredAgentName = resolvedAnsweredAgent?.name ?? null;
       const answeredAgentNumber = resolvedAnsweredAgent?.number ?? null;
       const answeredAgentIndex = resolvedAnsweredAgent?.index ?? null;
+      const firstSnapshotAgent = Array.isArray(roundRobin?.agents) ? asRecord(roundRobin.agents[0]) : null;
+      const firstSnapshotAgentName = asString(firstSnapshotAgent?.name) ?? null;
+      const firstSnapshotAgentNumber =
+        asString(firstSnapshotAgent?.transferNumber) ??
+        asString(firstSnapshotAgent?.transfer_number) ??
+        null;
       const failoverSteps = failoverEventsByCallId.get(c.callId) ?? [];
       const firstFailoverStep = failoverSteps.find((step) => step.failedAgentIndex === 0) ?? null;
       const failedAgents = failoverSteps
@@ -896,17 +902,21 @@ router.get('/recent', async (req, res) => {
         const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}|${agent.result ?? ''}`;
         return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}|${item.result ?? ''}` === key) === index;
       });
+      const storedFirstAgentResult = asString(roundRobin?.firstAgentResult) ?? null;
+      const staleFirstAgentSuccess = storedFirstAgentResult === 'human-answered' && answeredAgentIndex !== null && answeredAgentIndex > 0;
       const firstAgentResult =
-        asString(roundRobin?.firstAgentResult) ??
+        (!staleFirstAgentSuccess ? storedFirstAgentResult : null) ??
         firstFailoverStep?.failedAgentResult ??
         (answeredAgentIndex === 0 ? 'human-answered' : null);
       const firstAgentName =
-        asString(roundRobin?.firstAgentName) ??
+        (!staleFirstAgentSuccess ? asString(roundRobin?.firstAgentName) : null) ??
         firstFailoverStep?.failedAgentName ??
+        firstSnapshotAgentName ??
         (answeredAgentIndex === 0 ? answeredAgentName : null);
       const firstAgentNumber =
-        asString(roundRobin?.firstAgentNumber) ??
+        (!staleFirstAgentSuccess ? asString(roundRobin?.firstAgentNumber) : null) ??
         firstFailoverStep?.failedAgentNumber ??
+        firstSnapshotAgentNumber ??
         (answeredAgentIndex === 0 ? answeredAgentNumber : null);
       const agentsTriedCount = roundRobinEnabled
         ? Math.max(
@@ -1089,6 +1099,12 @@ router.get('/calls/:callId', async (req, res) => {
     const answeredAgentName = resolvedAnsweredAgent?.name ?? null;
     const answeredAgentNumber = resolvedAnsweredAgent?.number ?? null;
     const answeredAgentIndex = resolvedAnsweredAgent?.index ?? null;
+    const firstSnapshotAgent = Array.isArray(roundRobin?.agents) ? asRecord(roundRobin.agents[0]) : null;
+    const firstSnapshotAgentName = asString(firstSnapshotAgent?.name) ?? null;
+    const firstSnapshotAgentNumber =
+      asString(firstSnapshotAgent?.transferNumber) ??
+      asString(firstSnapshotAgent?.transfer_number) ??
+      null;
 
     const transferFailoverEvents = attempt?.leadId
       ? await prisma.event.findMany({
@@ -1149,17 +1165,21 @@ router.get('/calls/:callId', async (req, res) => {
       const key = `${agent.index ?? 'na'}|${agent.number ?? ''}|${agent.name ?? ''}|${agent.result ?? ''}`;
       return arr.findIndex((item) => `${item.index ?? 'na'}|${item.number ?? ''}|${item.name ?? ''}|${item.result ?? ''}` === key) === index;
     });
+    const storedFirstAgentResult = asString(roundRobin?.firstAgentResult) ?? null;
+    const staleFirstAgentSuccess = storedFirstAgentResult === 'human-answered' && answeredAgentIndex !== null && answeredAgentIndex > 0;
     const firstAgentResult =
-      asString(roundRobin?.firstAgentResult) ??
+      (!staleFirstAgentSuccess ? storedFirstAgentResult : null) ??
       firstFailoverStep?.failedAgentResult ??
       (answeredAgentIndex === 0 ? 'human-answered' : null);
     const firstAgentName =
-      asString(roundRobin?.firstAgentName) ??
+      (!staleFirstAgentSuccess ? asString(roundRobin?.firstAgentName) : null) ??
       firstFailoverStep?.failedAgentName ??
+      firstSnapshotAgentName ??
       (answeredAgentIndex === 0 ? answeredAgentName : null);
     const firstAgentNumber =
-      asString(roundRobin?.firstAgentNumber) ??
+      (!staleFirstAgentSuccess ? asString(roundRobin?.firstAgentNumber) : null) ??
       firstFailoverStep?.failedAgentNumber ??
+      firstSnapshotAgentNumber ??
       (answeredAgentIndex === 0 ? answeredAgentNumber : null);
 
     const agentsTriedCount = Math.max(

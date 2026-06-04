@@ -75,6 +75,15 @@ export function resolveRoundRobinAnsweredAgent(params: {
       ? findRoundRobinAgentByTransferNumber(params.resultJson, params.transferNumber)
       : null;
 
+  // Once we have human-connection evidence and the final transfer number maps to a
+  // snapshot agent, that agent is the canonical answer identity.
+  if (matchedFinalTransferAgent) {
+    return {
+      ...matchedFinalTransferAgent,
+      inferred: true,
+    };
+  }
+
   const explicitName = asString(rr.answeredAgentName);
   const explicitNumber = asString(rr.answeredAgentNumber);
   const explicitIndexRaw = rr.answeredAgentIndex;
@@ -87,19 +96,6 @@ export function resolveRoundRobinAnsweredAgent(params: {
       explicitNumber ?? params.transferNumber,
     );
 
-    // If stale answer metadata disagrees with the final connected transfer number,
-    // prefer the agent that owns the final number once we have human-connection evidence.
-    if (
-      matchedFinalTransferAgent &&
-      explicitMatchedAgent &&
-      matchedFinalTransferAgent.index !== explicitMatchedAgent.index
-    ) {
-      return {
-        ...matchedFinalTransferAgent,
-        inferred: true,
-      };
-    }
-
     return {
       ghlUserId: explicitMatchedAgent?.ghlUserId ?? null,
       name: explicitName ?? explicitMatchedAgent?.name ?? null,
@@ -109,11 +105,5 @@ export function resolveRoundRobinAnsweredAgent(params: {
     };
   }
 
-  const inferred = matchedFinalTransferAgent;
-  if (!inferred) return null;
-
-  return {
-    ...inferred,
-    inferred: true,
-  };
+  return null;
 }
