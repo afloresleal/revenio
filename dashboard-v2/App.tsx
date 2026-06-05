@@ -503,14 +503,14 @@ export default function App() {
       fallback: boolean;
     }>;
   }) => {
-    const attempts: Array<{ identity: string; result: string }> = [];
+    const attempts: Array<{ identity: string; result: string; answered: boolean }> = [];
 
-    const pushAttempt = (identity: string | null, result: string | null) => {
+    const pushAttempt = (identity: string | null, result: string | null, answered = false) => {
       if (!identity || !result) return;
       const key = `${identity}__${result}`;
       const existing = attempts.some((attempt) => `${attempt.identity}__${attempt.result}` === key);
       if (existing) return;
-      attempts.push({ identity, result });
+      attempts.push({ identity, result, answered });
     };
 
     const firstIdentity = params.firstAgentName ?? params.firstAgentNumber;
@@ -520,19 +520,23 @@ export default function App() {
       const inferredFirstResult =
         params.firstAgentResult ??
         (params.answeredAgentIndex !== null && params.answeredAgentIndex > 0 ? 'no-answer' : null);
-      pushAttempt(firstIdentity, inferredFirstResult);
+      pushAttempt(firstIdentity, inferredFirstResult, inferredFirstResult === 'human-answered');
     }
 
     for (const step of params.failoverSteps) {
       const failedIdentity = step.failedName ?? step.failedNumber;
-      pushAttempt(failedIdentity, step.result);
+      pushAttempt(failedIdentity, step.result, step.result === 'human-answered');
     }
 
     if (answeredIdentity) {
-      pushAttempt(answeredIdentity, 'human-answered');
+      pushAttempt(answeredIdentity, 'human-answered', true);
     }
 
     return attempts;
+  };
+
+  const formatRoundRobinAttemptStatus = (value?: string | null): string => {
+    return value === 'human-answered' ? 'Contestó' : 'No contestó';
   };
 
   const getTotalDurationDisplay = (
@@ -865,7 +869,6 @@ export default function App() {
             fallback: boolean;
           } => !!step && (!!step.failedName || !!step.failedNumber || !!step.nextName || !!step.nextNumber))
       : [];
-    const selectionSource = asNonEmptyString(detail?.selectionSource);
     const transferNumberToShow = detailTransferNumber ?? call.transferNumber ?? '--';
     const answeredAgentLabel = detailAnsweredAgentName ?? null;
     const selectedAgentLabel = !detailAnsweredAgentName ? detailHumanAgentName : null;
@@ -881,14 +884,6 @@ export default function App() {
       : null;
     const answeredAgentSubLabel = detailAnsweredAgentNumber && detailAnsweredAgentNumber !== transferNumberToShow
       ? detailAnsweredAgentNumber
-      : null;
-    const failedAgentsLabel = detailFailedAgents.length
-      ? detailFailedAgents
-          .map((agent) => {
-            const identity = agent.name ?? agent.number ?? '--';
-            return agent.result ? `${identity} (${formatTransferResult(agent.result)})` : identity;
-          })
-          .join(', ')
       : null;
     const attemptedOrder = detailFailoverSteps.length
       ? detailFailoverSteps
@@ -910,11 +905,6 @@ export default function App() {
       answeredAgentIndex: detailAnsweredAgentIndex,
       failoverSteps: detailFailoverSteps,
     });
-    const attemptsLabel = roundRobinAttempts.length
-      ? roundRobinAttempts
-          .map((attempt, index) => `${index + 1}. ${attempt.identity} - ${formatTransferResult(attempt.result)}`)
-          .join(' · ')
-      : null;
     const roundRobinSummary =
       detailRoundRobinEnabled === true
           ? isFallbackTransfer
@@ -969,29 +959,26 @@ export default function App() {
             {answeredAgentSubLabel && (
               <div className="text-[11px] text-slate-500 mt-1">Número: {answeredAgentSubLabel}</div>
             )}
-            {failedAgentsLabel && (
-              <div className="text-[11px] text-slate-500 mt-1">No respondieron: {failedAgentsLabel}</div>
-            )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-            <div className="text-slate-500">Reparto de vendedores</div>
+            <div className="text-slate-500">Round Robin</div>
             <div className="text-slate-300">{roundRobinSummary}</div>
-            {firstAgentResultLabel && (
-              <div className="text-[11px] text-slate-500 mt-1">
-                Primer intento: {firstAgentIdentity ? `${firstAgentIdentity} • ` : ''}{firstAgentResultLabel}
-              </div>
-            )}
-            {attemptsLabel && (
-              <div className="text-[11px] text-slate-500 mt-1">Intentos: {attemptsLabel}</div>
-            )}
-            {!attemptsLabel && attemptedOrder && (
+            {roundRobinAttempts.length > 0 ? (
+              <ol className="mt-2 space-y-1.5 text-[11px]">
+                {roundRobinAttempts.map((attempt, index) => (
+                  <li
+                    key={`${attempt.identity}-${index}`}
+                    className={attempt.answered ? 'text-slate-100' : 'text-slate-500'}
+                  >
+                    {index + 1}. {attempt.identity} - {formatRoundRobinAttemptStatus(attempt.result)}
+                  </li>
+                ))}
+              </ol>
+            ) : attemptedOrder && (
               <div className="text-[11px] text-slate-500 mt-1">Orden intentado: {attemptedOrder}</div>
             )}
             {fallbackOrderLabel && (
               <div className="text-[11px] text-amber-300 mt-1">Fallback final: {fallbackOrderLabel}</div>
-            )}
-            {selectionSource && (
-              <div className="text-[11px] text-slate-500 mt-1">Fuente: {formatSelectionSource(selectionSource)}</div>
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
