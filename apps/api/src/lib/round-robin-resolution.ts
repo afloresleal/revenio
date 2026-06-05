@@ -19,6 +19,12 @@ export type RoundRobinAgentMatch = {
   index: number;
 };
 
+export type RoundRobinAgentCandidate = {
+  ghlUserId?: string | null;
+  name: string | null;
+  transferNumber: string;
+};
+
 export function findRoundRobinAgentByTransferNumber(
   resultJson: Record<string, unknown> | null,
   transferNumber: string | null,
@@ -38,6 +44,29 @@ export function findRoundRobinAgentByTransferNumber(
         ghlUserId: asString(rec?.ghlUserId) ?? asString(rec?.ghl_user_id),
         name: asString(rec?.name),
         number: agentNumber,
+        index,
+      };
+    }
+  }
+
+  return null;
+}
+
+export function findAgentCandidateByTransferNumber(
+  agents: RoundRobinAgentCandidate[],
+  transferNumber: string | null,
+): RoundRobinAgentMatch | null {
+  if (!transferNumber) return null;
+  const normalizedTransferNumber = normalizePhoneForMatch(transferNumber);
+  if (!normalizedTransferNumber) return null;
+
+  for (const [index, agent] of agents.entries()) {
+    const normalizedAgentNumber = normalizePhoneForMatch(agent.transferNumber);
+    if (normalizedAgentNumber === normalizedTransferNumber) {
+      return {
+        ghlUserId: agent.ghlUserId ?? null,
+        name: agent.name,
+        number: agent.transferNumber,
         index,
       };
     }
@@ -66,20 +95,35 @@ export function resolveRoundRobinAnsweredAgent(params: {
   resultJson: Record<string, unknown> | null;
   transferNumber: string | null;
   hasHumanConnectionEvidence: boolean;
+  canonicalAgents?: RoundRobinAgentCandidate[];
 }): (RoundRobinAgentMatch & { inferred: boolean }) | null {
   const rr = asRecord(params.resultJson?.roundRobin);
   if (rr?.enabled !== true) return null;
 
-  const matchedFinalTransferAgent =
+  const canonicalMatchedAgent =
+    params.hasHumanConnectionEvidence
+      ? findAgentCandidateByTransferNumber(params.canonicalAgents ?? [], params.transferNumber)
+      : null;
+
+  const snapshotMatchedAgent =
     params.hasHumanConnectionEvidence
       ? findRoundRobinAgentByTransferNumber(params.resultJson, params.transferNumber)
       : null;
 
   // Once we have human-connection evidence and the final transfer number maps to a
-  // snapshot agent, that agent is the canonical answer identity.
-  if (matchedFinalTransferAgent) {
+  // current campaign agent, that agent is the canonical answer identity.
+  if (canonicalMatchedAgent) {
     return {
-      ...matchedFinalTransferAgent,
+      ...canonicalMatchedAgent,
+      inferred: true,
+    };
+  }
+
+  // Fall back to the snapshot stored on the attempt if current campaign config
+  // is unavailable or no longer contains the transfer number.
+  if (snapshotMatchedAgent) {
+    return {
+      ...snapshotMatchedAgent,
       inferred: true,
     };
   }
