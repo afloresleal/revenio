@@ -3182,7 +3182,7 @@ async function findAdminCampaignCostSummary(
       if (classification.hasConnectedTransfer) contactedCalls += 1;
 
       const realVapiCost = adminDecimalNumber(metric.cost);
-      if (realVapiCost !== null) {
+      if (realVapiCost !== null && realVapiCost > 0) {
         totalVapiCostUsd += realVapiCost;
         usedRealVapiCostsCount += 1;
       } else {
