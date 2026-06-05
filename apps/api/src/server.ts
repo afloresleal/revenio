@@ -2706,7 +2706,23 @@ const adminGhlCampaignSchema = z.object({
   callWindowEndHour: z.number().int().min(0).max(23).optional(),
   callWindowWeekdays: z.string().max(32).optional(),
   callWindowApplyToFailover: z.boolean().optional(),
+  costOverrideEnabled: z.boolean().optional(),
+  overrideVapiCostPerMinuteUsd: z.number().min(0).max(1000).optional(),
+  overrideTwilioCostPerMinuteUsd: z.number().min(0).max(1000).optional(),
   active: z.boolean().default(true),
+});
+
+const adminCostConfigSchema = z.object({
+  currency: z.literal("USD").default("USD"),
+  usdToMxnRate: z.number().positive().max(1000),
+  vapiCostPerMinuteUsd: z.number().min(0).max(1000),
+  twilioCostPerMinuteUsd: z.number().min(0).max(1000),
+});
+
+const adminCampaignCostOverrideSchema = z.object({
+  costOverrideEnabled: z.boolean().default(false),
+  overrideVapiCostPerMinuteUsd: z.number().min(0).max(1000).nullable().optional(),
+  overrideTwilioCostPerMinuteUsd: z.number().min(0).max(1000).nullable().optional(),
 });
 
 const adminCampaignTestCallSchema = z.object({
@@ -2740,10 +2756,42 @@ function adminBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
+function adminDecimalNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (value && typeof value === "object" && "toString" in (value as Record<string, unknown>)) {
+    const parsed = Number(String(value));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function adminDiffSeconds(start?: Date | null, end?: Date | null): number | null {
   if (!start || !end) return null;
   const seconds = Math.round((end.getTime() - start.getTime()) / 1000);
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+function adminDateKeyCdmx(value: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
+
+function adminRunningDaysSince(firstDate?: Date | null, now = new Date()): number {
+  if (!firstDate) return 0;
+  const startKey = adminDateKeyCdmx(firstDate);
+  const endKey = adminDateKeyCdmx(now);
+  const startUtc = new Date(`${startKey}T00:00:00.000Z`);
+  const endUtc = new Date(`${endKey}T00:00:00.000Z`);
+  const diffDays = Math.floor((endUtc.getTime() - startUtc.getTime()) / (24 * 60 * 60 * 1000));
+  return Number.isFinite(diffDays) && diffDays >= 0 ? diffDays + 1 : 0;
 }
 
 function adminCsvFilename(campaignId: string): string {
@@ -2876,6 +2924,46 @@ type CampaignCallsSummary = {
   totalTwilioDurationSec: number;
 };
 
+type AdminCostConfigView = {
+  id: string;
+  currency: "USD";
+  usdToMxnRate: number | null;
+  vapiCostPerMinuteUsd: number | null;
+  twilioCostPerMinuteUsd: number | null;
+};
+
+type CampaignCostSummary = {
+  totalCalls: number;
+  runningDays: number;
+  contactedCalls: number;
+  totalVapiCostUsd: number;
+  totalTwilioCostUsd: number;
+  totalCostUsd: number;
+  avgCostPerCallUsd: number;
+  avgCostPerContactedUsd: number;
+  totalVapiCostMxn: number;
+  totalTwilioCostMxn: number;
+  totalCostMxn: number;
+  avgCostPerCallMxn: number;
+  avgCostPerContactedMxn: number;
+  usedRealVapiCostsCount: number;
+  usedEstimatedVapiCostsCount: number;
+};
+
+type CampaignCostSummaryBundle = {
+  last7Days: CampaignCostSummary & { projectedMonthlyUsd: number; projectedMonthlyMxn: number };
+  total: CampaignCostSummary;
+};
+
+const ADMIN_COST_CONFIG_ID = "global";
+const DEFAULT_ADMIN_COST_CONFIG: AdminCostConfigView = {
+  id: ADMIN_COST_CONFIG_ID,
+  currency: "USD",
+  usdToMxnRate: null,
+  vapiCostPerMinuteUsd: null,
+  twilioCostPerMinuteUsd: null,
+};
+
 async function findAdminCampaignCallsSummary(campaign: { campaignId: string }): Promise<CampaignCallsSummary> {
   const attempts = await prisma.callAttempt.findMany({
     where: {
@@ -2953,6 +3041,212 @@ async function findAdminCampaignCallsSummary(campaign: { campaignId: string }): 
   };
 }
 
+function serializeAdminCostConfig(config: {
+  id: string;
+  currency: string;
+  usdToMxnRate: unknown;
+  vapiCostPerMinuteUsd: unknown;
+  twilioCostPerMinuteUsd: unknown;
+} | null | undefined): AdminCostConfigView {
+  return {
+    id: config?.id ?? DEFAULT_ADMIN_COST_CONFIG.id,
+    currency: "USD",
+    usdToMxnRate: adminDecimalNumber(config?.usdToMxnRate),
+    vapiCostPerMinuteUsd: adminDecimalNumber(config?.vapiCostPerMinuteUsd),
+    twilioCostPerMinuteUsd: adminDecimalNumber(config?.twilioCostPerMinuteUsd),
+  };
+}
+
+function normalizeAdminCostConfigData(data: z.infer<typeof adminCostConfigSchema>) {
+  return {
+    currency: "USD" as const,
+    usdToMxnRate: data.usdToMxnRate,
+    vapiCostPerMinuteUsd: data.vapiCostPerMinuteUsd,
+    twilioCostPerMinuteUsd: data.twilioCostPerMinuteUsd,
+  };
+}
+
+function normalizeCampaignCostOverrideData(data: z.infer<typeof adminCampaignCostOverrideSchema>) {
+  return {
+    costOverrideEnabled: data.costOverrideEnabled,
+    overrideVapiCostPerMinuteUsd: data.costOverrideEnabled ? data.overrideVapiCostPerMinuteUsd ?? null : null,
+    overrideTwilioCostPerMinuteUsd: data.costOverrideEnabled ? data.overrideTwilioCostPerMinuteUsd ?? null : null,
+  };
+}
+
+function resolveCampaignEffectiveCostConfig(
+  campaign: {
+    costOverrideEnabled?: boolean | null;
+    overrideVapiCostPerMinuteUsd?: unknown;
+    overrideTwilioCostPerMinuteUsd?: unknown;
+  },
+  globalConfig: AdminCostConfigView,
+) {
+  const overrideEnabled = campaign.costOverrideEnabled === true;
+  const overrideVapi = adminDecimalNumber(campaign.overrideVapiCostPerMinuteUsd);
+  const overrideTwilio = adminDecimalNumber(campaign.overrideTwilioCostPerMinuteUsd);
+
+  return {
+    currency: "USD" as const,
+    usdToMxnRate: globalConfig.usdToMxnRate,
+    vapiCostPerMinuteUsd: overrideEnabled && overrideVapi !== null ? overrideVapi : globalConfig.vapiCostPerMinuteUsd,
+    twilioCostPerMinuteUsd: overrideEnabled && overrideTwilio !== null ? overrideTwilio : globalConfig.twilioCostPerMinuteUsd,
+    sources: {
+      vapi: overrideEnabled && overrideVapi !== null ? "campaign_override" : "global",
+      twilio: overrideEnabled && overrideTwilio !== null ? "campaign_override" : "global",
+      usdToMxnRate: "global",
+    },
+  };
+}
+
+async function getAdminCostConfig(): Promise<AdminCostConfigView> {
+  const config = await prisma.adminCostConfig.findUnique({ where: { id: ADMIN_COST_CONFIG_ID } });
+  return serializeAdminCostConfig(config);
+}
+
+async function findAdminCampaignCostSummary(
+  campaign: {
+    campaignId: string;
+    costOverrideEnabled?: boolean | null;
+    overrideVapiCostPerMinuteUsd?: unknown;
+    overrideTwilioCostPerMinuteUsd?: unknown;
+  },
+  globalConfig: AdminCostConfigView,
+): Promise<{ summary: CampaignCostSummaryBundle; effectiveConfig: ReturnType<typeof resolveCampaignEffectiveCostConfig> }> {
+  const attempts = await prisma.callAttempt.findMany({
+    where: {
+      providerId: { not: null },
+      OR: [
+        { resultJson: { path: ["ghlIntegration", "campaignId"], equals: campaign.campaignId } },
+        { resultJson: { path: ["campaignId"], equals: campaign.campaignId } },
+      ],
+    },
+    select: {
+      providerId: true,
+      createdAt: true,
+    },
+  });
+
+  const callIds = attempts
+    .map((attempt) => attempt.providerId)
+    .filter((callId): callId is string => Boolean(callId));
+  const metrics = callIds.length
+      ? await prisma.callMetric.findMany({
+        where: { callId: { in: callIds } },
+        select: {
+          callId: true,
+          startedAt: true,
+          durationSec: true,
+          postTransferDurationSec: true,
+          transferredAt: true,
+          endedAt: true,
+          outcome: true,
+          transferStatus: true,
+          cost: true,
+        },
+      })
+    : [];
+
+  const effectiveConfig = resolveCampaignEffectiveCostConfig(campaign, globalConfig);
+  const attemptsByCallId = new Map(
+    attempts
+      .filter((attempt) => attempt.providerId)
+      .map((attempt) => [attempt.providerId as string, attempt]),
+  );
+
+  function computeSummary(filteredMetrics: typeof metrics): CampaignCostSummary {
+    let contactedCalls = 0;
+    let totalVapiCostUsd = 0;
+    let totalTwilioCostUsd = 0;
+    let usedRealVapiCostsCount = 0;
+    let usedEstimatedVapiCostsCount = 0;
+    let firstCallAt: Date | null = null;
+
+    filteredMetrics.forEach((metric) => {
+      const attempt = attemptsByCallId.get(metric.callId);
+      const startedAt = metric.startedAt ?? attempt?.createdAt ?? null;
+      if (startedAt && (!firstCallAt || startedAt < firstCallAt)) {
+        firstCallAt = startedAt;
+      }
+
+      const classification = normalizeMetricClassification({
+        outcome: metric.outcome ?? null,
+        sentiment: null,
+        endedReason: null,
+        transferredAt: metric.transferredAt ?? null,
+        endedAt: metric.endedAt ?? null,
+        twilioTransferCallSid: metric.transferStatus ? "transfer-present" : null,
+        transferStatus: metric.transferStatus ?? null,
+        postTransferDurationSec: metric.postTransferDurationSec ?? null,
+      });
+      if (classification.hasConnectedTransfer) contactedCalls += 1;
+
+      const realVapiCost = adminDecimalNumber(metric.cost);
+      if (realVapiCost !== null) {
+        totalVapiCostUsd += realVapiCost;
+        usedRealVapiCostsCount += 1;
+      } else {
+        totalVapiCostUsd += effectiveConfig.vapiCostPerMinuteUsd ?? 0;
+        usedEstimatedVapiCostsCount += 1;
+      }
+
+      const twilioSeconds =
+        metric.postTransferDurationSec ??
+        adminDiffSeconds(metric.transferredAt ?? null, metric.endedAt ?? null) ??
+        0;
+      totalTwilioCostUsd += (twilioSeconds / 60) * (effectiveConfig.twilioCostPerMinuteUsd ?? 0);
+    });
+
+    const totalCalls = filteredMetrics.length;
+    const totalCostUsd = totalVapiCostUsd + totalTwilioCostUsd;
+    const usdToMxnRate = effectiveConfig.usdToMxnRate;
+    const avgCostPerCallUsd = totalCalls > 0 ? totalCostUsd / totalCalls : 0;
+    const avgCostPerContactedUsd = contactedCalls > 0 ? totalCostUsd / contactedCalls : 0;
+
+    return {
+      totalCalls,
+      runningDays: adminRunningDaysSince(firstCallAt),
+      contactedCalls,
+      totalVapiCostUsd,
+      totalTwilioCostUsd,
+      totalCostUsd,
+      avgCostPerCallUsd,
+      avgCostPerContactedUsd,
+      totalVapiCostMxn: usdToMxnRate !== null ? totalVapiCostUsd * usdToMxnRate : 0,
+      totalTwilioCostMxn: usdToMxnRate !== null ? totalTwilioCostUsd * usdToMxnRate : 0,
+      totalCostMxn: usdToMxnRate !== null ? totalCostUsd * usdToMxnRate : 0,
+      avgCostPerCallMxn: usdToMxnRate !== null ? avgCostPerCallUsd * usdToMxnRate : 0,
+      avgCostPerContactedMxn: usdToMxnRate !== null ? avgCostPerContactedUsd * usdToMxnRate : 0,
+      usedRealVapiCostsCount,
+      usedEstimatedVapiCostsCount,
+    };
+  }
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const last7DayMetrics = metrics.filter((metric) => {
+    const attempt = attemptsByCallId.get(metric.callId);
+    const startedAt = metric.startedAt ?? attempt?.createdAt ?? null;
+    return !!startedAt && startedAt >= sevenDaysAgo;
+  });
+
+  const totalSummary = computeSummary(metrics);
+  const last7DaysSummaryBase = computeSummary(last7DayMetrics);
+  const projectedMonthlyUsd = (last7DaysSummaryBase.totalCostUsd / 7) * 31;
+  const projectedMonthlyMxn = (last7DaysSummaryBase.totalCostMxn / 7) * 31;
+
+  return {
+    effectiveConfig,
+    summary: {
+      total: totalSummary,
+      last7Days: {
+        ...last7DaysSummaryBase,
+        projectedMonthlyUsd,
+        projectedMonthlyMxn,
+      },
+    },
+  };
+}
+
 function normalizeStageMapping(mapping: any) {
   if (!mapping || typeof mapping !== "object") return undefined;
   const normalized = {
@@ -2983,6 +3277,9 @@ function normalizeAdminGhlCampaignData(data: z.infer<typeof adminGhlCampaignSche
     callWindowEndHour: adminNumber(data.callWindowEndHour),
     callWindowWeekdays: adminString(data.callWindowWeekdays),
     callWindowApplyToFailover: adminBoolean(data.callWindowApplyToFailover),
+    costOverrideEnabled: adminBoolean(data.costOverrideEnabled),
+    overrideVapiCostPerMinuteUsd: adminNumber(data.overrideVapiCostPerMinuteUsd),
+    overrideTwilioCostPerMinuteUsd: adminNumber(data.overrideTwilioCostPerMinuteUsd),
   };
   if (options.preserveEmptyApiKey && !normalized.ghlApiKey) {
     delete (normalized as Partial<typeof normalized>).ghlApiKey;
@@ -3032,6 +3329,28 @@ app.post("/lab/settings/call-window", async (req, res) => {
       roundRobinFailover: failoverEval,
     },
   });
+});
+
+app.get("/lab/settings/costs", async (_req, res) => {
+  const config = await getAdminCostConfig();
+  return res.json({ ok: true, config });
+});
+
+app.post("/lab/settings/costs", async (req, res) => {
+  const parsed = adminCostConfigSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  const config = await prisma.adminCostConfig.upsert({
+    where: { id: ADMIN_COST_CONFIG_ID },
+    update: normalizeAdminCostConfigData(parsed.data),
+    create: {
+      id: ADMIN_COST_CONFIG_ID,
+      ...normalizeAdminCostConfigData(parsed.data),
+    },
+  });
+  return res.json({ ok: true, config: serializeAdminCostConfig(config) });
 });
 
 app.get("/api/admin/ghl-campaigns", async (_req, res) => {
@@ -3096,6 +3415,42 @@ app.get("/api/admin/ghl-campaigns/:id/calls.csv", async (req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${adminCsvFilename(campaign.campaignId)}"`);
   return res.send(csv);
+});
+
+app.get("/api/admin/ghl-campaigns/:id/costs", async (req, res) => {
+  const campaign = await prisma.ghlCampaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) return res.status(404).json({ error: "not_found" });
+
+  const globalConfig = await getAdminCostConfig();
+  const { summary, effectiveConfig } = await findAdminCampaignCostSummary(campaign, globalConfig);
+  return res.json({
+    ok: true,
+    campaignId: campaign.campaignId,
+    globalConfig,
+    effectiveConfig,
+    summary,
+  });
+});
+
+app.put("/api/admin/ghl-campaigns/:id/cost-config", async (req, res) => {
+  const parsed = adminCampaignCostOverrideSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues });
+  }
+
+  try {
+    const campaign = await prisma.ghlCampaign.update({
+      where: { id: req.params.id },
+      data: normalizeCampaignCostOverrideData(parsed.data),
+    });
+    return res.json({ ok: true, campaign: serializeGhlCampaign(campaign) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Record to update not found")) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    throw error;
+  }
 });
 
 app.put("/api/admin/ghl-campaigns/:id", async (req, res) => {

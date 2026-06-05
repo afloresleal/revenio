@@ -42,7 +42,7 @@
             </div>
             <div>
               <h1 class="text-xl font-bold tracking-tight text-white font-sans">Revenio <span class="text-slate-500 font-normal">Voice Metrics</span></h1>
-              <p class="text-xs text-slate-500 font-mono">LAB OPERATIONS</p>
+              <p class="text-xs text-slate-500 font-mono">LAB · CONFIGURACION GLOBAL</p>
             </div>
           </div>
 
@@ -55,79 +55,10 @@
     </header>
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-      <nav class="inline-flex gap-2 p-1 rounded-xl border border-slate-800 bg-slate-900/60" aria-label="Vistas del Lab">
-        <button id="tab_ops" class="tab-button is-active" data-tab-target="ops">Operación</button>
-        <button id="tab_agents" class="tab-button" data-tab-target="agents">Agentes GHL</button>
-        <button id="tab_response" class="tab-button" data-tab-target="response">Respuesta</button>
-        <button id="tab_history" class="tab-button" data-tab-target="history">Histórico</button>
-      </nav>
-
-      <section id="panel_ops" class="tab-panel is-active space-y-4">
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
-          <h3 class="section-title">Configuración rápida</h3>
-          <p class="section-help">Todo en un solo bloque para ejecutar pruebas sin confusión.</p>
-          <p class="subsection-title" style="margin-top:1rem;">Conexión</p>
-          <div class="grid grid-cols-1 gap-4">
-            <div>
-              <label class="field-label">API base</label>
-              <input id="api_base" class="field-input" placeholder="http://localhost:3000" />
-            </div>
-            <div class="actions actions-row justify-end button-group">
-              <button id="btn_validate" class="secondary compact-btn">Validar IDs</button>
-              <button id="btn_load" class="ghost compact-btn">Ir a histórico</button>
-            </div>
-          </div>
-
-          <div class="subsection">
-            <p class="subsection-title">Credenciales Vapi</p>
-            <p class="section-help">Paso 2. Carga assistants y números desde Vapi; también puedes capturar IDs manualmente.</p>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="md:col-span-2">
-              <label class="field-label">VAPI API Key (privada)</label>
-              <input id="vapi_api_key" class="field-input" placeholder="pegala aquí" />
-            </div>
-          </div>
-
-          <div class="subsection">
-            <p class="subsection-title">Selección desde Vapi</p>
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div>
-                <label class="field-label">Assistants (desde Vapi)</label>
-                <div class="field-with-action">
-                  <select id="assistant_select" class="field-input"></select>
-                  <button id="btn_load_assistants" class="ghost field-action-btn">Cargar assistants</button>
-                </div>
-              </div>
-              <div>
-                <label class="field-label">Phone Numbers (desde Vapi)</label>
-                <div class="field-with-action">
-                  <select id="phone_select" class="field-input"></select>
-                  <button id="btn_load_numbers" class="ghost field-action-btn">Cargar números</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="subsection">
-            <p class="subsection-title">IDs manuales</p>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label class="field-label">Assistant ID</label>
-                <input id="vapi_assistant_id" class="field-input" placeholder="0729e12a-..." />
-              </div>
-              <div>
-                <label class="field-label">Phone Number ID</label>
-                <input id="vapi_phone_number_id" class="field-input" placeholder="a2e74332-..." />
-              </div>
-              <div>
-                <label class="field-label">Número de transferencia (E.164)</label>
-                <input id="transfer_number" class="field-input" placeholder="+5255..." />
-              </div>
-            </div>
-          </div>
-          </div>
-
-          <div class="subsection">
+      <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
+        <h2 class="section-title">Horario global</h2>
+        <p class="section-help">Configuración en memoria del API para controlar cuándo pueden iniciar llamadas las campañas.</p>
+        <div class="subsection">
             <p class="subsection-title">Horario de llamadas (runtime)</p>
             <p class="text-xs text-slate-500 mt-2">
               Configuración en memoria del API (se mantiene hasta reinicio/deploy). Aplica a inicio de llamada y, opcionalmente, al failover de round robin.
@@ -165,310 +96,45 @@
               <button id="btn_cw_save" class="secondary compact-btn compact-btn--sm" type="button">Guardar</button>
               <button id="btn_cw_reset" class="ghost compact-btn compact-btn--sm" type="button">Reset</button>
             </div>
+            <pre id="cw_status" class="status-box mt-3">Sin cargar.</pre>
           </div>
+      </section>
 
-          <div class="subsection" style="display:none;">
-            <p class="subsection-title">Round Robin · Agentes Humanos (Transfer)</p>
-            <div class="rr-header">
-              <label class="inline-flex items-center gap-2 text-sm text-slate-300">
-                <input id="round_robin_enabled" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-800" />
-                Habilitar round robin en transferencia
-              </label>
-              <div class="actions actions-row button-group">
-                <button id="btn_rr_clear" class="ghost compact-btn compact-btn--sm" type="button">Limpiar agentes</button>
-              </div>
-            </div>
+      <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
+        <h2 class="section-title">Costos globales</h2>
+        <p class="section-help">Base compartida para cálculos de costos; Admin solo aplica configuración personalizada por campaña cuando haga falta.</p>
+        <div class="subsection">
+            <p class="subsection-title">Costos globales</p>
             <p class="text-xs text-slate-500 mt-2">
-              Configura hasta 5 agentes humanos. Si capturas números, se aplicará round robin automáticamente aunque el switch esté apagado.
+              Configuración global para todas las campañas. Admin solo aplica overrides por campaña.
             </p>
-
-            <div class="rr-agents mt-3">
-              <div class="rr-agent-row">
-                <div class="rr-agent-index">Agente 1</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="rr_agent_name_1" class="field-input" placeholder="Ana" />
-                </div>
-                <div>
-                  <label class="field-label">Número (E.164)</label>
-                  <input id="rr_agent_number_1" class="field-input" placeholder="+5255..." />
-                </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mt-3">
+              <div>
+                <label class="field-label">Moneda base</label>
+                <input id="cost_currency" class="field-input" value="USD" disabled />
               </div>
-              <div class="rr-agent-row">
-                <div class="rr-agent-index">Agente 2</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="rr_agent_name_2" class="field-input" placeholder="Luis" />
-                </div>
-                <div>
-                  <label class="field-label">Número (E.164)</label>
-                  <input id="rr_agent_number_2" class="field-input" placeholder="+5255..." />
-                </div>
+              <div>
+                <label class="field-label">Tipo de cambio USD -&gt; MXN</label>
+                <input id="cost_usd_to_mxn_rate" class="field-input" type="number" min="0" step="0.0001" placeholder="19.2000" />
               </div>
-              <div class="rr-agent-row">
-                <div class="rr-agent-index">Agente 3</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="rr_agent_name_3" class="field-input" placeholder="Sofía" />
-                </div>
-                <div>
-                  <label class="field-label">Número (E.164)</label>
-                  <input id="rr_agent_number_3" class="field-input" placeholder="+5255..." />
-                </div>
+              <div>
+                <label class="field-label">Costo Vapi por llamada (USD)</label>
+                <input id="cost_vapi_per_minute_usd" class="field-input" type="number" min="0" step="0.0001" placeholder="0.0000" />
               </div>
-              <div class="rr-agent-row">
-                <div class="rr-agent-index">Agente 4</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="rr_agent_name_4" class="field-input" placeholder="Carlos" />
-                </div>
-                <div>
-                  <label class="field-label">Número (E.164)</label>
-                  <input id="rr_agent_number_4" class="field-input" placeholder="+5255..." />
-                </div>
-              </div>
-              <div class="rr-agent-row">
-                <div class="rr-agent-index">Agente 5</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="rr_agent_name_5" class="field-input" placeholder="María" />
-                </div>
-                <div>
-                  <label class="field-label">Número (E.164)</label>
-                  <input id="rr_agent_number_5" class="field-input" placeholder="+5255..." />
-                </div>
+              <div>
+                <label class="field-label">Tarifa Twilio por minuto (USD)</label>
+                <input id="cost_twilio_per_minute_usd" class="field-input" type="number" min="0" step="0.0001" placeholder="0.0800" />
               </div>
             </div>
-          </div>
-          </div>
-
-          <div class="subsection">
-            <p class="subsection-title">Lead</p>
-            <p class="section-help">Paso final. Define a quién llamar y ejecuta la prueba.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
-              <div>
-                <label class="field-label">Número del lead (E.164)</label>
-                <input id="to_number" class="field-input" placeholder="+5255..." />
-              </div>
-              <div>
-                <label class="field-label">Nombre</label>
-                <input id="lead_name" class="field-input" placeholder="Test" />
-              </div>
-              <div>
-                <label class="field-label">Fuente</label>
-                <input id="lead_source" class="field-input" placeholder="manual" />
-              </div>
-              <div>
-                <label class="field-label">Lead ID (opcional)</label>
-                <input id="lead_id" class="field-input" placeholder="si ya existe" />
-              </div>
-              <div class="actions actions-row md:col-span-2 xl:col-span-4 justify-end button-group">
-                <button id="btn_call" class="primary cta-btn">Crear lead + Llamar</button>
-              </div>
+            <div class="actions actions-row button-group mt-3">
+              <button id="btn_costs_load" class="ghost compact-btn compact-btn--sm" type="button">Cargar</button>
+              <button id="btn_costs_save" class="secondary compact-btn compact-btn--sm" type="button">Guardar</button>
             </div>
+            <pre id="costs_status" class="status-box mt-3">Sin cargar</pre>
           </div>
-        </section>
       </section>
-
-      <section id="panel_agents" class="tab-panel space-y-4">
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
-          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-            <div>
-              <h3 class="section-title">Agentes GHL</h3>
-              <p class="section-help">Lista operativa que Revenio usa para transferir llamadas de GHL sin tocar Railway ni Vapi.</p>
-            </div>
-            <div class="actions actions-row">
-              <button id="btn_agents_load" class="ghost compact-btn" type="button">Cargar</button>
-              <button id="btn_agents_save" class="secondary compact-btn" type="button">Guardar</button>
-            </div>
-          </div>
-
-          <div class="subsection">
-            <p class="subsection-title">Alcance</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="field-label">Propiedad</label>
-                <select id="agent_property_key" class="field-input">
-                  <option value="ghl_test">GoHighLevel Test</option>
-                  <option value="isla_blanca">Isla Blanca</option>
-                  <option value="nikki_ocean">Nikki Ocean</option>
-                </select>
-              </div>
-              <div>
-                <label class="field-label">Campaña específica (opcional)</label>
-                <select id="agent_campaign_id" class="field-input">
-                  <option value="">Toda la propiedad</option>
-                  <option value="isla-blanca-es">Isla Blanca ES</option>
-                  <option value="isla-blanca-en">Isla Blanca EN</option>
-                  <option value="nikki-ocean-es">Nikki Ocean ES</option>
-                  <option value="nikki-ocean-en">Nikki Ocean EN</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="subsection">
-            <p class="subsection-title">Pool de transferencia</p>
-            <p class="text-xs text-slate-500 mt-2">Captura hasta 5 asesores. El GHL User ID debe coincidir con el valor `assignedTo` que manda GHL.</p>
-            <div class="rr-agents mt-3">
-              <div class="stored-agent-row">
-                <div class="rr-agent-index">Agente 1</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="stored_agent_name_1" class="field-input" placeholder="Ana" />
-                </div>
-                <div>
-                  <label class="field-label">GHL User ID</label>
-                  <input id="stored_agent_ghl_user_id_1" class="field-input" placeholder="abc123" />
-                </div>
-                <div>
-                  <label class="field-label">Teléfono</label>
-                  <input id="stored_agent_phone_1" class="field-input" placeholder="+5255..." />
-                </div>
-                <label class="agent-active-toggle">
-                  <input id="stored_agent_active_1" type="checkbox" checked />
-                  Activo
-                </label>
-              </div>
-              <div class="stored-agent-row">
-                <div class="rr-agent-index">Agente 2</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="stored_agent_name_2" class="field-input" placeholder="Luis" />
-                </div>
-                <div>
-                  <label class="field-label">GHL User ID</label>
-                  <input id="stored_agent_ghl_user_id_2" class="field-input" placeholder="abc123" />
-                </div>
-                <div>
-                  <label class="field-label">Teléfono</label>
-                  <input id="stored_agent_phone_2" class="field-input" placeholder="+5255..." />
-                </div>
-                <label class="agent-active-toggle">
-                  <input id="stored_agent_active_2" type="checkbox" checked />
-                  Activo
-                </label>
-              </div>
-              <div class="stored-agent-row">
-                <div class="rr-agent-index">Agente 3</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="stored_agent_name_3" class="field-input" placeholder="Sofía" />
-                </div>
-                <div>
-                  <label class="field-label">GHL User ID</label>
-                  <input id="stored_agent_ghl_user_id_3" class="field-input" placeholder="abc123" />
-                </div>
-                <div>
-                  <label class="field-label">Teléfono</label>
-                  <input id="stored_agent_phone_3" class="field-input" placeholder="+5255..." />
-                </div>
-                <label class="agent-active-toggle">
-                  <input id="stored_agent_active_3" type="checkbox" checked />
-                  Activo
-                </label>
-              </div>
-              <div class="stored-agent-row">
-                <div class="rr-agent-index">Agente 4</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="stored_agent_name_4" class="field-input" placeholder="Carlos" />
-                </div>
-                <div>
-                  <label class="field-label">GHL User ID</label>
-                  <input id="stored_agent_ghl_user_id_4" class="field-input" placeholder="abc123" />
-                </div>
-                <div>
-                  <label class="field-label">Teléfono</label>
-                  <input id="stored_agent_phone_4" class="field-input" placeholder="+5255..." />
-                </div>
-                <label class="agent-active-toggle">
-                  <input id="stored_agent_active_4" type="checkbox" checked />
-                  Activo
-                </label>
-              </div>
-              <div class="stored-agent-row">
-                <div class="rr-agent-index">Agente 5</div>
-                <div>
-                  <label class="field-label">Nombre</label>
-                  <input id="stored_agent_name_5" class="field-input" placeholder="María" />
-                </div>
-                <div>
-                  <label class="field-label">GHL User ID</label>
-                  <input id="stored_agent_ghl_user_id_5" class="field-input" placeholder="abc123" />
-                </div>
-                <div>
-                  <label class="field-label">Teléfono</label>
-                  <input id="stored_agent_phone_5" class="field-input" placeholder="+5255..." />
-                </div>
-                <label class="agent-active-toggle">
-                  <input id="stored_agent_active_5" type="checkbox" checked />
-                  Activo
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="subsection">
-            <p class="subsection-title">Fallback final</p>
-            <p class="text-xs text-slate-500 mt-2">Este numero no participa en la rotacion normal. Solo se usa si ningun vendedor del pool contesta.</p>
-            <div class="stored-agent-row stored-agent-row--fallback mt-3">
-              <div class="rr-agent-index">Fallback</div>
-              <div>
-                <label class="field-label">Nombre</label>
-                <input id="stored_fallback_name" class="field-input" placeholder="Gerente de marketing" />
-              </div>
-              <div>
-                <label class="field-label">Telefono</label>
-                <input id="stored_fallback_phone" class="field-input" placeholder="+5255..." />
-              </div>
-            </div>
-            <pre id="agents_status" class="mt-4">Sin cargar.</pre>
-          </div>
-        </section>
-      </section>
-
-      <section id="panel_response" class="tab-panel space-y-4">
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
-          <h3 class="section-title">Respuesta</h3>
-          <p class="section-help">JSON de salida y mensajes de ejecución para soporte y validación.</p>
-          <p class="subsection-title" style="margin-top:1rem;">Estado horario</p>
-          <pre id="cw_status" class="mt-2">Sin cargar.</pre>
-          <div class="actions mt-3">
-            <button id="btn_retry_last" class="secondary compact-btn" style="display:none;">Reintentar última acción</button>
-          </div>
-          <pre id="out" class="mt-3">Listo.</pre>
-        </section>
-      </section>
-
-      <section id="panel_history" class="tab-panel space-y-4">
-        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:p-6 shadow-sm">
-          <h3 class="section-title">Historial</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_minmax(220px,1fr)_minmax(170px,0.9fr)_minmax(170px,0.9fr)_auto] gap-4 mt-4 items-end">
-            <div>
-              <label class="field-label">Filtrar por status</label>
-              <input id="filter_status" class="field-input" placeholder="sent, failed, etc." />
-            </div>
-            <div>
-              <label class="field-label">Filtrar por lead (nombre o tel)</label>
-              <input id="filter_lead" class="field-input" placeholder="Test o +52..." />
-            </div>
-            <div>
-              <label class="field-label">Desde (YYYY-MM-DD)</label>
-              <input id="filter_from" type="date" class="field-input" />
-            </div>
-            <div>
-              <label class="field-label">Hasta (YYYY-MM-DD)</label>
-              <input id="filter_to" type="date" class="field-input" />
-            </div>
-            <div class="actions actions-row actions-inline">
-              <button id="btn_export" class="secondary compact-btn">Exportar CSV</button>
-              <button id="btn_apply_filters" class="ghost compact-btn">Aplicar filtros</button>
-            </div>
-          </div>
-          <div id="history" class="history mt-4">Sin datos.</div>
-        </section>
-      </section>
+      <button id="btn_retry_last" class="secondary compact-btn hidden" style="display:none;">Reintentar última acción</button>
+      <pre id="out" class="hidden">Listo.</pre>
     </main>
 
     <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 text-xs text-slate-500">

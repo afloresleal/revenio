@@ -38,7 +38,8 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const port = Number(process.env.LAB_PORT ?? 5174);
-server.listen(port, () => {
-  console.log(`Revenio Lab UI on http://localhost:${port}`);
+const port = Number(process.env.LAB_PORT ?? process.env.PORT ?? 5174);
+const host = process.env.LAB_HOST ?? (process.env.PORT ? "0.0.0.0" : "127.0.0.1");
+server.listen(port, host, () => {
+  console.log(`Revenio Lab UI on http://${host}:${port}`);
 });

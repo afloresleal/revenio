@@ -56,6 +56,7 @@ export interface DailyData {
 export interface RecentCall {
   callId: string;
   phone: string;
+  campaignName?: string | null;
   assistantId?: string | null;
   transferNumber?: string | null;
   outcome: string;
