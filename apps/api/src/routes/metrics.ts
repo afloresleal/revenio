@@ -8,7 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromUrl } from '../lib/transcription.js';
 import { normalizeMetricClassification } from '../lib/metric-classification.js';
 import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
-import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent } from '../lib/round-robin-resolution.js';
+import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from '../lib/round-robin-resolution.js';
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
 
 const router = Router();
@@ -100,6 +100,33 @@ function asNumber(value: unknown): number | undefined {
 
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function extractCampaignScope(resultJson: Record<string, unknown> | null): { propertyKey: string | null; campaignId: string | null } {
+  const integration = asRecord(resultJson?.ghlIntegration);
+  return {
+    propertyKey: asString(integration?.propertyKey) ?? null,
+    campaignId: asString(integration?.campaignId) ?? asString(resultJson?.campaignId) ?? null,
+  };
+}
+
+async function loadCanonicalRoundRobinAgents(resultJson: Record<string, unknown> | null): Promise<RoundRobinAgentCandidate[]> {
+  const scope = extractCampaignScope(resultJson);
+  if (!scope.propertyKey || !scope.campaignId) return [];
+  const agents = await prisma.ghlHumanAgent.findMany({
+    where: { propertyKey: scope.propertyKey, campaignId: scope.campaignId, active: true },
+    orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      name: true,
+      ghlUserId: true,
+      transferNumber: true,
+    },
+  });
+  return agents.map((agent) => ({
+    name: agent.name,
+    ghlUserId: agent.ghlUserId,
+    transferNumber: agent.transferNumber,
+  }));
 }
 
 function twilioAuthHeader(): string {
@@ -847,9 +874,10 @@ router.get('/recent', async (req, res) => {
       failoverEventsByCallId.set(eventCallId, list);
     }
 
-    res.json(calls.map((c: any) => {
+    const rows = await Promise.all(calls.map(async (c: any) => {
       const attempt = latestAttemptByCallId.get(c.callId);
       const attemptResult = asRecord(attempt?.resultJson);
+      const canonicalAgents = await loadCanonicalRoundRobinAgents(attemptResult);
       const selectedAgent = asRecord(attemptResult?.selected_agent);
       const roundRobin = asRecord(attemptResult?.roundRobin);
       const humanAgentName =
@@ -878,6 +906,7 @@ router.get('/recent', async (req, res) => {
           transferTranscript: c.transferTranscript,
           transferRecordingUrl: c.transferRecordingUrl,
         }),
+        canonicalAgents,
       });
       const answeredAgentName = resolvedAnsweredAgent?.name ?? null;
       const answeredAgentNumber = resolvedAnsweredAgent?.number ?? null;
@@ -996,6 +1025,7 @@ router.get('/recent', async (req, res) => {
         inProgress: c.inProgress,
       };
     }));
+    res.json(rows);
   } catch (error) {
     console.error('Recent error:', error);
     res.status(500).json({ error: 'Internal error', message: String(error) });
@@ -1060,6 +1090,7 @@ router.get('/calls/:callId', async (req, res) => {
     });
 
     const attemptResult = asRecord(attempt?.resultJson);
+    const canonicalAgents = await loadCanonicalRoundRobinAgents(attemptResult);
     const selectedAgent = asRecord(attemptResult?.selected_agent);
     const roundRobin = asRecord(attemptResult?.roundRobin);
     const selectedTransferNumber =
@@ -1095,6 +1126,7 @@ router.get('/calls/:callId', async (req, res) => {
         transferTranscript: call.transferTranscript,
         transferRecordingUrl: call.transferRecordingUrl,
       }),
+      canonicalAgents,
     });
     const answeredAgentName = resolvedAnsweredAgent?.name ?? null;
     const answeredAgentNumber = resolvedAnsweredAgent?.number ?? null;

@@ -26,7 +26,7 @@ import {
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
 import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
-import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent } from "./lib/round-robin-resolution.js";
+import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from "./lib/round-robin-resolution.js";
 import { classifyTransferAnswer } from "./lib/transfer-failover.js";
 
 const prisma = new PrismaClient();
@@ -2751,7 +2751,7 @@ function adminCsvFilename(campaignId: string): string {
   return `revenio-${safeCampaignId}-calls-${dateKey}.csv`;
 }
 
-async function findAdminCampaignCallRows(campaign: { id: string; campaignId: string; name: string }, limit: number): Promise<CampaignCallRow[]> {
+async function findAdminCampaignCallRows(campaign: { id: string; campaignId: string; name: string; propertyKey: string }, limit: number): Promise<CampaignCallRow[]> {
   const attempts = await prisma.callAttempt.findMany({
     where: {
       providerId: { not: null },
@@ -2775,6 +2775,20 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       })
     : [];
   const metricsByCallId = new Map(metrics.map((metric) => [metric.callId, metric]));
+  const canonicalAgents = await prisma.ghlHumanAgent.findMany({
+    where: { propertyKey: campaign.propertyKey, campaignId: campaign.campaignId, active: true },
+    orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+    select: {
+      name: true,
+      ghlUserId: true,
+      transferNumber: true,
+    },
+  });
+  const canonicalAgentCandidates: RoundRobinAgentCandidate[] = canonicalAgents.map((agent) => ({
+    name: agent.name,
+    ghlUserId: agent.ghlUserId,
+    transferNumber: agent.transferNumber,
+  }));
 
   return attempts.map((attempt) => {
     const result = adminRecord(attempt.resultJson);
@@ -2822,6 +2836,7 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
         transferTranscript: metric?.transferTranscript ?? null,
         transferRecordingUrl: metric?.transferRecordingUrl ?? null,
       }),
+      canonicalAgents: canonicalAgentCandidates,
     });
     const answeredAgentName =
       resolvedAnsweredAgent?.name ??

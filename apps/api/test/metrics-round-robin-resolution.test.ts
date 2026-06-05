@@ -90,6 +90,10 @@ const staleExplicitSameNumber = resolveRoundRobinAnsweredAgent({
     transferTranscript: "Hola, ¿Matias?",
     transferRecordingUrl: "https://example.com/rec.mp3",
   }),
+  canonicalAgents: [
+    { name: "Ileana", ghlUserId: "ileana-ghl", transferNumber: "+529843174525" },
+    { name: "Matias", ghlUserId: "matias-ghl", transferNumber: "+529841679017" },
+  ],
 });
 
 assert.deepEqual(
@@ -122,6 +126,10 @@ const inferred = resolveRoundRobinAnsweredAgent({
     transferTranscript: "Hola, ya quedó",
     transferRecordingUrl: "https://example.com/rec.mp3",
   }),
+  canonicalAgents: [
+    { name: "Eliana", transferNumber: "+529841111111" },
+    { name: "Matias", transferNumber: "+529841679017" },
+  ],
 });
 
 assert.deepEqual(
