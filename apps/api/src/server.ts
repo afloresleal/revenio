@@ -28,6 +28,7 @@ import {
 import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from "./lib/round-robin-resolution.js";
 import { classifyTransferAnswer } from "./lib/transfer-failover.js";
+import { normalizeMetricClassification } from "./lib/metric-classification.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -2867,6 +2868,91 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
   });
 }
 
+type CampaignCallsSummary = {
+  totalCalls: number;
+  answeredCalls: number;
+  contactedCalls: number;
+  totalVapiDurationSec: number;
+  totalTwilioDurationSec: number;
+};
+
+async function findAdminCampaignCallsSummary(campaign: { campaignId: string }): Promise<CampaignCallsSummary> {
+  const attempts = await prisma.callAttempt.findMany({
+    where: {
+      providerId: { not: null },
+      OR: [
+        { resultJson: { path: ["ghlIntegration", "campaignId"], equals: campaign.campaignId } },
+        { resultJson: { path: ["campaignId"], equals: campaign.campaignId } },
+      ],
+    },
+    select: {
+      providerId: true,
+    },
+  });
+
+  const callIds = attempts
+    .map((attempt) => attempt.providerId)
+    .filter((callId): callId is string => Boolean(callId));
+  const metrics = callIds.length
+    ? await prisma.callMetric.findMany({
+        where: { callId: { in: callIds } },
+        select: {
+          outcome: true,
+          transferredAt: true,
+          endedAt: true,
+          transferStatus: true,
+          postTransferDurationSec: true,
+          transferTranscript: true,
+          transferRecordingUrl: true,
+          durationSec: true,
+        },
+      })
+    : [];
+
+  let answeredCalls = 0;
+  let contactedCalls = 0;
+  let totalVapiDurationSec = 0;
+  let totalTwilioDurationSec = 0;
+
+  metrics.forEach((metric) => {
+    const hasHumanAnswer = hasHumanTransferEvidence({
+      transferStatus: metric.transferStatus ?? null,
+      postTransferDurationSec: metric.postTransferDurationSec ?? null,
+      transferTranscript: metric.transferTranscript ?? null,
+      transferRecordingUrl: metric.transferRecordingUrl ?? null,
+    });
+    if (hasHumanAnswer) answeredCalls += 1;
+
+    const classification = normalizeMetricClassification({
+      outcome: metric.outcome ?? null,
+      sentiment: null,
+      endedReason: null,
+      transferredAt: metric.transferredAt ?? null,
+      endedAt: metric.endedAt ?? null,
+      twilioTransferCallSid: hasHumanAnswer ? "human-transfer" : null,
+      transferStatus: metric.transferStatus ?? null,
+      postTransferDurationSec: metric.postTransferDurationSec ?? null,
+    });
+    if (classification.hasConnectedTransfer) contactedCalls += 1;
+
+    totalVapiDurationSec += Math.max(0, metric.durationSec ?? 0);
+    totalTwilioDurationSec += Math.max(
+      0,
+      metric.postTransferDurationSec ??
+        adminDiffSeconds(metric.transferredAt ?? null, metric.endedAt ?? null) ??
+        0,
+    );
+  });
+
+  return {
+    totalCalls: attempts.length,
+    answeredCalls,
+    contactedCalls,
+    totalVapiDurationSec,
+    totalTwilioDurationSec,
+  };
+}
+
 function normalizeStageMapping(mapping: any) {
   if (!mapping || typeof mapping !== "object") return undefined;
   const normalized = {
@@ -2986,10 +3072,14 @@ app.get("/api/admin/ghl-campaigns/:id/calls", async (req, res) => {
   if (!campaign) return res.status(404).json({ error: "not_found" });
 
   const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? "1000"), 10) || 1000, 1), 5000);
-  const rows = await findAdminCampaignCallRows(campaign, limit);
+  const [rows, summary] = await Promise.all([
+    findAdminCampaignCallRows(campaign, limit),
+    findAdminCampaignCallsSummary(campaign),
+  ]);
   return res.json({
     ok: true,
     campaignId: campaign.campaignId,
+    summary,
     columns: CAMPAIGN_CALL_EXPORT_COLUMNS,
     calls: buildCampaignCallExportRows(rows),
     count: rows.length,

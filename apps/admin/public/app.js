@@ -39,6 +39,12 @@ const agentsFeedbackEl = $("agents_feedback");
 const callsFeedbackEl = $("calls_feedback");
 const campaignListEl = $("campaign_list");
 const agentRowsEl = $("agent_rows");
+const callsSummaryEl = $("calls_summary");
+const callsSummaryTotalEl = $("calls_summary_total");
+const callsSummaryAnsweredEl = $("calls_summary_answered");
+const callsSummaryContactedEl = $("calls_summary_contacted");
+const callsSummaryVapiEl = $("calls_summary_vapi");
+const callsSummaryTwilioEl = $("calls_summary_twilio");
 const callsTableHeadEl = $("calls_table_head");
 const callsTableBodyEl = $("calls_table_body");
 const callsEmptyEl = $("calls_empty");
@@ -196,6 +202,42 @@ function truncateCell(value, maxLength = 220) {
   const text = String(value ?? "");
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 3)}...`;
+}
+
+function formatInteger(value) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return "0";
+  return Math.round(numeric).toLocaleString("es-MX");
+}
+
+function formatDurationCompact(totalSeconds) {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds ?? 0) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
+  return `${remainingSeconds}s`;
+}
+
+function renderCallsSummary(summary) {
+  if (!callsSummaryEl) return;
+
+  if (!selectedCampaign || !summary) {
+    callsSummaryTotalEl.textContent = "--";
+    callsSummaryAnsweredEl.textContent = "--";
+    callsSummaryContactedEl.textContent = "--";
+    callsSummaryVapiEl.textContent = "--";
+    callsSummaryTwilioEl.textContent = "--";
+    return;
+  }
+
+  callsSummaryTotalEl.textContent = formatInteger(summary.totalCalls);
+  callsSummaryAnsweredEl.textContent = formatInteger(summary.answeredCalls);
+  callsSummaryContactedEl.textContent = formatInteger(summary.contactedCalls);
+  callsSummaryVapiEl.textContent = formatDurationCompact(summary.totalVapiDurationSec);
+  callsSummaryTwilioEl.textContent = formatDurationCompact(summary.totalTwilioDurationSec);
 }
 
 function renderCallsTable(columns = [], calls = []) {
@@ -719,6 +761,7 @@ async function loadCalls() {
   const token = ++callsLoadToken;
   const campaignAtRequest = selectedCampaign?.id ?? null;
   if (!selectedCampaignId || !selectedCampaign) {
+    renderCallsSummary(null);
     renderCallsTable([], []);
     return;
   }
@@ -726,6 +769,7 @@ async function loadCalls() {
   setStatus("Cargando llamadas...");
   const data = await request("GET", `/api/admin/ghl-campaigns/${selectedCampaignId}/calls`);
   if (token !== callsLoadToken || campaignAtRequest !== selectedCampaign?.id) return;
+  renderCallsSummary(data.summary ?? null);
   renderCallsTable(data.columns ?? [], data.calls ?? []);
   setCallsFeedback(`${data.count ?? 0} llamadas cargadas para ${selectedCampaign.name}.`);
   setStatus("Llamadas cargadas.");

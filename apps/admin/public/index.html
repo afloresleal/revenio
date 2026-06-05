@@ -296,7 +296,7 @@
           <div class="panel-title">
             <div>
               <h2>Llamadas de la campaña</h2>
-              <p>Consulta y exporta los registros operativos de la campaña seleccionada.</p>
+              <p>Resumen operativo y registros históricos de la campaña seleccionada.</p>
             </div>
             <div class="panel-actions">
               <button id="btn_refresh_calls" type="button">Actualizar</button>
@@ -304,6 +304,33 @@
             </div>
           </div>
           <div id="calls_feedback" class="feedback" hidden></div>
+          <div id="calls_summary" class="calls-summary-grid">
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Llamadas realizadas</span>
+              <strong id="calls_summary_total" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Histórico total de la campaña</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Llamadas contestadas</span>
+              <strong id="calls_summary_answered" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Hubo conexión humana con vendedor</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Llamadas contactadas</span>
+              <strong id="calls_summary_contacted" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Califican para GHL por 30 segundos</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Tiempo Vapi</span>
+              <strong id="calls_summary_vapi" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Tiempo total base de llamada</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Tiempo Twilio</span>
+              <strong id="calls_summary_twilio" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Tiempo post-transfer con vendedor</span>
+            </article>
+          </div>
           <div class="calls-table-wrap">
             <table class="calls-table">
               <thead id="calls_table_head"></thead>

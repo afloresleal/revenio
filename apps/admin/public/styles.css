@@ -460,6 +460,41 @@ td:first-child {
   justify-content: flex-end;
 }
 
+.calls-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.calls-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 124px;
+  padding: 16px;
+  border: 1px solid rgb(59 130 246 / 0.24);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgb(15 23 42 / 0.86), rgb(15 23 42 / 0.66));
+}
+
+.calls-summary-label {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.calls-summary-value {
+  font-size: 1.85rem;
+  line-height: 1;
+  color: var(--text);
+}
+
+.calls-summary-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
 .calls-table-wrap {
   margin-top: 16px;
   border: 1px solid var(--line);
