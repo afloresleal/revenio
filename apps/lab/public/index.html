@@ -96,7 +96,10 @@
               <button id="btn_cw_save" class="secondary compact-btn compact-btn--sm" type="button">Guardar</button>
               <button id="btn_cw_reset" class="ghost compact-btn compact-btn--sm" type="button">Reset</button>
             </div>
-            <pre id="cw_status" class="status-box mt-3">Sin cargar.</pre>
+            <details class="status-details mt-3">
+              <summary>Ver JSON de respuesta</summary>
+              <pre id="cw_status" class="status-box">Sin cargar.</pre>
+            </details>
           </div>
       </section>
 
@@ -130,7 +133,10 @@
               <button id="btn_costs_load" class="ghost compact-btn compact-btn--sm" type="button">Cargar</button>
               <button id="btn_costs_save" class="secondary compact-btn compact-btn--sm" type="button">Guardar</button>
             </div>
-            <pre id="costs_status" class="status-box mt-3">Sin cargar</pre>
+            <details class="status-details mt-3">
+              <summary>Ver JSON de respuesta</summary>
+              <pre id="costs_status" class="status-box">Sin cargar</pre>
+            </details>
           </div>
       </section>
       <button id="btn_retry_last" class="secondary compact-btn hidden" style="display:none;">Reintentar última acción</button>
