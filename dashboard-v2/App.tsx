@@ -487,6 +487,54 @@ export default function App() {
     }
   };
 
+  const buildRoundRobinAttempts = (params: {
+    firstAgentName: string | null;
+    firstAgentNumber: string | null;
+    firstAgentResult: string | null;
+    answeredAgentName: string | null;
+    answeredAgentNumber: string | null;
+    answeredAgentIndex: number | null;
+    failoverSteps: Array<{
+      failedName: string | null;
+      failedNumber: string | null;
+      result: string | null;
+      nextName: string | null;
+      nextNumber: string | null;
+      fallback: boolean;
+    }>;
+  }) => {
+    const attempts: Array<{ identity: string; result: string }> = [];
+
+    const pushAttempt = (identity: string | null, result: string | null) => {
+      if (!identity || !result) return;
+      const key = `${identity}__${result}`;
+      const existing = attempts.some((attempt) => `${attempt.identity}__${attempt.result}` === key);
+      if (existing) return;
+      attempts.push({ identity, result });
+    };
+
+    const firstIdentity = params.firstAgentName ?? params.firstAgentNumber;
+    const answeredIdentity = params.answeredAgentName ?? params.answeredAgentNumber;
+
+    if (firstIdentity) {
+      const inferredFirstResult =
+        params.firstAgentResult ??
+        (params.answeredAgentIndex !== null && params.answeredAgentIndex > 0 ? 'no-answer' : null);
+      pushAttempt(firstIdentity, inferredFirstResult);
+    }
+
+    for (const step of params.failoverSteps) {
+      const failedIdentity = step.failedName ?? step.failedNumber;
+      pushAttempt(failedIdentity, step.result);
+    }
+
+    if (answeredIdentity) {
+      pushAttempt(answeredIdentity, 'human-answered');
+    }
+
+    return attempts;
+  };
+
   const getTotalDurationDisplay = (
     call: RecentCall,
     detail?: Record<string, unknown>
@@ -853,6 +901,20 @@ export default function App() {
     const fallbackOrderLabel = fallbackStep
       ? `${fallbackStep.nextName ?? fallbackStep.nextNumber ?? 'Fallback final'} - Conectó como fallback`
       : null;
+    const roundRobinAttempts = buildRoundRobinAttempts({
+      firstAgentName: detailFirstAgentName,
+      firstAgentNumber: detailFirstAgentNumber,
+      firstAgentResult: detailFirstAgentResultRaw,
+      answeredAgentName: detailAnsweredAgentName,
+      answeredAgentNumber: detailAnsweredAgentNumber,
+      answeredAgentIndex: detailAnsweredAgentIndex,
+      failoverSteps: detailFailoverSteps,
+    });
+    const attemptsLabel = roundRobinAttempts.length
+      ? roundRobinAttempts
+          .map((attempt, index) => `${index + 1}. ${attempt.identity} - ${formatTransferResult(attempt.result)}`)
+          .join(' · ')
+      : null;
     const roundRobinSummary =
       detailRoundRobinEnabled === true
           ? isFallbackTransfer
@@ -919,7 +981,10 @@ export default function App() {
                 Primer intento: {firstAgentIdentity ? `${firstAgentIdentity} • ` : ''}{firstAgentResultLabel}
               </div>
             )}
-            {attemptedOrder && (
+            {attemptsLabel && (
+              <div className="text-[11px] text-slate-500 mt-1">Intentos: {attemptsLabel}</div>
+            )}
+            {!attemptsLabel && attemptedOrder && (
               <div className="text-[11px] text-slate-500 mt-1">Orden intentado: {attemptedOrder}</div>
             )}
             {fallbackOrderLabel && (
