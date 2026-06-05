@@ -2,6 +2,48 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## [0.3.8] - 2026-06-04
+
+### Fix: Resolver correctamente qué vendedor contestó
+
+**Contexto:**
+Durante una prueba real con cliente, el dashboard mostraba que la llamada había sido contestada por el primer vendedor del pool, aunque el número transferido y el transcript humano indicaban que respondió otro vendedor.
+
+**Problema real observado:**
+- `transferNumber` apuntaba al vendedor correcto.
+- `roundRobinAnsweredAgentName` y/o `roundRobinAnsweredAgentIndex` podían quedar viejos o inconsistentes.
+- Admin, Dashboard, CSV y GHL no siempre consumían exactamente la misma resolución.
+
+**Solución implementada:**
+- El sistema ahora usa el `transferNumber` final como base canónica cuando existe evidencia humana real.
+- Si el snapshot histórico del intento está corrupto o inconsistente, se hace fallback contra la configuración actual de agentes de la campaña.
+- Se unificó la resolución para:
+  - Dashboard Metrics API
+  - Admin > Llamadas
+  - CSV de campañas
+  - `assignedTo` enviado a GHL
+- La UI deja de afirmar falsamente que el primer intento conectó cuando el vendedor real fue otro.
+
+**Impacto:**
+- ✅ Dashboard muestra al vendedor correcto cuando el snapshot histórico viene inconsistente
+- ✅ Admin > Llamadas y CSV exportan el mismo vendedor contestado
+- ✅ GHL recibe `assignedTo` con el vendedor correcto
+- ✅ Se reduce dependencia de metadata vieja guardada en `roundRobin`
+
+**Archivos principales:**
+- `apps/api/src/lib/round-robin-resolution.ts`
+- `apps/api/src/routes/metrics.ts`
+- `apps/api/src/routes/webhooks.ts`
+- `apps/api/src/server.ts`
+- `apps/api/test/metrics-round-robin-resolution.test.ts`
+- `docs/IMPLEMENTED-2026-06-04-answered-agent-resolution.md`
+
+**Commits principales:**
+- `27acf86` - `fix answered agent resolution for dashboard and GHL`
+- `9ca4731` - `fix stale answered agent metadata precedence`
+- `6a5e807` - `fix answered agent resolution in legacy admin views`
+- `0631818` - `fix answered agent fallback from campaign config`
+
 ## [0.3.7] - 2026-06-02
 
 ### Fix: Umbral de 30 segundos para contactos válidos en GHL

@@ -1,6 +1,6 @@
 # 📚 Índice de Documentación — Revenio
 
-> **Última actualización:** 2026-05-16 (agregado testing & code review guidelines)
+> **Última actualización:** 2026-06-04 (agregado fix de resolvedor de vendedor contestado)
 
 Este índice organiza toda la documentación de Revenio por estado y propósito.
 
@@ -26,6 +26,7 @@ Features implementadas con documentación técnica completa. Mantener como refer
 
 | Documento | Descripción | Fecha implementación |
 |-----------|-------------|---------------------|
+| [IMPLEMENTED-2026-06-04-answered-agent-resolution.md](IMPLEMENTED-2026-06-04-answered-agent-resolution.md) | Fix: resolución correcta del vendedor que contestó en dashboard, admin, CSV y GHL | 2026-06-04 |
 | [IMPLEMENTED-2026-05-14-blind-transfer-fix.md](IMPLEMENTED-2026-05-14-blind-transfer-fix.md) | Fix: Habilitado failover automático eliminando blind-transfer hooks | 2026-05-14 |
 | [IMPLEMENTED-2026-05-14-call-window-per-campaign.md](IMPLEMENTED-2026-05-14-call-window-per-campaign.md) | Feature: Horario de llamadas por campaña (Fase 1 + Fase 2) | 2026-05-14 |
 | [IMPLEMENTED-2026-05-14-call-window-validation.md](IMPLEMENTED-2026-05-14-call-window-validation.md) | Guía de validación para call window Phase 1 | 2026-05-14 |
@@ -114,4 +115,4 @@ Para detalles técnicos de una feature, buscar en: `docs/IMPLEMENTED-*`
 
 ---
 
-**Última revisión del índice:** 2026-05-14 por <AI_ASSISTANT> Sonnet 4.5
+**Última revisión del índice:** 2026-06-04 por Codex
