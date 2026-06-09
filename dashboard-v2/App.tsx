@@ -32,7 +32,11 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { fetchAllData, fetchRecent, fetchCallDetail, syncCallDetail } from './src/lib/api';
-import { formatRoundRobinAttemptStatus, formatTransferResult } from './src/lib/round-robin-status';
+import {
+  buildRoundRobinAttempts,
+  formatRoundRobinAttemptStatus,
+  formatTransferResult,
+} from './src/lib/round-robin-status';
 
 // --- Types ---
 const CDMX_TIMEZONE = 'America/Mexico_City';
@@ -460,54 +464,6 @@ export default function App() {
       default:
         return value || 'Registro interno';
     }
-  };
-
-  const buildRoundRobinAttempts = (params: {
-    firstAgentName: string | null;
-    firstAgentNumber: string | null;
-    firstAgentResult: string | null;
-    answeredAgentName: string | null;
-    answeredAgentNumber: string | null;
-    answeredAgentIndex: number | null;
-    failoverSteps: Array<{
-      failedName: string | null;
-      failedNumber: string | null;
-      result: string | null;
-      nextName: string | null;
-      nextNumber: string | null;
-      fallback: boolean;
-    }>;
-  }) => {
-    const attempts: Array<{ identity: string; result: string; answered: boolean }> = [];
-
-    const pushAttempt = (identity: string | null, result: string | null, answered = false) => {
-      if (!identity || !result) return;
-      const key = `${identity}__${result}`;
-      const existing = attempts.some((attempt) => `${attempt.identity}__${attempt.result}` === key);
-      if (existing) return;
-      attempts.push({ identity, result, answered });
-    };
-
-    const firstIdentity = params.firstAgentName ?? params.firstAgentNumber;
-    const answeredIdentity = params.answeredAgentName ?? params.answeredAgentNumber;
-
-    if (firstIdentity) {
-      const inferredFirstResult =
-        params.firstAgentResult ??
-        (params.answeredAgentIndex !== null && params.answeredAgentIndex > 0 ? 'no-answer' : null);
-      pushAttempt(firstIdentity, inferredFirstResult, inferredFirstResult === 'human-answered');
-    }
-
-    for (const step of params.failoverSteps) {
-      const failedIdentity = step.failedName ?? step.failedNumber;
-      pushAttempt(failedIdentity, step.result, step.result === 'human-answered');
-    }
-
-    if (answeredIdentity) {
-      pushAttempt(answeredIdentity, 'human-answered', true);
-    }
-
-    return attempts;
   };
 
   const getTotalDurationDisplay = (

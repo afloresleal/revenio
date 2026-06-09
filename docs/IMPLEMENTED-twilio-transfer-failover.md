@@ -1,8 +1,8 @@
-# Twilio Setup: Transfer Failover (5s) para Round Robin Humano
+# Twilio Setup: Transfer Failover (15s) para Round Robin Humano
 
 ## Objetivo
 Habilitar callbacks de Twilio en el **transfer leg** (llamada al agente humano) para que el backend pueda:
-- detectar `ringing` y esperar 5 segundos
+- detectar `ringing` y esperar 15 segundos
 - escalar al siguiente agente si no contesta
 - escalar inmediatamente en `busy/no-answer/failed/canceled`
 
@@ -15,7 +15,7 @@ Con fallback actual, si Twilio no manda `DialCallStatus`, RR escala desde `statu
   - `POST /webhooks/twilio/transfer-status`
   - `POST /webhooks/twilio/transfer-recording`
   - `POST /webhooks/twilio/transfer-transcription`
-- Timeout de failover: `TRANSFER_FAILOVER_RING_TIMEOUT_SEC` (default: `5`)
+- Timeout de failover: `TRANSFER_FAILOVER_RING_TIMEOUT_SEC` (default actual en código: `15`)
 - Ventana de espera de child call (`queued/ringing` antes de failover):
   - `TRANSFER_CHILD_CALL_MAX_WAIT_MS` (default: `9000`)
   - `TRANSFER_CHILD_CALL_POLL_INTERVAL_MS` (default: `1200`)
@@ -71,7 +71,7 @@ Después de configurar, ejecutar 1 llamada de prueba donde el primer agente no c
 Esperado en métricas/detalle:
 - `twilioTransferCallSid` != `null`
 - `transferStatus` debe moverse (`ringing` y luego estado final o nuevo intento)
-- failover a siguiente agente dentro de ~5s
+- failover a siguiente agente dentro de ~15s
 - si todos fallan: estado interno `transfer-failover-exhausted`
 - si no llega callback Twilio, debe verse fallback en logs:
   - `RR fallback failover from status-update (missing DialCallStatus)`

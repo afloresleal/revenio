@@ -116,7 +116,7 @@ Durante pruebas en producción con el equipo de <OPERADOR_INTERNO>, se detectaro
 - El failover de round robin ahora respeta el horario personalizado de la campaña cuando la llamada pertenece a una campaña GHL.
 - Las llamadas con confirmación tardía de transfer pueden promocionarse correctamente a `transfer_success` después de sincronizar la grabación/datos de Twilio.
 - Dashboard traduce estados técnicos a lenguaje operativo para el equipo:
-  - `child-never-answered-no-callback` -> `No contestó a tiempo`
+  - `child-never-answered-no-callback` -> `No confirmado a tiempo`
   - `no-answer` -> `No contestó`
   - `call_attempt_result_json` -> `Registro interno`
 - Dashboard incluye eventos `transfer_fallback` y muestra el fallback final cuando el pool de vendedores se agotó.
