@@ -9,8 +9,8 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import { 
-  Phone, 
+import {
+  Phone,
   ArrowUpRight, 
   ArrowDownRight, 
   Activity, 
@@ -32,6 +32,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { fetchAllData, fetchRecent, fetchCallDetail, syncCallDetail } from './src/lib/api';
+import { formatRoundRobinAttemptStatus, formatTransferResult } from './src/lib/round-robin-status';
 
 // --- Types ---
 const CDMX_TIMEZONE = 'America/Mexico_City';
@@ -450,32 +451,6 @@ export default function App() {
     return typeof value === 'boolean' ? value : null;
   };
 
-  const formatTransferResult = (value?: string | null): string => {
-    switch (value) {
-      case 'child-never-answered-no-callback':
-      case 'child-never-answered':
-      case 'ring-timeout':
-        return 'No contestó a tiempo';
-      case 'no-answer':
-        return 'No contestó';
-      case 'voicemail':
-      case 'machine':
-      case 'machine_start':
-      case 'machine_end_beep':
-      case 'machine_end_silence':
-      case 'machine_end_other':
-        return 'Buzón detectado';
-      case 'busy':
-        return 'Ocupado';
-      case 'failed':
-        return 'Falló la llamada';
-      case 'human-answered':
-        return 'Conectó';
-      default:
-        return value || 'Sin dato';
-    }
-  };
-
   const formatSelectionSource = (value?: string | null): string => {
     switch (value) {
       case 'call_attempt_result_json':
@@ -533,10 +508,6 @@ export default function App() {
     }
 
     return attempts;
-  };
-
-  const formatRoundRobinAttemptStatus = (value?: string | null): string => {
-    return value === 'human-answered' ? 'Contestó' : 'No contestó';
   };
 
   const getTotalDurationDisplay = (
