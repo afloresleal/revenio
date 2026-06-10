@@ -1,4 +1,4 @@
-import { canOpenTranscript, normalizeTranscriptText } from "./transcript-modal-utils.js";
+import { canOpenTranscript, normalizeTranscriptText, splitTranscriptSections } from "./transcript-modal-utils.js";
 const $ = (id) => document.getElementById(id);
 
 // API base URLs - updated for correct environment detection
@@ -239,7 +239,29 @@ function openTranscriptModal(transcript, phone = "") {
   if (transcriptModalTitleEl) {
     transcriptModalTitleEl.textContent = phone ? `Transcript ${phone}` : "Transcript";
   }
-  transcriptModalBodyEl.textContent = normalized;
+  transcriptModalBodyEl.innerHTML = "";
+  const sections = splitTranscriptSections(normalized);
+
+  if (sections.length === 0) {
+    transcriptModalBodyEl.textContent = normalized;
+  } else {
+    sections.forEach((section) => {
+      const wrapper = document.createElement("section");
+      wrapper.className = "transcript-section";
+
+      const label = document.createElement("div");
+      label.className = "transcript-section-label";
+      label.textContent = `${section.label}:`;
+
+      const content = document.createElement("div");
+      content.className = "transcript-section-content";
+      content.textContent = section.content;
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(content);
+      transcriptModalBodyEl.appendChild(wrapper);
+    });
+  }
   transcriptModalEl.hidden = false;
 }
 
