@@ -23,9 +23,6 @@ import {
   Calendar,
   Search,
   Mic,
-  Smile,
-  Meh,
-  Frown,
   Filter,
   X,
   AlertOctagon,
@@ -41,7 +38,6 @@ import {
 // --- Types ---
 const CDMX_TIMEZONE = 'America/Mexico_City';
 
-type SentimentType = 'positive' | 'neutral' | 'negative';
 type OutcomeType = 'transfer_success' | 'abandoned' | 'in_progress' | 'completed' | 'failed';
 
 interface CallDelta {
@@ -83,10 +79,10 @@ interface DailyData {
 interface RecentCall {
   callId: string;
   phone: string;
+  campaignName?: string | null;
   assistantId?: string | null;
   transferNumber?: string | null;
   outcome: OutcomeType;
-  sentiment: SentimentType | null;
   duration: number | null;
   durationSource?: 'duration_sec' | 'timestamp_fallback' | 'missing';
   startedAt?: string | null;
@@ -173,31 +169,6 @@ const StatusBadge: React.FC<{ outcome: OutcomeType }> = ({ outcome }) => {
   }
 };
 
-const SentimentBadge: React.FC<{ sentiment: SentimentType | null }> = ({ sentiment }) => {
-  if (!sentiment) {
-    return <span className="text-slate-600 text-xs px-2 select-none">--</span>;
-  }
-
-  const config = {
-    positive: { icon: Smile, color: 'text-emerald-400', bg: 'bg-emerald-900/30', border: 'border-emerald-500/20', label: 'Positivo' },
-    neutral: { icon: Meh, color: 'text-slate-400', bg: 'bg-slate-700/50', border: 'border-slate-600/30', label: 'Neutral' },
-    negative: { icon: Frown, color: 'text-rose-400', bg: 'bg-rose-900/30', border: 'border-rose-500/20', label: 'Negativo' },
-  };
-
-  const style = config[sentiment];
-  const Icon = style.icon;
-
-  return (
-    <span 
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.color} border ${style.border}`}
-      aria-label={`Sentiment: ${style.label}`}
-    >
-      <Icon size={12} aria-hidden="true" />
-      {style.label}
-    </span>
-  );
-};
-
 const SkeletonCard = () => (
   <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm animate-pulse h-40">
     <div className="h-8 w-8 bg-slate-800 rounded-full mb-4"></div>
@@ -223,7 +194,6 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeType | 'all'>('all');
-  const [sentimentFilter, setSentimentFilter] = useState<SentimentType | 'all'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
@@ -287,7 +257,6 @@ export default function App() {
       try {
         const recent = await fetchRecent({
           limit: historyOnlyView ? 100 : 5,
-          sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
           outcome: outcomeFilter !== 'all' ? outcomeFilter : undefined,
           search: debouncedSearch || undefined,
           from: dateFrom || undefined,
@@ -300,7 +269,7 @@ export default function App() {
     };
     
     fetchFiltered();
-  }, [debouncedSearch, outcomeFilter, sentimentFilter, historyOnlyView, dateFrom, dateTo]);
+  }, [debouncedSearch, outcomeFilter, historyOnlyView, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchData();
@@ -360,7 +329,6 @@ export default function App() {
   const handleClearFilters = () => {
     setSearch("");
     setOutcomeFilter('all');
-    setSentimentFilter('all');
     setDateFrom('');
     setDateTo('');
   };
@@ -378,10 +346,6 @@ export default function App() {
       if (outcomeFilter !== 'all' && call.outcome !== outcomeFilter) {
         return false;
       }
-      // Sentiment Filter
-      if (sentimentFilter !== 'all' && call.sentiment !== sentimentFilter) {
-        return false;
-      }
       return true;
     });
 
@@ -391,7 +355,7 @@ export default function App() {
       const bTs = new Date(b.startedAt ?? b.endedAt ?? 0).getTime();
       return bTs - aTs;
     });
-  }, [data, debouncedSearch, outcomeFilter, sentimentFilter]);
+  }, [data, debouncedSearch, outcomeFilter]);
 
   const getDeltaColor = (value: number, inverse = false) => {
     if (value === 0) return 'text-slate-500';
@@ -583,7 +547,6 @@ export default function App() {
   const refreshRecentCalls = async () => {
     const recent = await fetchRecent({
       limit: historyOnlyView ? 100 : 5,
-      sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
       outcome: outcomeFilter !== 'all' ? outcomeFilter : undefined,
       search: debouncedSearch || undefined,
       from: dateFrom || undefined,
@@ -1153,7 +1116,7 @@ export default function App() {
                 </div>
                 
                 {/* --- Filters Bar --- */}
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
                   <div className="relative col-span-1 md:col-span-2">
                     <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
                       {search !== debouncedSearch ? (
@@ -1184,18 +1147,6 @@ export default function App() {
                     <option value="in_progress">En curso</option>
                     <option value="completed">Completado</option>
                     <option value="failed">Fallo</option>
-                  </select>
-
-                  <select
-                    className="col-span-1 bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer"
-                    value={sentimentFilter}
-                    onChange={(e) => setSentimentFilter(e.target.value as SentimentType | 'all')}
-                    aria-label="Filtrar por sentiment"
-                  >
-                    <option value="all">Sent: Todos</option>
-                    <option value="positive">😊 Positivo</option>
-                    <option value="neutral">😐 Neutral</option>
-                    <option value="negative">😟 Negativo</option>
                   </select>
 
                   <input
@@ -1245,7 +1196,15 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                filteredCalls.map((call) => {
+                <>
+                <div className="hidden md:grid grid-cols-[minmax(180px,1.15fr)_minmax(180px,1fr)_auto_90px_110px] items-center gap-4 px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+                  <span>Teléfono</span>
+                  <span>Campaña</span>
+                  <span>Estatus</span>
+                  <span className="text-right">Duración</span>
+                  <span className="text-right">Detalle</span>
+                </div>
+                {filteredCalls.map((call) => {
                   // Calculate total duration: Vapi duration + Twilio post-transfer duration
                   const totalDuration = (call.duration ?? 0) + (call.postTransferDurationSec ?? 0);
                   const displayDuration = totalDuration > 0 ? totalDuration : call.duration;
@@ -1258,29 +1217,41 @@ export default function App() {
                           loadCallDetail(call.callId).catch(() => undefined);
                         }}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-left">
+                        <div className="flex items-center justify-between gap-3 md:grid md:grid-cols-[minmax(180px,1.15fr)_minmax(180px,1fr)_auto_90px_110px] md:gap-4">
+                          <div className="min-w-0 text-left">
                             <div className="font-mono text-sm text-slate-200">{call.phone}</div>
                             <div className="text-[11px] text-slate-500">{call.ago}</div>
                           </div>
-                          <div className="hidden md:flex items-center gap-3">
+                          <div className="hidden md:block min-w-0 text-left">
+                            <div className="truncate text-sm text-slate-200">{call.campaignName || 'Sin campaña'}</div>
+                          </div>
+                          <div className="hidden md:flex items-center">
                             <StatusBadge outcome={call.outcome} />
-                            <SentimentBadge sentiment={call.sentiment} />
-                            <span className="font-mono text-xs text-slate-400 min-w-[70px] text-right">
-                              Dur: {formatSeconds(displayDuration)}
+                          </div>
+                          <div className="hidden md:block font-mono text-xs text-slate-400 text-right">
+                            {formatSeconds(displayDuration)}
+                          </div>
+                          <div className="hidden md:flex justify-end">
+                            <span className="inline-flex items-center rounded-md border border-blue-700/50 px-2 py-1 text-[11px] font-medium text-blue-300 hover:bg-blue-900/20">
+                              Ver detalle
                             </span>
                           </div>
-                          <div className="md:hidden flex items-center gap-2">
-                            <span className="font-mono text-xs text-slate-400">{formatSeconds(displayDuration)}</span>
+                          <div className="md:hidden min-w-0 flex-1 text-left">
+                            <div className="truncate text-[11px] text-slate-500">{call.campaignName || 'Sin campaña'}</div>
+                            <div className="mt-1 flex items-center gap-2">
+                              <StatusBadge outcome={call.outcome} />
+                              <span className="font-mono text-xs text-slate-400">{formatSeconds(displayDuration)}</span>
+                            </div>
                           </div>
-                          <span className="inline-flex items-center rounded-md border border-blue-700/50 px-2 py-1 text-[11px] font-medium text-blue-300 hover:bg-blue-900/20">
+                          <span className="md:hidden inline-flex items-center rounded-md border border-blue-700/50 px-2 py-1 text-[11px] font-medium text-blue-300 hover:bg-blue-900/20">
                             Ver detalle
                           </span>
                         </div>
                       </button>
                     </div>
                   );
-                })
+                })}
+                </>
               )}
             </div>
             {/* Table Footer */}

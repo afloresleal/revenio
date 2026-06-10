@@ -137,6 +137,9 @@ model GhlCampaign {
   callWindowEndHour Int? @map("call_window_end_hour")
   callWindowWeekdays String? @map("call_window_weekdays")
   callWindowApplyToFailover Boolean? @map("call_window_apply_to_failover")
+  costOverrideEnabled Boolean? @map("cost_override_enabled")
+  overrideVapiCostPerMinuteUsd Decimal? @map("override_vapi_cost_per_minute_usd") @db.Decimal(10, 4)
+  overrideTwilioCostPerMinuteUsd Decimal? @map("override_twilio_cost_per_minute_usd") @db.Decimal(10, 4)
   active            Boolean  @default(true)
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
@@ -178,4 +181,16 @@ model GhlAgentPoolSetting {
   @@map("ghl_agent_pool_setting")
   @@index([propertyKey])
   @@index([campaignId])
+}
+
+model AdminCostConfig {
+  id                    String   @id
+  currency              String   @default("USD")
+  usdToMxnRate          Decimal  @map("usd_to_mxn_rate") @db.Decimal(10, 4)
+  vapiCostPerMinuteUsd  Decimal  @map("vapi_cost_per_minute_usd") @db.Decimal(10, 4)
+  twilioCostPerMinuteUsd Decimal @map("twilio_cost_per_minute_usd") @db.Decimal(10, 4)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("admin_cost_config")
 }

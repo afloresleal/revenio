@@ -1,38 +1,15 @@
 const $ = (id) => document.getElementById(id);
 
 const fields = [
-  "api_base",
-  "vapi_api_key",
-  "vapi_assistant_id",
-  "vapi_phone_number_id",
-  "transfer_number",
-  "to_number",
-  "lead_name",
-  "lead_source",
-  "lead_id",
-  "round_robin_enabled",
-  "agent_property_key",
-  "agent_campaign_id",
-  "rr_agent_name_1",
-  "rr_agent_number_1",
-  "rr_agent_name_2",
-  "rr_agent_number_2",
-  "rr_agent_name_3",
-  "rr_agent_number_3",
-  "rr_agent_name_4",
-  "rr_agent_number_4",
-  "rr_agent_name_5",
-  "rr_agent_number_5",
   "cw_timezone",
   "cw_weekdays",
   "cw_start_hour",
   "cw_end_hour",
   "cw_enabled",
   "cw_apply_rr",
-  "filter_status",
-  "filter_lead",
-  "filter_from",
-  "filter_to",
+  "cost_usd_to_mxn_rate",
+  "cost_vapi_per_minute_usd",
+  "cost_twilio_per_minute_usd",
 ];
 
 fields.forEach((k) => {
@@ -60,17 +37,16 @@ fields.forEach((k) => {
   el.addEventListener("change", handler);
 });
 
-if (!$('api_base').value) {
+function getDefaultApiBase() {
   const hostname = window.location.hostname;
   const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
   if (isLocal) {
-    $('api_base').value = "http://localhost:3000";
-  } else if (hostname.includes("staging")) {
-    $('api_base').value = "https://revenioapi-staging.up.railway.app";
-  } else {
-    // Default to production if not localhost and not staging
-    $('api_base').value = "https://revenioapi-production.up.railway.app";
+    return "http://localhost:3000";
   }
+  if (hostname.includes("staging")) {
+    return "https://revenioapi-staging.up.railway.app";
+  }
+  return "https://revenioapi-production.up.railway.app";
 }
 
 const adminLink = $("admin_link");
@@ -99,6 +75,7 @@ if (dashboardLink) {
 
 const out = $("out");
 const callWindowStatus = $("cw_status");
+const costsStatus = $("costs_status");
 const agentsStatus = $("agents_status");
 const historyEl = $("history");
 const assistantSelect = $("assistant_select");
@@ -130,6 +107,7 @@ function setupDatePickerBehavior() {
 }
 
 function setActiveTab(tabName) {
+  if (!tabButtons.length) return;
   tabButtons.forEach((button) => {
     const isActive = button.dataset.tabTarget === tabName;
     button.classList.toggle("is-active", isActive);
@@ -180,7 +158,7 @@ function formatTimeCDMX(value) {
   });
 }
 
-const apiBase = () => $("api_base").value.trim().replace(/\/$/, "");
+const apiBase = () => getDefaultApiBase().replace(/\/$/, "");
 const RETRY_DELAYS_MS = [700, 1400, 2200];
 
 function sleep(ms) {
@@ -196,19 +174,23 @@ function isRetryable(status, data) {
 
 function setRetryAction(label, action) {
   retryLastAction = action;
+  if (!retryLastBtn) return;
   retryLastBtn.style.display = "inline-flex";
   retryLastBtn.textContent = `Reintentar: ${label}`;
 }
 
 function clearRetryAction() {
   retryLastAction = null;
+  if (!retryLastBtn) return;
   retryLastBtn.style.display = "none";
 }
 
-retryLastBtn.addEventListener("click", async () => {
-  if (!retryLastAction) return;
-  await retryLastAction();
-});
+if (retryLastBtn) {
+  retryLastBtn.addEventListener("click", async () => {
+    if (!retryLastAction) return;
+    await retryLastAction();
+  });
+}
 
 async function requestWithRetry(method, path, body) {
   let lastResult = { status: 0, data: { error: "network_error", message: "Unknown error" } };
@@ -397,6 +379,19 @@ function applyCallWindowSettingsToForm(settings = {}) {
   if ($("cw_apply_rr")) $("cw_apply_rr").checked = !!settings.applyToRoundRobinFailover;
 }
 
+function formatLabDecimalInput(value, digits = 4) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "";
+  return numeric.toFixed(digits);
+}
+
+function applyCostSettingsToForm(config = {}) {
+  if ($("cost_currency")) $("cost_currency").value = config.currency ?? "USD";
+  if ($("cost_usd_to_mxn_rate")) $("cost_usd_to_mxn_rate").value = formatLabDecimalInput(config.usdToMxnRate);
+  if ($("cost_vapi_per_minute_usd")) $("cost_vapi_per_minute_usd").value = formatLabDecimalInput(config.vapiCostPerMinuteUsd);
+  if ($("cost_twilio_per_minute_usd")) $("cost_twilio_per_minute_usd").value = formatLabDecimalInput(config.twilioCostPerMinuteUsd);
+}
+
 async function loadCallWindowSettings(showInOut = false) {
   if (!callWindowStatus) return;
   callWindowStatus.textContent = "Cargando configuración...";
@@ -450,7 +445,53 @@ async function resetCallWindowSettings() {
   out.textContent = JSON.stringify(result, null, 2);
 }
 
-$("btn_validate").addEventListener("click", async () => {
+async function loadCostSettings(showInOut = false) {
+  if (!costsStatus) return;
+  costsStatus.textContent = "Cargando configuración...";
+  const result = await get("/lab/settings/costs");
+  if (result.status !== 200 || !result.data?.config) {
+    costsStatus.textContent = `Error: ${result.status}`;
+    if (showInOut) out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
+  applyCostSettingsToForm(result.data.config);
+  costsStatus.textContent = JSON.stringify(result.data, null, 2);
+  if (showInOut) out.textContent = JSON.stringify(result, null, 2);
+}
+
+async function saveCostSettings() {
+  if (!costsStatus) return;
+  const payload = {
+    currency: "USD",
+    usdToMxnRate: Number.parseFloat($("cost_usd_to_mxn_rate")?.value ?? ""),
+    vapiCostPerMinuteUsd: Number.parseFloat($("cost_vapi_per_minute_usd")?.value ?? ""),
+    twilioCostPerMinuteUsd: Number.parseFloat($("cost_twilio_per_minute_usd")?.value ?? ""),
+  };
+  if (!Number.isFinite(payload.usdToMxnRate) || payload.usdToMxnRate <= 0) {
+    costsStatus.textContent = "Captura un tipo de cambio USD -> MXN válido.";
+    return;
+  }
+  if (!Number.isFinite(payload.vapiCostPerMinuteUsd) || payload.vapiCostPerMinuteUsd < 0) {
+    costsStatus.textContent = "Captura un costo Vapi por llamada válido.";
+    return;
+  }
+  if (!Number.isFinite(payload.twilioCostPerMinuteUsd) || payload.twilioCostPerMinuteUsd < 0) {
+    costsStatus.textContent = "Captura una tarifa Twilio válida.";
+    return;
+  }
+  costsStatus.textContent = "Guardando...";
+  const result = await post("/lab/settings/costs", payload);
+  if (result.status !== 200 || !result.data?.config) {
+    costsStatus.textContent = `Error: ${result.status}`;
+    out.textContent = JSON.stringify(result, null, 2);
+    return;
+  }
+  applyCostSettingsToForm(result.data.config);
+  costsStatus.textContent = JSON.stringify(result.data, null, 2);
+  out.textContent = JSON.stringify(result, null, 2);
+}
+
+if ($("btn_validate")) $("btn_validate").addEventListener("click", async () => {
   out.textContent = "Validando IDs...";
   const payload = {
     vapi_api_key: $("vapi_api_key").value.trim(),
@@ -467,7 +508,7 @@ $("btn_validate").addEventListener("click", async () => {
   out.textContent = JSON.stringify(result, null, 2);
 });
 
-$("btn_load_assistants").addEventListener("click", async () => {
+if ($("btn_load_assistants")) $("btn_load_assistants").addEventListener("click", async () => {
   out.textContent = "Cargando assistants...";
   const payload = { vapi_api_key: $("vapi_api_key").value.trim() };
   const result = await post("/vapi/assistants", payload);
@@ -500,7 +541,7 @@ $("btn_load_assistants").addEventListener("click", async () => {
   out.textContent = `Assistants cargados: ${result.data.length}`;
 });
 
-$("btn_load_numbers").addEventListener("click", async () => {
+if ($("btn_load_numbers")) $("btn_load_numbers").addEventListener("click", async () => {
   out.textContent = "Cargando números...";
   const payload = { vapi_api_key: $("vapi_api_key").value.trim() };
   const result = await post("/vapi/phone-numbers", payload);
@@ -533,15 +574,19 @@ $("btn_load_numbers").addEventListener("click", async () => {
   out.textContent = `Números cargados: ${result.data.length}`;
 });
 
-assistantSelect.addEventListener("change", () => {
-  $("vapi_assistant_id").value = assistantSelect.value;
-});
+if (assistantSelect) {
+  assistantSelect.addEventListener("change", () => {
+    if ($("vapi_assistant_id")) $("vapi_assistant_id").value = assistantSelect.value;
+  });
+}
 
-phoneSelect.addEventListener("change", () => {
-  $("vapi_phone_number_id").value = phoneSelect.value;
-});
+if (phoneSelect) {
+  phoneSelect.addEventListener("change", () => {
+    if ($("vapi_phone_number_id")) $("vapi_phone_number_id").value = phoneSelect.value;
+  });
+}
 
-$("btn_call").addEventListener("click", async () => {
+if ($("btn_call")) $("btn_call").addEventListener("click", async () => {
   out.textContent = "Enviando...";
   const roundRobinAgents = collectRoundRobinAgents();
   const roundRobinEnabled = $("round_robin_enabled")?.checked || roundRobinAgents.length > 0;
@@ -593,6 +638,18 @@ if ($("btn_cw_reset")) {
   });
 }
 
+if ($("btn_costs_load")) {
+  $("btn_costs_load").addEventListener("click", async () => {
+    await loadCostSettings(true);
+  });
+}
+
+if ($("btn_costs_save")) {
+  $("btn_costs_save").addEventListener("click", async () => {
+    await saveCostSettings();
+  });
+}
+
 if ($("btn_agents_load")) {
   $("btn_agents_load").addEventListener("click", async () => {
     await loadStoredAgents();
@@ -613,7 +670,7 @@ if ($("btn_agents_save")) {
   });
 });
 
-$("btn_load").addEventListener("click", async () => {
+if ($("btn_load")) $("btn_load").addEventListener("click", async () => {
   setActiveTab("history");
   await loadHistory();
 });
@@ -661,7 +718,7 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-$("btn_export").addEventListener("click", exportCsv);
+if ($("btn_export")) $("btn_export").addEventListener("click", exportCsv);
 
 async function loadHistory() {
   historyEl.textContent = "Cargando...";
@@ -922,6 +979,7 @@ async function loadHistory() {
   });
 }
 
-setActiveTab("ops");
+if (tabButtons.length) setActiveTab("ops");
 setupDatePickerBehavior();
 loadCallWindowSettings().catch(() => {});
+loadCostSettings().catch(() => {});

@@ -110,6 +110,14 @@ function extractCampaignScope(resultJson: Record<string, unknown> | null): { pro
   };
 }
 
+function extractCampaignName(resultJson: Record<string, unknown> | null): string | null {
+  const integration = asRecord(resultJson?.ghlIntegration);
+  return (
+    asString(integration?.campaignName) ??
+    asString(resultJson?.campaignName) ??
+    null
+  );
+}
 async function loadCanonicalRoundRobinAgents(resultJson: Record<string, unknown> | null): Promise<RoundRobinAgentCandidate[]> {
   const scope = extractCampaignScope(resultJson);
   if (!scope.propertyKey || !scope.campaignId) return [];
@@ -877,6 +885,7 @@ router.get('/recent', async (req, res) => {
     const rows = await Promise.all(calls.map(async (c: any) => {
       const attempt = latestAttemptByCallId.get(c.callId);
       const attemptResult = asRecord(attempt?.resultJson);
+      const campaignName = extractCampaignName(attemptResult);
       const canonicalAgents = await loadCanonicalRoundRobinAgents(attemptResult);
       const selectedAgent = asRecord(attemptResult?.selected_agent);
       const roundRobin = asRecord(attemptResult?.roundRobin);
@@ -991,6 +1000,7 @@ router.get('/recent', async (req, res) => {
       return {
         callId: c.callId,
         phone: maskPhone(c.phoneNumber),
+        campaignName,
         assistantId: c.assistantId,
         transferNumber: c.transferNumber,
         humanAgentName,

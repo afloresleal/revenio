@@ -32,6 +32,7 @@
           <button class="tab" data-panel="agents">Agentes</button>
           <button class="tab" data-panel="handoff">GHL</button>
           <button class="tab" data-panel="calls">Llamadas</button>
+          <button class="tab" data-panel="costs">Costos</button>
           <button class="tab is-hidden" data-panel="test" hidden>Prueba</button>
         </nav>
 
@@ -296,7 +297,7 @@
           <div class="panel-title">
             <div>
               <h2>Llamadas de la campaña</h2>
-              <p>Consulta y exporta los registros operativos de la campaña seleccionada.</p>
+              <p>Resumen operativo y registros históricos de la campaña seleccionada.</p>
             </div>
             <div class="panel-actions">
               <button id="btn_refresh_calls" type="button">Actualizar</button>
@@ -304,6 +305,33 @@
             </div>
           </div>
           <div id="calls_feedback" class="feedback" hidden></div>
+          <div id="calls_summary" class="calls-summary-grid">
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Llamadas realizadas</span>
+              <strong id="calls_summary_total" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Histórico total de la campaña</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Llamadas contestadas</span>
+              <strong id="calls_summary_answered" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Hubo conexión humana con vendedor</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Llamadas contactadas</span>
+              <strong id="calls_summary_contacted" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Califican para GHL por 30 segundos</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Tiempo Vapi</span>
+              <strong id="calls_summary_vapi" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Tiempo total base de llamada</span>
+            </article>
+            <article class="calls-summary-card">
+              <span class="calls-summary-label">Tiempo Twilio</span>
+              <strong id="calls_summary_twilio" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Tiempo post-transfer con vendedor</span>
+            </article>
+          </div>
           <div class="calls-table-wrap">
             <table class="calls-table">
               <thead id="calls_table_head"></thead>
@@ -311,6 +339,108 @@
             </table>
           </div>
           <div id="calls_empty" class="notice">Selecciona una campaña para ver sus llamadas.</div>
+        </section>
+
+        <section id="panel_costs" class="panel">
+          <div class="panel-title">
+            <div>
+              <h2>Costos de la campaña</h2>
+              <p>Resumen de costos recientes e histórico de la campaña usando la configuración global de Lab y el override de esta campaña.</p>
+            </div>
+            <div class="panel-actions">
+              <button id="btn_refresh_costs" type="button">Actualizar</button>
+            </div>
+          </div>
+          <div id="costs_feedback" class="feedback" hidden></div>
+
+          <div class="metrics-block">
+            <div class="metrics-block-head">
+              <h3>Últimos 7 días</h3>
+              <p>La proyección mensual se calcula como gasto 7d / 7 * 31.</p>
+            </div>
+            <div id="costs_summary_recent" class="costs-summary-recent-grid">
+              <article class="calls-summary-card">
+                <span class="calls-summary-label">Costo total 7d</span>
+                <strong id="costs_summary_7d_total_usd" class="calls-summary-value">--</strong>
+                <span id="costs_summary_7d_total_mxn" class="calls-summary-note">--</span>
+              </article>
+              <article class="calls-summary-card calls-summary-card--highlight">
+                <span class="calls-summary-label">Proyección mensual</span>
+                <strong id="costs_summary_projection_usd" class="calls-summary-value">--</strong>
+                <span id="costs_summary_projection_mxn" class="calls-summary-note">--</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="metrics-block">
+            <div class="metrics-block-head">
+              <h3>Histórico total</h3>
+              <p>Incluye promedios y base completa de la campaña.</p>
+            </div>
+            <div id="costs_summary" class="calls-summary-grid">
+            <article class="calls-summary-card calls-summary-card--compact">
+              <span class="calls-summary-label">Total de llamadas</span>
+              <strong id="costs_summary_total_calls" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Base completa de esta campaña</span>
+            </article>
+            <article class="calls-summary-card calls-summary-card--compact">
+              <span class="calls-summary-label">Días corriendo</span>
+              <strong id="costs_summary_running_days" class="calls-summary-value">--</strong>
+              <span class="calls-summary-note">Desde la primera llamada registrada</span>
+            </article>
+            <article class="calls-summary-card calls-summary-card--compact">
+              <span class="calls-summary-label">Costo total Vapi</span>
+              <strong id="costs_summary_vapi_usd" class="calls-summary-value">--</strong>
+              <span id="costs_summary_vapi_mxn" class="calls-summary-note">--</span>
+            </article>
+            <article class="calls-summary-card calls-summary-card--compact">
+              <span class="calls-summary-label">Costo total Twilio</span>
+              <strong id="costs_summary_twilio_usd" class="calls-summary-value">--</strong>
+              <span id="costs_summary_twilio_mxn" class="calls-summary-note">--</span>
+            </article>
+            <article class="calls-summary-card calls-summary-card--compact">
+              <span class="calls-summary-label">Costo total combinado</span>
+              <strong id="costs_summary_total_usd" class="calls-summary-value">--</strong>
+              <span id="costs_summary_total_mxn" class="calls-summary-note">--</span>
+            </article>
+            <article class="calls-summary-card calls-summary-card--compact">
+              <span class="calls-summary-label">Promedio por llamada</span>
+              <strong id="costs_summary_avg_call_usd" class="calls-summary-value">--</strong>
+              <span id="costs_summary_avg_call_mxn" class="calls-summary-note">--</span>
+            </article>
+            <article class="calls-summary-card calls-summary-card--compact">
+              <span class="calls-summary-label">Promedio por contactada</span>
+              <strong id="costs_summary_avg_contacted_usd" class="calls-summary-value">--</strong>
+              <span id="costs_summary_avg_contacted_mxn" class="calls-summary-note">--</span>
+            </article>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <details class="advanced-fields settings-card settings-card--collapsible">
+              <summary>Configuración de costos de esta campaña</summary>
+              <p>Si la activas, esta campaña usa sus propias tarifas y sigue heredando el tipo de cambio global definido en Lab.</p>
+              <div class="settings-card-head settings-card-head--inline">
+                <div></div>
+                <button id="btn_save_costs_campaign" class="button-primary" type="button">Guardar cambios</button>
+              </div>
+              <div class="form-grid three">
+                <label class="toggle-row">
+                  <input id="costs_override_enabled" type="checkbox" />
+                  <span>Usar configuración personalizada en esta campaña</span>
+                </label>
+                <label>
+                  Costo Vapi por llamada (USD)
+                  <input id="costs_campaign_vapi_per_minute_usd" type="number" min="0" step="0.0001" placeholder="0.0000" />
+                </label>
+                <label>
+                  Tarifa Twilio por minuto (USD)
+                  <input id="costs_campaign_twilio_per_minute_usd" type="number" min="0" step="0.0001" placeholder="0.0800" />
+                </label>
+              </div>
+              <div id="costs_effective_note" class="label-muted costs-effective-note"></div>
+            </details>
+          </div>
         </section>
 
         <section id="panel_test" class="panel is-hidden" hidden>

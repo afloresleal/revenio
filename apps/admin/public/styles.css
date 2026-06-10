@@ -138,14 +138,16 @@ button:hover {
 }
 
 .panel-title button,
-.sidebar-head button {
+.sidebar-head button,
+.button-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #eff6ff;
 }
 
 .panel-title button:hover,
-.sidebar-head button:hover {
+.sidebar-head button:hover,
+.button-primary:hover {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
 }
@@ -354,6 +356,10 @@ button:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.form-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .toggle-row {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -460,6 +466,118 @@ td:first-child {
   justify-content: flex-end;
 }
 
+.calls-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.costs-summary-recent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.calls-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 124px;
+  padding: 16px;
+  border: 1px solid rgb(59 130 246 / 0.24);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgb(15 23 42 / 0.86), rgb(15 23 42 / 0.66));
+}
+
+.calls-summary-card--compact {
+  min-height: 108px;
+}
+
+.calls-summary-card--compact .calls-summary-value {
+  font-size: 1.55rem;
+}
+
+.calls-summary-card--highlight {
+  border-color: rgb(251 191 36 / 0.55);
+  box-shadow: 0 0 0 1px rgb(251 191 36 / 0.14);
+  background: linear-gradient(180deg, rgb(40 28 5 / 0.5), rgb(15 23 42 / 0.8));
+}
+
+.calls-summary-label {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.calls-summary-value {
+  font-size: 1.85rem;
+  line-height: 1;
+  color: var(--text);
+}
+
+.calls-summary-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.settings-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  background: rgb(15 23 42 / 0.5);
+}
+
+.settings-card--collapsible {
+  padding-top: 14px;
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.settings-card-head h3 {
+  margin: 0;
+}
+
+.settings-card-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  max-width: 680px;
+}
+
+.settings-card-head--inline {
+  margin-top: 12px;
+}
+
+.metrics-block + .metrics-block {
+  margin-top: 18px;
+}
+
+.metrics-block-head p {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.costs-effective-note {
+  display: block;
+  margin-top: 18px;
+  padding-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .calls-table-wrap {
   margin-top: 16px;
   border: 1px solid var(--line);
@@ -539,8 +657,13 @@ td:first-child {
   .layout,
   .form-grid,
   .form-grid.two,
+  .form-grid.three,
   .agent-row,
   .connection {
+    grid-template-columns: 1fr;
+  }
+
+  .costs-summary-recent-grid {
     grid-template-columns: 1fr;
   }
 

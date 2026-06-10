@@ -37,17 +37,42 @@ const statusEl = $("status");
 const campaignFeedbackEl = $("campaign_feedback");
 const agentsFeedbackEl = $("agents_feedback");
 const callsFeedbackEl = $("calls_feedback");
+const costsFeedbackEl = $("costs_feedback");
 const campaignListEl = $("campaign_list");
 const agentRowsEl = $("agent_rows");
+const callsSummaryEl = $("calls_summary");
+const callsSummaryTotalEl = $("calls_summary_total");
+const callsSummaryAnsweredEl = $("calls_summary_answered");
+const callsSummaryContactedEl = $("calls_summary_contacted");
+const callsSummaryVapiEl = $("calls_summary_vapi");
+const callsSummaryTwilioEl = $("calls_summary_twilio");
 const callsTableHeadEl = $("calls_table_head");
 const callsTableBodyEl = $("calls_table_body");
 const callsEmptyEl = $("calls_empty");
+const costsSummary7dTotalUsdEl = $("costs_summary_7d_total_usd");
+const costsSummary7dTotalMxnEl = $("costs_summary_7d_total_mxn");
+const costsSummaryProjectionUsdEl = $("costs_summary_projection_usd");
+const costsSummaryProjectionMxnEl = $("costs_summary_projection_mxn");
+const costsSummaryVapiUsdEl = $("costs_summary_vapi_usd");
+const costsSummaryVapiMxnEl = $("costs_summary_vapi_mxn");
+const costsSummaryTwilioUsdEl = $("costs_summary_twilio_usd");
+const costsSummaryTwilioMxnEl = $("costs_summary_twilio_mxn");
+const costsSummaryTotalUsdEl = $("costs_summary_total_usd");
+const costsSummaryTotalMxnEl = $("costs_summary_total_mxn");
+const costsSummaryAvgCallUsdEl = $("costs_summary_avg_call_usd");
+const costsSummaryAvgCallMxnEl = $("costs_summary_avg_call_mxn");
+const costsSummaryAvgContactedUsdEl = $("costs_summary_avg_contacted_usd");
+const costsSummaryAvgContactedMxnEl = $("costs_summary_avg_contacted_mxn");
+const costsSummaryTotalCallsEl = $("costs_summary_total_calls");
+const costsSummaryRunningDaysEl = $("costs_summary_running_days");
+const costsEffectiveNoteEl = $("costs_effective_note");
 let campaigns = [];
 let selectedCampaignId = null;
 let selectedCampaign = null;
 let isCreatingCampaign = false;
 let agentsLoadToken = 0;
 let callsLoadToken = 0;
+let costsLoadToken = 0;
 let isApplyingCampaign = false;
 let campaignDraftDirty = false;
 
@@ -192,10 +217,158 @@ function setCallsFeedback(message = "", type = "info") {
   callsFeedbackEl.classList.toggle("is-error", type === "error");
 }
 
+function setCostsFeedback(message = "", type = "info") {
+  costsFeedbackEl.textContent = message;
+  costsFeedbackEl.hidden = !message;
+  costsFeedbackEl.classList.toggle("is-error", type === "error");
+}
+
 function truncateCell(value, maxLength = 220) {
   const text = String(value ?? "");
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 3)}...`;
+}
+
+function formatInteger(value) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return "0";
+  return Math.round(numeric).toLocaleString("es-MX");
+}
+
+function formatDurationCompact(totalSeconds) {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds ?? 0) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
+  return `${remainingSeconds}s`;
+}
+
+function formatDecimalInput(value, digits = 4) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "";
+  return numeric.toFixed(digits);
+}
+
+function formatCurrency(value, currency = "USD") {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return "--";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric);
+}
+
+function renderCallsSummary(summary) {
+  if (!callsSummaryEl) return;
+
+  if (!selectedCampaign || !summary) {
+    callsSummaryTotalEl.textContent = "--";
+    callsSummaryAnsweredEl.textContent = "--";
+    callsSummaryContactedEl.textContent = "--";
+    callsSummaryVapiEl.textContent = "--";
+    callsSummaryTwilioEl.textContent = "--";
+    return;
+  }
+
+  callsSummaryTotalEl.textContent = formatInteger(summary.totalCalls);
+  callsSummaryAnsweredEl.textContent = formatInteger(summary.answeredCalls);
+  callsSummaryContactedEl.textContent = formatInteger(summary.contactedCalls);
+  callsSummaryVapiEl.textContent = formatDurationCompact(summary.totalVapiDurationSec);
+  callsSummaryTwilioEl.textContent = formatDurationCompact(summary.totalTwilioDurationSec);
+}
+
+function updateCampaignCostOverrideInputs() {
+  const enabled = $("costs_override_enabled")?.checked === true;
+  $("costs_campaign_vapi_per_minute_usd").disabled = !enabled;
+  $("costs_campaign_twilio_per_minute_usd").disabled = !enabled;
+}
+
+function applyCampaignCostOverride(campaign) {
+  $("costs_override_enabled").checked = campaign?.costOverrideEnabled === true;
+  $("costs_campaign_vapi_per_minute_usd").value = formatDecimalInput(campaign?.overrideVapiCostPerMinuteUsd);
+  $("costs_campaign_twilio_per_minute_usd").value = formatDecimalInput(campaign?.overrideTwilioCostPerMinuteUsd);
+  updateCampaignCostOverrideInputs();
+}
+
+function renderCostSummary(data) {
+  const emptyUsd = "--";
+  const emptyMxn = "--";
+  if (!selectedCampaign || !data?.summary) {
+    costsSummary7dTotalUsdEl.textContent = emptyUsd;
+    costsSummary7dTotalMxnEl.textContent = emptyMxn;
+    costsSummaryProjectionUsdEl.textContent = emptyUsd;
+    costsSummaryProjectionMxnEl.textContent = emptyMxn;
+    costsSummaryVapiUsdEl.textContent = emptyUsd;
+    costsSummaryVapiMxnEl.textContent = emptyMxn;
+    costsSummaryTwilioUsdEl.textContent = emptyUsd;
+    costsSummaryTwilioMxnEl.textContent = emptyMxn;
+    costsSummaryTotalUsdEl.textContent = emptyUsd;
+    costsSummaryTotalMxnEl.textContent = emptyMxn;
+    costsSummaryAvgCallUsdEl.textContent = emptyUsd;
+    costsSummaryAvgCallMxnEl.textContent = emptyMxn;
+    costsSummaryAvgContactedUsdEl.textContent = emptyUsd;
+    costsSummaryAvgContactedMxnEl.textContent = emptyMxn;
+    if (costsSummaryTotalCallsEl) costsSummaryTotalCallsEl.textContent = "--";
+    if (costsSummaryRunningDaysEl) costsSummaryRunningDaysEl.textContent = "--";
+    costsEffectiveNoteEl.textContent = "";
+    return;
+  }
+
+  const { summary, effectiveConfig } = data;
+  const recent = summary.last7Days;
+  const total = summary.total;
+
+  costsSummary7dTotalUsdEl.textContent = formatCurrency(recent.totalCostUsd, "USD");
+  costsSummary7dTotalMxnEl.textContent = formatCurrency(recent.totalCostMxn, "MXN");
+  costsSummaryProjectionUsdEl.textContent = formatCurrency(recent.projectedMonthlyUsd, "USD");
+  costsSummaryProjectionMxnEl.textContent = formatCurrency(recent.projectedMonthlyMxn, "MXN");
+
+  costsSummaryVapiUsdEl.textContent = formatCurrency(total.totalVapiCostUsd, "USD");
+  costsSummaryVapiMxnEl.textContent = formatCurrency(total.totalVapiCostMxn, "MXN");
+  costsSummaryTwilioUsdEl.textContent = formatCurrency(total.totalTwilioCostUsd, "USD");
+  costsSummaryTwilioMxnEl.textContent = formatCurrency(total.totalTwilioCostMxn, "MXN");
+  costsSummaryTotalUsdEl.textContent = formatCurrency(total.totalCostUsd, "USD");
+  costsSummaryTotalMxnEl.textContent = formatCurrency(total.totalCostMxn, "MXN");
+  costsSummaryAvgCallUsdEl.textContent = formatCurrency(total.avgCostPerCallUsd, "USD");
+  costsSummaryAvgCallMxnEl.textContent = formatCurrency(total.avgCostPerCallMxn, "MXN");
+  costsSummaryAvgContactedUsdEl.textContent = formatCurrency(total.avgCostPerContactedUsd, "USD");
+  costsSummaryAvgContactedMxnEl.textContent = formatCurrency(total.avgCostPerContactedMxn, "MXN");
+  if (costsSummaryTotalCallsEl) costsSummaryTotalCallsEl.textContent = formatInteger(total.totalCalls);
+  if (costsSummaryRunningDaysEl) costsSummaryRunningDaysEl.textContent = formatInteger(total.runningDays);
+  costsEffectiveNoteEl.textContent =
+    `Tipo de cambio global: ${formatDecimalInput(effectiveConfig?.usdToMxnRate ?? 0, 2)} · ` +
+    `Vapi: ${effectiveConfig?.sources?.vapi === "campaign_override" ? "tarifa personalizada" : "tarifa global"} · ` +
+    `Twilio: ${effectiveConfig?.sources?.twilio === "campaign_override" ? "tarifa personalizada" : "tarifa global"} · ` +
+    `${total.usedRealVapiCostsCount} costos reales de Vapi y ${total.usedEstimatedVapiCostsCount} estimados.`;
+}
+
+function collectCampaignCostOverridePayload() {
+  const enabled = $("costs_override_enabled").checked;
+  return {
+    costOverrideEnabled: enabled,
+    overrideVapiCostPerMinuteUsd: enabled && $("costs_campaign_vapi_per_minute_usd").value !== ""
+      ? Number($("costs_campaign_vapi_per_minute_usd").value)
+      : null,
+    overrideTwilioCostPerMinuteUsd: enabled && $("costs_campaign_twilio_per_minute_usd").value !== ""
+      ? Number($("costs_campaign_twilio_per_minute_usd").value)
+      : null,
+  };
+}
+
+function validateCampaignCostOverridePayload(payload) {
+  if (!payload.costOverrideEnabled) return "";
+  if (payload.overrideVapiCostPerMinuteUsd !== null && (!Number.isFinite(payload.overrideVapiCostPerMinuteUsd) || payload.overrideVapiCostPerMinuteUsd < 0)) {
+    return "Captura un costo Vapi por llamada valido para esta configuracion.";
+  }
+  if (payload.overrideTwilioCostPerMinuteUsd !== null && (!Number.isFinite(payload.overrideTwilioCostPerMinuteUsd) || payload.overrideTwilioCostPerMinuteUsd < 0)) {
+    return "Captura una tarifa Twilio valida para esta configuracion.";
+  }
+  return "";
 }
 
 function renderCallsTable(columns = [], calls = []) {
@@ -473,12 +646,19 @@ function applyCampaign(campaign) {
   setCampaignFeedback("");
   setAgentsFeedback(campaign ? `Editando agentes de ${campaign.name}.` : "Guarda o selecciona una campaña antes de capturar agentes.");
   setCallsFeedback(campaign ? `Cargando llamadas de ${campaign.name}...` : "Selecciona o crea una campaña para ver llamadas.");
+  setCostsFeedback(campaign ? `Cargando costos de ${campaign.name}...` : "Selecciona o crea una campaña para ver costos.");
+  applyCampaignCostOverride(campaign);
   renderCallsTable([], []);
+  renderCostSummary(null);
   renderCampaignList();
   renderWebhookInstructions(campaign?.webhookInstructions ?? null);
   loadAgents().catch((error) => setStatus(error.message));
   loadCalls().catch((error) => {
     setCallsFeedback(error.message, "error");
+    setStatus(error.message);
+  });
+  loadCosts().catch((error) => {
+    setCostsFeedback(error.message, "error");
     setStatus(error.message);
   });
   campaignDraftDirty = false;
@@ -719,6 +899,7 @@ async function loadCalls() {
   const token = ++callsLoadToken;
   const campaignAtRequest = selectedCampaign?.id ?? null;
   if (!selectedCampaignId || !selectedCampaign) {
+    renderCallsSummary(null);
     renderCallsTable([], []);
     return;
   }
@@ -726,9 +907,55 @@ async function loadCalls() {
   setStatus("Cargando llamadas...");
   const data = await request("GET", `/api/admin/ghl-campaigns/${selectedCampaignId}/calls`);
   if (token !== callsLoadToken || campaignAtRequest !== selectedCampaign?.id) return;
+  renderCallsSummary(data.summary ?? null);
   renderCallsTable(data.columns ?? [], data.calls ?? []);
   setCallsFeedback(`${data.count ?? 0} llamadas cargadas para ${selectedCampaign.name}.`);
   setStatus("Llamadas cargadas.");
+}
+
+async function loadCosts() {
+  const token = ++costsLoadToken;
+  const campaignAtRequest = selectedCampaign?.id ?? null;
+
+  if (!selectedCampaignId || !selectedCampaign) {
+    if (token !== costsLoadToken) return;
+    applyCampaignCostOverride(null);
+    renderCostSummary(null);
+    setCostsFeedback("Selecciona o crea una campaña para ver costos.");
+    return;
+  }
+
+  setCostsFeedback(`Cargando costos de ${selectedCampaign.name}...`);
+  const summaryData = await request("GET", `/api/admin/ghl-campaigns/${selectedCampaignId}/costs`);
+  if (token !== costsLoadToken || campaignAtRequest !== selectedCampaign?.id) return;
+
+  applyCampaignCostOverride(selectedCampaign);
+  renderCostSummary(summaryData);
+  setCostsFeedback(`Costos cargados para ${selectedCampaign.name}.`);
+}
+
+async function saveCampaignCostOverride() {
+  if (!selectedCampaignId || !selectedCampaign) {
+    setCostsFeedback("Selecciona una campaña antes de guardar esta configuración.", "error");
+    setStatus("Selecciona una campaña antes de guardar esta configuración.");
+    return;
+  }
+  const payload = collectCampaignCostOverridePayload();
+  const validationError = validateCampaignCostOverridePayload(payload);
+  if (validationError) {
+    setCostsFeedback(validationError, "error");
+    setStatus(validationError);
+    return;
+  }
+  setCostsFeedback(`Guardando configuración de costos para ${selectedCampaign.name}...`);
+  setStatus("Guardando configuración de costos...");
+  const data = await request("PUT", `/api/admin/ghl-campaigns/${selectedCampaignId}/cost-config`, payload);
+  selectedCampaign = data.campaign;
+  applyCampaignCostOverride(selectedCampaign);
+  await loadCampaigns();
+  await loadCosts();
+  setCostsFeedback(`Configuración de costos guardada para ${selectedCampaign.name}.`);
+  setStatus("Configuración de costos guardada.");
 }
 
 function renderWebhookInstructions(instructions) {
@@ -806,10 +1033,19 @@ $("btn_refresh_calls").addEventListener("click", () => loadCalls().catch((error)
   setCallsFeedback(error.message, "error");
   setStatus(error.message);
 }));
+$("btn_refresh_costs")?.addEventListener("click", () => loadCosts().catch((error) => {
+  setCostsFeedback(error.message, "error");
+  setStatus(error.message);
+}));
 $("btn_download_calls_csv").addEventListener("click", () => downloadCallsCsv().catch((error) => {
   setCallsFeedback(error.message, "error");
   setStatus(error.message);
 }));
+$("btn_save_costs_campaign")?.addEventListener("click", () => saveCampaignCostOverride().catch((error) => {
+  setCostsFeedback(error.message, "error");
+  setStatus(error.message);
+}));
+$("costs_override_enabled")?.addEventListener("change", updateCampaignCostOverrideInputs);
 $("btn_copy_handoff").addEventListener("click", async () => {
   await navigator.clipboard.writeText(handoffText());
   setStatus("Instrucciones copiadas.");

@@ -430,6 +430,48 @@ details summary:hover {
   text-decoration: underline;
 }
 
+.status-details {
+  border: 1px solid rgb(30 41 59 / 0.85);
+  border-radius: 0.875rem;
+  background: rgb(10 15 30 / 0.72);
+  overflow: hidden;
+}
+
+.status-details summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(148 163 184);
+}
+
+.status-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.status-details summary::before {
+  content: "▸";
+  font-size: 0.9rem;
+  color: rgb(96 165 250);
+  transition: transform 160ms ease;
+}
+
+.status-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.status-details .status-box {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid rgb(30 41 59 / 0.85);
+  border-radius: 0;
+}
+
 .button-group {
   gap: 0.5rem;
 }
