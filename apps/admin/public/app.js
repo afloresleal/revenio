@@ -1,3 +1,4 @@
+import { canOpenTranscript, normalizeTranscriptText } from "./transcript-modal-utils.js";
 const $ = (id) => document.getElementById(id);
 
 // API base URLs - updated for correct environment detection
@@ -49,6 +50,9 @@ const callsSummaryTwilioEl = $("calls_summary_twilio");
 const callsTableHeadEl = $("calls_table_head");
 const callsTableBodyEl = $("calls_table_body");
 const callsEmptyEl = $("calls_empty");
+const transcriptModalEl = $("transcript_modal");
+const transcriptModalTitleEl = $("transcript_modal_title");
+const transcriptModalBodyEl = $("transcript_modal_body");
 const costsSummary7dTotalUsdEl = $("costs_summary_7d_total_usd");
 const costsSummary7dTotalMxnEl = $("costs_summary_7d_total_mxn");
 const costsSummaryProjectionUsdEl = $("costs_summary_projection_usd");
@@ -229,6 +233,22 @@ function truncateCell(value, maxLength = 220) {
   return `${text.slice(0, maxLength - 3)}...`;
 }
 
+function openTranscriptModal(transcript, phone = "") {
+  const normalized = normalizeTranscriptText(transcript);
+  if (!normalized || !transcriptModalEl || !transcriptModalBodyEl) return;
+  if (transcriptModalTitleEl) {
+    transcriptModalTitleEl.textContent = phone ? `Transcript ${phone}` : "Transcript";
+  }
+  transcriptModalBodyEl.textContent = normalized;
+  transcriptModalEl.hidden = false;
+}
+
+function closeTranscriptModal() {
+  if (!transcriptModalEl || !transcriptModalBodyEl) return;
+  transcriptModalEl.hidden = true;
+  transcriptModalBodyEl.textContent = "";
+}
+
 function formatInteger(value) {
   const numeric = Number(value ?? 0);
   if (!Number.isFinite(numeric)) return "0";
@@ -403,8 +423,16 @@ function renderCallsTable(columns = [], calls = []) {
       const value = call[column.key] ?? "";
       if (column.key === "transcript") {
         td.className = "cell-long";
-        td.textContent = truncateCell(value);
-        td.title = value;
+        if (canOpenTranscript(value)) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "table-link-button";
+          button.textContent = "Ver transcript";
+          button.addEventListener("click", () => openTranscriptModal(value, call.phone));
+          td.appendChild(button);
+        } else {
+          td.textContent = "Sin transcript";
+        }
       } else if (column.key === "recordingUrl" && value) {
         td.className = "cell-long";
         const link = document.createElement("a");
@@ -1046,9 +1074,19 @@ $("btn_save_costs_campaign")?.addEventListener("click", () => saveCampaignCostOv
   setStatus(error.message);
 }));
 $("costs_override_enabled")?.addEventListener("change", updateCampaignCostOverrideInputs);
+$("btn_close_transcript_modal")?.addEventListener("click", closeTranscriptModal);
+$("transcript_modal")?.addEventListener("click", (event) => {
+  if (event.target === transcriptModalEl) closeTranscriptModal();
+});
 $("btn_copy_handoff").addEventListener("click", async () => {
   await navigator.clipboard.writeText(handoffText());
   setStatus("Instrucciones copiadas.");
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && transcriptModalEl && !transcriptModalEl.hidden) {
+    closeTranscriptModal();
+  }
 });
 
 // Call window mode change
