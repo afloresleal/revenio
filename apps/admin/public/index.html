@@ -341,6 +341,19 @@
           <div id="calls_empty" class="notice">Selecciona una campaña para ver sus llamadas.</div>
         </section>
 
+        <div id="transcript_modal" class="modal-overlay" hidden>
+          <div class="modal-card modal-card--transcript" role="dialog" aria-modal="true" aria-labelledby="transcript_modal_title">
+            <div class="modal-card-head">
+              <div>
+                <h3 id="transcript_modal_title">Transcript</h3>
+                <p>Consulta el texto completo sin desajustar la tabla.</p>
+              </div>
+              <button id="btn_close_transcript_modal" type="button">Cerrar</button>
+            </div>
+            <div id="transcript_modal_body" class="transcript-modal-body"></div>
+          </div>
+        </div>
+
         <section id="panel_costs" class="panel">
           <div class="panel-title">
             <div>
@@ -469,6 +482,6 @@
       </section>
     </main>
 
-    <script src="/app.js"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

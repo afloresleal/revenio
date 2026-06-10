@@ -620,6 +620,71 @@ td:first-child {
   text-decoration: underline;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(2 6 23 / 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.modal-card {
+  width: min(760px, 100%);
+  max-height: min(80vh, 760px);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.35);
+}
+
+.modal-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-card-head p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.transcript-modal-body {
+  max-height: calc(80vh - 96px);
+  overflow: auto;
+  padding: 20px;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.table-link-button {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.table-link-button:hover {
+  background: transparent;
+  border: 0;
+  color: #bfdbfe;
+}
+
 .checklist {
   margin: 10px 0 0;
   padding-left: 18px;
