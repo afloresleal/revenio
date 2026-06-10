@@ -99,12 +99,39 @@ assert.deepEqual(
     pipelineStageId: "connected-stage-123",
     customFields: [
       {
+        id: "seller-talk-field-123",
+        field_value: "85",
+      },
+      {
+        id: "recording-url-field-123",
+        field_value: "https://example.com/recording.mp3",
+      },
+      {
         id: "outcome-field-123",
         field_value: "transfer_success",
       },
+    ],
+  },
+);
+
+assert.deepEqual(
+  buildGhlOpportunityUpdateBody({
+    customFieldIds: {
+      outcome: "shared-field-123",
+      sellerTalkSec: "shared-field-123",
+      recordingUrl: "recording-url-field-123",
+    },
+    customFieldValues: {
+      outcome: "transfer_success",
+      sellerTalkSec: 85,
+      recordingUrl: "https://example.com/recording.mp3",
+    },
+  }),
+  {
+    customFields: [
       {
-        id: "seller-talk-field-123",
-        field_value: "85",
+        id: "shared-field-123",
+        field_value: "transfer_success",
       },
       {
         id: "recording-url-field-123",
@@ -207,7 +234,6 @@ assert.deepEqual(callsTableRows[0], {
   phone: "",
   outcome: "",
   sentiment: "",
-  assignedTo: "",
   firstAgentName: "",
   answeredAgentName: "",
   transferNumber: "",
@@ -221,8 +247,8 @@ assert.deepEqual(callsTableRows[0], {
 assert.equal(
   callsCsv,
   [
-    "campaign_name,campaign_id,started_at,lead_phone,outcome,sentiment,assigned_to,first_agent,answered_agent,transfer_number,total_duration_sec,time_to_transfer_sec,seller_talk_sec,transcript,recording_url",
-    "Isla Blanca ES,isla-blanca-es,\"05/05/2026, 01:00:00 p.m.\",+525500000001,transfer_success,positive,ana-ghl,Ana,\"Luis, Ventas\",+525500000002,120,18,91,Hola mundo,https://example.com/audio.mp3",
+    "campaign_name,campaign_id,started_at,lead_phone,outcome,sentiment,first_agent,answered_agent,transfer_number,total_duration_sec,time_to_transfer_sec,seller_talk_sec,transcript,recording_url",
+    "Isla Blanca ES,isla-blanca-es,\"05/05/2026, 01:00:00 p.m.\",+525500000001,transfer_success,positive,Ana,\"Luis, Ventas\",+525500000002,120,18,91,Hola mundo,https://example.com/audio.mp3",
   ].join("\n"),
 );
 
