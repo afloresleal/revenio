@@ -6,7 +6,7 @@
 export type Sentiment = 'positive' | 'neutral' | 'negative';
 
 const SHORT_HANGUP_SEC = 10;
-const VOICEMAIL_REASONS = ['no-answer', 'voicemail-beep', 'voicemail'];
+const VOICEMAIL_REASONS = ['no-answer', 'voicemail-beep', 'voicemail', 'customer-did-not-answer'];
 const ABANDONED_REASONS = ['timeout', 'customer-busy', 'system-error'];
 const NORMAL_END_REASONS = ['customer-ended-call', 'assistant-ended-call', 'completed'];
 
