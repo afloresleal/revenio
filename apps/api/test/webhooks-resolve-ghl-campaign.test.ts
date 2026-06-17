@@ -40,7 +40,6 @@ const fullCampaign = {
   ghlOutcomeFieldId: "outcome-1",
   ghlSellerTalkFieldId: "seller-1",
   ghlRecordingUrlFieldId: "recording-1",
-  autoWarmTransferEnabled: false,
   callWindowEnabled: true,
   callWindowTimezone: "America/Mexico_City",
   callWindowStartHour: 9,
@@ -60,7 +59,6 @@ assert.equal(resolved!.callWindowStartHour, 9);
 assert.equal(resolved!.callWindowEndHour, 22);
 assert.equal(resolved!.callWindowWeekdays, "1,2,3,4,5");
 assert.equal(resolved!.callWindowApplyToFailover, true);
-assert.equal(resolved!.autoWarmTransferEnabled, false);
 
 // --- Test 2 (integration): webhook path honors campaign endHour:22, not global 18 ---
 const evalCustom = evaluateCampaignCallWindow(resolved!);

@@ -21,7 +21,6 @@ export type GhlCampaignConfig = {
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
-  autoWarmTransferEnabled?: boolean | null;
   callWindowEnabled?: boolean | null;
   callWindowTimezone?: string | null;
   callWindowStartHour?: number | null;
@@ -163,7 +162,6 @@ export function normalizeStoredGhlCampaign(value: StoredGhlCampaignConfig): GhlC
     ghlOutcomeFieldId: asString(value.ghlOutcomeFieldId),
     ghlSellerTalkFieldId: asString(value.ghlSellerTalkFieldId),
     ghlRecordingUrlFieldId: asString(value.ghlRecordingUrlFieldId),
-    autoWarmTransferEnabled: asBoolean(value.autoWarmTransferEnabled),
     callWindowEnabled: asBoolean(value.callWindowEnabled),
     callWindowTimezone: asString(value.callWindowTimezone),
     callWindowStartHour: asNumber(value.callWindowStartHour),

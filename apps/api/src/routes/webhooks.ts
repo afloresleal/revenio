@@ -63,7 +63,6 @@ type GhlCampaignConfig = {
   ghlOutcomeFieldId?: string | null;
   ghlSellerTalkFieldId?: string | null;
   ghlRecordingUrlFieldId?: string | null;
-  autoWarmTransferEnabled?: boolean | null;
   callWindowEnabled?: boolean | null;
   callWindowTimezone?: string | null;
   callWindowStartHour?: number | null;
@@ -160,21 +159,12 @@ export function buildImmediateWarmTransferHook(): Record<string, unknown> {
   };
 }
 
-export function shouldAttachWarmTransferHook(params: {
-  transferNumber?: string | null;
-  autoWarmTransferEnabled?: boolean | null;
-}): boolean {
-  if (!params.transferNumber) return false;
-  return params.autoWarmTransferEnabled !== false;
-}
-
 function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
   attemptId: string,
   transferNumber?: string | null,
   agentName?: string | null,
-  autoWarmTransferEnabled?: boolean | null,
 ): Record<string, unknown> {
   const metadata = { lead_id: leadId, attempt_id: attemptId };
   const variableValues: Record<string, string> = {};
@@ -187,7 +177,7 @@ function buildAssistantOverrides(
   // Auto-trigger warm transfer after firstMessage completes
   // Uses warm-transfer mode to enable AMD and failover (unlike blind-transfer)
   // Transfer destination obtained dynamically via transfer-destination-request webhook
-  if (shouldAttachWarmTransferHook({ transferNumber, autoWarmTransferEnabled })) {
+  if (transferNumber) {
     overrides.hooks = [buildImmediateWarmTransferHook()];
   }
 
@@ -316,7 +306,6 @@ export async function resolveGhlCampaign(campaignId: string | null | undefined):
       ghlOutcomeFieldId: dbCampaign.ghlOutcomeFieldId,
       ghlSellerTalkFieldId: dbCampaign.ghlSellerTalkFieldId,
       ghlRecordingUrlFieldId: dbCampaign.ghlRecordingUrlFieldId,
-      autoWarmTransferEnabled: (dbCampaign as any).autoWarmTransferEnabled,
       callWindowEnabled: dbCampaign.callWindowEnabled,
       callWindowTimezone: dbCampaign.callWindowTimezone,
       callWindowStartHour: dbCampaign.callWindowStartHour,
@@ -1466,7 +1455,6 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     attempt.id,
     selectedTransfer.transferNumber,
     selectedTransfer.name,
-    campaign.autoWarmTransferEnabled,
   );
   const payload = {
     phoneNumberId: resolvedVapiPhoneNumberId,
