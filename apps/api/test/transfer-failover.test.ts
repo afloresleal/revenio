@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { classifyTransferAnswer } from "../src/lib/transfer-failover.js";
-import { buildImmediateWarmTransferHook } from "../src/routes/webhooks.js";
+import { buildImmediateWarmTransferHook, shouldAttachWarmTransferHook } from "../src/routes/webhooks.js";
 
 assert.deepEqual(
   classifyTransferAnswer({
@@ -51,6 +51,24 @@ assert.equal(
   hookMessages.some((message) => message.type === "request-start"),
   false,
   "warm transfer should not announce an English request-start message",
+);
+
+assert.equal(
+  shouldAttachWarmTransferHook({ transferNumber: "+525500000000", autoWarmTransferEnabled: undefined }),
+  true,
+  "campaigns should keep auto warm transfer enabled by default",
+);
+
+assert.equal(
+  shouldAttachWarmTransferHook({ transferNumber: "+525500000000", autoWarmTransferEnabled: false }),
+  false,
+  "campaigns can opt out of the auto warm transfer hook",
+);
+
+assert.equal(
+  shouldAttachWarmTransferHook({ transferNumber: null, autoWarmTransferEnabled: true }),
+  false,
+  "without a transfer number there is no warm transfer hook to attach",
 );
 
 console.log("transfer failover tests passed");

@@ -131,6 +131,7 @@ model GhlCampaign {
   ghlOutcomeFieldId String? @map("ghl_outcome_field_id")
   ghlSellerTalkFieldId String? @map("ghl_seller_talk_field_id")
   ghlRecordingUrlFieldId String? @map("ghl_recording_url_field_id")
+  autoWarmTransferEnabled Boolean? @map("auto_warm_transfer_enabled")
   callWindowEnabled Boolean? @map("call_window_enabled")
   callWindowTimezone String? @map("call_window_timezone")
   callWindowStartHour Int? @map("call_window_start_hour")

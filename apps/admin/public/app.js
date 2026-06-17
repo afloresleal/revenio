@@ -23,6 +23,7 @@ const fields = [
   "ghl_seller_talk_field_id",
   "ghl_recording_url_field_id",
   "campaign_active",
+  "auto_warm_transfer_enabled",
   "call_window_mode",
   "call_window_timezone",
   "call_window_start_hour",
@@ -97,6 +98,7 @@ const campaignDraftFields = new Set([
   "ghl_seller_talk_field_id",
   "ghl_recording_url_field_id",
   "campaign_active",
+  "auto_warm_transfer_enabled",
   "call_window_mode",
   "call_window_timezone",
   "call_window_start_hour",
@@ -588,6 +590,7 @@ function collectCampaignPayload() {
     ghlOutcomeFieldId: $("ghl_outcome_field_id").value.trim() || undefined,
     ghlSellerTalkFieldId: $("ghl_seller_talk_field_id").value.trim() || undefined,
     ghlRecordingUrlFieldId: $("ghl_recording_url_field_id").value.trim() || undefined,
+    autoWarmTransferEnabled: $("auto_warm_transfer_enabled").checked,
     active: $("campaign_active").checked,
   };
 
@@ -660,6 +663,7 @@ function applyCampaign(campaign) {
   $("ghl_outcome_field_id").value = campaign?.ghlOutcomeFieldId ?? "";
   $("ghl_seller_talk_field_id").value = campaign?.ghlSellerTalkFieldId ?? "";
   $("ghl_recording_url_field_id").value = campaign?.ghlRecordingUrlFieldId ?? "";
+  $("auto_warm_transfer_enabled").checked = campaign?.autoWarmTransferEnabled !== false;
   $("campaign_active").checked = campaign?.active !== false;
 
   // Apply call window settings
