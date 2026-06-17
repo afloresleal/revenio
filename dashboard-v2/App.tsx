@@ -34,11 +34,16 @@ import {
   formatRoundRobinAttemptStatus,
   formatTransferResult,
 } from './src/lib/round-robin-status';
+import {
+  formatEndedReason,
+  hasActualTransfer,
+  type DashboardOutcome,
+} from './src/lib/call-state';
 
 // --- Types ---
 const CDMX_TIMEZONE = 'America/Mexico_City';
 
-type OutcomeType = 'transfer_success' | 'abandoned' | 'in_progress' | 'completed' | 'failed';
+type OutcomeType = DashboardOutcome;
 
 interface CallDelta {
   totalCalls: number;
@@ -156,6 +161,13 @@ const StatusBadge: React.FC<{ outcome: OutcomeType }> = ({ outcome }) => {
         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-600/10 text-red-500 border border-red-500/20">
           <AlertOctagon size={12} />
           Fallo
+        </span>
+      );
+    case 'voicemail':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20">
+          <AlertTriangle size={12} />
+          Buzón
         </span>
       );
     case 'completed':
@@ -702,7 +714,15 @@ export default function App() {
       transferRecordingUrl ? { label: 'Audio Twilio (transfer)', url: getTwilioProxyUrl(transferRecordingUrl) } : null,
     ].filter((entry): entry is { label: string; url: string } => !!entry);
     const audioSources = audioEntries.filter((entry, index, all) => all.findIndex((other) => other.url === entry.url) === index);
-    const shouldShowSyncButton = !call.transferNumber || audioSources.length === 0;
+    const detailOutcome = (asNonEmptyString(detail?.outcome) ?? call.outcome) as OutcomeType;
+    const detailEndedReason = asNonEmptyString(detail?.endedReason);
+    const actualTransfer = hasActualTransfer({
+      transferredAt: typeof detail?.transferredAt === 'string' ? detail.transferredAt : call.transferredAt,
+      twilioTransferCallSid: asNonEmptyString(detail?.twilioTransferCallSid),
+      transferStatus: asNonEmptyString(detail?.transferStatus),
+      postTransferDurationSec: asFiniteNumber(detail?.postTransferDurationSec) ?? call.postTransferDurationSec ?? null,
+    });
+    const shouldShowSyncButton = !actualTransfer || audioSources.length === 0;
     const transferDisplay = getTransferDisplay(call);
     const sellerTalkDisplay = getSellerTalkDisplay(call);
     const assistantDisplay = getAssistantDisplay(call.assistantId);
@@ -759,9 +779,9 @@ export default function App() {
             fallback: boolean;
           } => !!step && (!!step.failedName || !!step.failedNumber || !!step.nextName || !!step.nextNumber))
       : [];
-    const transferNumberToShow = detailTransferNumber ?? call.transferNumber ?? '--';
-    const answeredAgentLabel = detailAnsweredAgentName ?? null;
-    const selectedAgentLabel = !detailAnsweredAgentName ? detailHumanAgentName : null;
+    const transferNumberToShow = actualTransfer ? (detailTransferNumber ?? call.transferNumber ?? '--') : 'No transferida';
+    const answeredAgentLabel = actualTransfer ? (detailAnsweredAgentName ?? null) : null;
+    const selectedAgentLabel = actualTransfer && !detailAnsweredAgentName ? detailHumanAgentName : null;
     const effectiveRoundRobinIndex = detailAnsweredAgentIndex ?? detailRoundRobinIndex;
     const isFallbackTransfer =
       detailRoundRobinEnabled === true &&
@@ -772,7 +792,7 @@ export default function App() {
     const fallbackLabel = isFallbackTransfer
       ? fallbackStep?.nextName ?? detailHumanAgentName ?? 'Fallback final'
       : null;
-    const answeredAgentSubLabel = detailAnsweredAgentNumber && detailAnsweredAgentNumber !== transferNumberToShow
+    const answeredAgentSubLabel = actualTransfer && detailAnsweredAgentNumber && detailAnsweredAgentNumber !== transferNumberToShow
       ? detailAnsweredAgentNumber
       : null;
     const attemptedOrder = detailFailoverSteps.length
@@ -813,6 +833,12 @@ export default function App() {
     return (
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
         <div className="mb-3 flex flex-wrap gap-2">
+          <StatusBadge outcome={detailOutcome} />
+          {detailEndedReason && (
+            <span className="inline-flex items-center rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+              Razón: {formatEndedReason(detailEndedReason)}
+            </span>
+          )}
           {quality.map((item) => (
             <span
               key={item.label}
@@ -837,16 +863,19 @@ export default function App() {
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Transferencia</div>
             <div className="font-mono text-slate-300">{transferNumberToShow}</div>
-            {fallbackLabel && (
+            {!actualTransfer && (
+              <div className="text-[11px] text-slate-500 mt-1">No hubo handoff al vendedor</div>
+            )}
+            {actualTransfer && fallbackLabel && (
               <div className="text-[11px] text-amber-300 mt-1">Conectó con: {fallbackLabel}</div>
             )}
-            {answeredAgentLabel && (
+            {actualTransfer && answeredAgentLabel && (
               <div className="text-[11px] text-slate-500 mt-1">Conectó con: {answeredAgentLabel}</div>
             )}
-            {selectedAgentLabel && (
+            {actualTransfer && selectedAgentLabel && (
               <div className="text-[11px] text-slate-500 mt-1">Transferido a: {selectedAgentLabel}</div>
             )}
-            {answeredAgentSubLabel && (
+            {actualTransfer && answeredAgentSubLabel && (
               <div className="text-[11px] text-slate-500 mt-1">Número: {answeredAgentSubLabel}</div>
             )}
           </div>
@@ -1145,6 +1174,7 @@ export default function App() {
                     <option value="transfer_success">Transferido</option>
                     <option value="abandoned">Abandonado</option>
                     <option value="in_progress">En curso</option>
+                    <option value="voicemail">Buzón</option>
                     <option value="completed">Completado</option>
                     <option value="failed">Fallo</option>
                   </select>
