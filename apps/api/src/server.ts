@@ -2896,6 +2896,7 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       campaignName: adminString(integration?.campaignName) ?? campaign.name,
       campaignId: adminString(integration?.campaignId) ?? campaign.campaignId,
       startedAt,
+      leadName: attempt.lead?.name ?? "",
       phone: attempt.lead?.phone ?? metric?.phoneNumber ?? "",
       outcome,
       sentiment: metric?.sentiment ?? "",

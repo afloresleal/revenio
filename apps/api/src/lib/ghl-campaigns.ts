@@ -70,6 +70,7 @@ export type CampaignCallRow = {
   campaignName?: string | null;
   campaignId?: string | null;
   startedAt?: Date | string | null;
+  leadName?: string | null;
   phone?: string | null;
   outcome?: string | null;
   sentiment?: string | null;
@@ -285,6 +286,7 @@ export const CAMPAIGN_CALL_EXPORT_COLUMNS: CampaignCallExportColumn[] = [
   { key: "campaignName", label: "campaign_name" },
   { key: "campaignId", label: "campaign_id" },
   { key: "startedAt", label: "started_at" },
+  { key: "leadName", label: "lead_name" },
   { key: "phone", label: "lead_phone" },
   { key: "outcome", label: "outcome" },
   { key: "sentiment", label: "sentiment" },
