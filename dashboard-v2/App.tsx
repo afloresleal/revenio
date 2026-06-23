@@ -83,6 +83,7 @@ interface DailyData {
 
 interface RecentCall {
   callId: string;
+  leadName?: string | null;
   phone: string;
   campaignName?: string | null;
   assistantId?: string | null;
@@ -1249,6 +1250,7 @@ export default function App() {
                       >
                         <div className="flex items-center justify-between gap-3 md:grid md:grid-cols-[minmax(180px,1.15fr)_minmax(180px,1fr)_auto_90px_110px] md:gap-4">
                           <div className="min-w-0 text-left">
+                            <div className="truncate text-sm text-slate-100">{call.leadName || 'Lead sin nombre'}</div>
                             <div className="font-mono text-sm text-slate-200">{call.phone}</div>
                             <div className="text-[11px] text-slate-500">{call.ago}</div>
                           </div>
@@ -1368,6 +1370,7 @@ export default function App() {
                 <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
                   <div>
                     <h4 className="text-sm font-semibold text-slate-100">Detalle de llamada</h4>
+                    <p className="text-xs text-slate-300">{lightboxCall.leadName || 'Lead sin nombre'}</p>
                     <p className="text-[11px] text-slate-500 font-mono">{lightboxCall.phone}</p>
                   </div>
                   <button

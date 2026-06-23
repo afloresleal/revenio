@@ -815,6 +815,11 @@ router.get('/recent', async (req, res) => {
             providerId: true,
             resultJson: true,
             createdAt: true,
+            lead: {
+              select: {
+                name: true,
+              },
+            },
           },
         })
       : [];
@@ -1000,6 +1005,7 @@ router.get('/recent', async (req, res) => {
       });
       return {
         callId: c.callId,
+        leadName: attempt?.lead?.name ?? null,
         phone: maskPhone(c.phoneNumber),
         campaignName,
         assistantId: c.assistantId,
@@ -1097,6 +1103,11 @@ router.get('/calls/:callId', async (req, res) => {
         leadId: true,
         createdAt: true,
         resultJson: true,
+        lead: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
@@ -1268,6 +1279,7 @@ router.get('/calls/:callId', async (req, res) => {
 
     return res.json({
       callId: call.callId,
+      leadName: attempt?.lead?.name ?? null,
       phone: maskPhone(call.phoneNumber),
       phoneRaw: call.phoneNumber,
       assistantId: call.assistantId,
