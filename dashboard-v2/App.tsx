@@ -352,8 +352,13 @@ export default function App() {
     
     const filtered = data.recent.filter(call => {
       // Search Filter
-      if (debouncedSearch && !call.phone.includes(debouncedSearch)) {
-        return false;
+      if (debouncedSearch) {
+        const term = debouncedSearch.trim().toLowerCase();
+        const phoneMatches = call.phone.toLowerCase().includes(term);
+        const nameMatches = (call.leadName ?? '').toLowerCase().includes(term);
+        if (!phoneMatches && !nameMatches) {
+          return false;
+        }
       }
       // Outcome Filter
       if (outcomeFilter !== 'all' && call.outcome !== outcomeFilter) {
@@ -1158,10 +1163,10 @@ export default function App() {
                     <input
                       type="text"
                       className="block w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500 transition-colors"
-                      placeholder="Buscar teléfono..."
+                      placeholder="Buscar teléfono o nombre..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      aria-label="Buscar teléfono"
+                      aria-label="Buscar teléfono o nombre"
                     />
                   </div>
 
