@@ -761,16 +761,44 @@ router.get('/recent', async (req, res) => {
       sentiment?: string;
       outcome?: string;
       phoneNumber?: { contains: string };
+      callId?: { in: string[] };
+      OR?: Array<{
+        phoneNumber?: { contains: string };
+        callId?: { in: string[] };
+      }>;
       startedAt?: { gte?: Date; lte?: Date };
     } = {};
     if (sentiment && sentiment !== 'all') where.sentiment = sentiment;
     if (outcome && outcome !== 'all') where.outcome = outcome;
-    if (search) where.phoneNumber = { contains: search };
     if (fromDate || toDate) {
       where.startedAt = {
         ...(fromDate ? { gte: fromDate } : {}),
         ...(toDate ? { lte: toDate } : {}),
       };
+    }
+
+    if (search) {
+      const attemptsByLeadName = await prisma.callAttempt.findMany({
+        where: {
+          providerId: { not: null },
+          lead: {
+            name: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+        },
+        select: {
+          providerId: true,
+        },
+      });
+      const callIdsByLeadName = attemptsByLeadName
+        .map((attempt) => attempt.providerId)
+        .filter((callId): callId is string => !!callId);
+      where.OR = [
+        { phoneNumber: { contains: search } },
+        ...(callIdsByLeadName.length ? [{ callId: { in: callIdsByLeadName } }] : []),
+      ];
     }
     
     const calls = await prisma.callMetric.findMany({
