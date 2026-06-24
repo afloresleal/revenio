@@ -1,6 +1,6 @@
 # 📚 Índice de Documentación — Revenio
 
-> **Última actualización:** 2026-06-04 (agregado fix de resolvedor de vendedor contestado)
+> **Última actualización:** 2026-06-23 (agregada guía de acceso de Julia a Railway)
 
 Este índice organiza toda la documentación de Revenio por estado y propósito.
 
@@ -13,6 +13,7 @@ Documentos de referencia que se mantienen actualizados.
 | Documento | Descripción | Última actualización |
 |-----------|-------------|---------------------|
 | [ACTIVE-admin-ghl-campaigns.md](ACTIVE-admin-ghl-campaigns.md) | Guía completa del panel Admin para gestión de campañas GHL | 2026-05-12 |
+| [ACTIVE-julia-railway-access.md](ACTIVE-julia-railway-access.md) | Guía operativa para conectar a Julia a Railway con acceso mínimo | 2026-06-23 |
 | [ACTIVE-api-reference.md](ACTIVE-api-reference.md) | Referencia de endpoints API de Revenio | 2026-05-12 |
 | [ACTIVE-architecture.md](ACTIVE-architecture.md) | Arquitectura del sistema: flujos, componentes, integración Vapi/Twilio | 2026-05-07 |
 | [ACTIVE-vapi-config.md](ACTIVE-vapi-config.md) | Configuración de asistentes Vapi, voice settings, webhooks | 2026-05-12 |
@@ -115,4 +116,4 @@ Para detalles técnicos de una feature, buscar en: `docs/IMPLEMENTED-*`
 
 ---
 
-**Última revisión del índice:** 2026-06-04 por Codex
+**Última revisión del índice:** 2026-06-23 por Codex
