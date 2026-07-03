@@ -475,13 +475,13 @@ function renderCallsTable(columns = [], calls = []) {
 
 function buildAdminFlowStatus(primary, retry) {
   if (retry) {
-    if (retry.outcome === "transfer_success" || retry.outcome === "completed") return "Re-call completado";
-    if (retry.outcome === "voicemail" || retry.outcome === "abandoned" || retry.outcome === "failed") return "Re-call fallido";
-    return "Re-call en curso";
+    if (retry.outcome === "transfer_success" || retry.outcome === "completed") return "Segunda llamada completada";
+    if (retry.outcome === "voicemail" || retry.outcome === "abandoned" || retry.outcome === "failed") return "Segunda llamada sin exito";
+    return "Segunda llamada en curso";
   }
-  if (primary.retryStatus === "Segundo intento pendiente") return "Re-call pendiente";
-  if (primary.retryStatus === "Segundo intento realizado") return "Re-call en curso";
-  return "Sin re-call";
+  if (primary.retryStatus === "Segundo intento pendiente") return "Segunda llamada pendiente";
+  if (primary.retryStatus === "Segundo intento realizado") return "Segunda llamada en curso";
+  return "Sin segunda llamada";
 }
 
 function consolidateAdminCalls(calls = []) {

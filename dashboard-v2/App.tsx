@@ -215,13 +215,13 @@ const RetryBadge: React.FC<{ label: string }> = ({ label }) => (
 
 const buildFlowLabel = (primary: RecentCall, retry?: RecentCall | null): string => {
   if (retry) {
-    if (retry.outcome === 'transfer_success' || retry.outcome === 'completed') return 'Re-call completado';
-    if (retry.outcome === 'voicemail' || retry.outcome === 'abandoned' || retry.outcome === 'failed') return 'Re-call fallido';
-    return 'Re-call en curso';
+    if (retry.outcome === 'transfer_success' || retry.outcome === 'completed') return 'Segunda llamada completada';
+    if (retry.outcome === 'voicemail' || retry.outcome === 'abandoned' || retry.outcome === 'failed') return 'Segunda llamada sin exito';
+    return 'Segunda llamada en curso';
   }
-  if (primary.ghlRetryStatus === 'retry_pending') return 'Re-call pendiente';
-  if (primary.ghlRetryTriggered) return 'Re-call en curso';
-  return 'Sin re-call';
+  if (primary.ghlRetryStatus === 'retry_pending') return 'Segunda llamada pendiente';
+  if (primary.ghlRetryTriggered) return 'Segunda llamada en curso';
+  return 'Sin segunda llamada';
 };
 
 const consolidateRecentCalls = (calls: RecentCall[]): RecentCall[] => {
@@ -1002,7 +1002,7 @@ export default function App() {
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
-            <div className="text-slate-500">Intento GHL</div>
+            <div className="text-slate-500">Intentos de contacto</div>
             <div className="text-slate-300">
               {detailGhlAttemptNumber !== null
                 ? `Intento ${detailGhlAttemptNumber}${detailGhlMaxAttempts !== null ? ` de ${detailGhlMaxAttempts}` : ''}`
@@ -1012,13 +1012,13 @@ export default function App() {
               <div className="text-[11px] text-amber-300 mt-1">{detailGhlFlowLabel}</div>
             )}
             {!detailGhlRetryLabel && detailGhlRetryTriggered && (
-              <div className="text-[11px] text-amber-300 mt-1">Segundo intento realizado</div>
+              <div className="text-[11px] text-amber-300 mt-1">Segunda llamada en curso</div>
             )}
             {detailGhlIsRetryAttempt && (
-              <div className="text-[11px] text-slate-500 mt-1">Esta llamada es el re-call</div>
+              <div className="text-[11px] text-slate-500 mt-1">Esta llamada es la segunda llamada</div>
             )}
             {!detailGhlIsRetryAttempt && detailGhlRetryTriggered && (
-              <div className="text-[11px] text-slate-500 mt-1">Esta llamada disparó el re-call</div>
+              <div className="text-[11px] text-slate-500 mt-1">Esta llamada generó una segunda llamada</div>
             )}
             {detailGhlAttemptTimeline.length > 0 && (
               <div className="mt-2 space-y-1 text-[11px] text-slate-400">

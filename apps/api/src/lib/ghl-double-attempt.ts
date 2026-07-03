@@ -237,35 +237,40 @@ export function summarizeGhlDoubleAttemptFlow(params: {
   retryOutcome?: string | null;
 }): {
   hasRetry: boolean;
-  label: "Sin re-call" | "Re-call pendiente" | "Re-call en curso" | "Re-call completado" | "Re-call fallido";
+  label:
+    | "Sin segunda llamada"
+    | "Segunda llamada pendiente"
+    | "Segunda llamada en curso"
+    | "Segunda llamada completada"
+    | "Segunda llamada sin exito";
 } {
   const root = params.rootVisibility;
   const retry = params.retryVisibility ?? null;
   const retryOutcome = params.retryOutcome ?? null;
 
   if (!root) {
-    return { hasRetry: false, label: "Sin re-call" };
+    return { hasRetry: false, label: "Sin segunda llamada" };
   }
 
   if (retry?.isRetryAttempt) {
     if (retryOutcome === "transfer_success" || retryOutcome === "completed") {
-      return { hasRetry: true, label: "Re-call completado" };
+      return { hasRetry: true, label: "Segunda llamada completada" };
     }
     if (retryOutcome === "voicemail" || retryOutcome === "abandoned" || retryOutcome === "failed" || retryOutcome === "no-answer") {
-      return { hasRetry: true, label: "Re-call fallido" };
+      return { hasRetry: true, label: "Segunda llamada sin exito" };
     }
-    return { hasRetry: true, label: "Re-call en curso" };
+    return { hasRetry: true, label: "Segunda llamada en curso" };
   }
 
   if (root.retryScheduled) {
-    return { hasRetry: true, label: "Re-call pendiente" };
+    return { hasRetry: true, label: "Segunda llamada pendiente" };
   }
 
   if (root.retryTriggered) {
-    return { hasRetry: true, label: "Re-call en curso" };
+    return { hasRetry: true, label: "Segunda llamada en curso" };
   }
 
-  return { hasRetry: false, label: "Sin re-call" };
+  return { hasRetry: false, label: "Sin segunda llamada" };
 }
 
 function parseDate(value: unknown): Date | null {

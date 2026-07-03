@@ -210,9 +210,9 @@ assert.deepEqual(
   }),
   {
     hasRetry: true,
-    label: "Re-call completado",
+    label: "Segunda llamada completada",
   },
-  "successful second attempts should summarize as re-call completed",
+  "successful second attempts should summarize as second call completed",
 );
 
 assert.deepEqual(
@@ -238,9 +238,9 @@ assert.deepEqual(
   }),
   {
     hasRetry: true,
-    label: "Re-call fallido",
+    label: "Segunda llamada sin exito",
   },
-  "recoverable failures after the retry should summarize as re-call failed",
+  "recoverable failures after the retry should summarize as second call without success",
 );
 
 assert.deepEqual(

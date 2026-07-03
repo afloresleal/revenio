@@ -298,7 +298,7 @@ export const CAMPAIGN_CALL_EXPORT_COLUMNS: CampaignCallExportColumn[] = [
   { key: "leadName", label: "lead_name" },
   { key: "phone", label: "lead_phone" },
   { key: "outcome", label: "outcome" },
-  { key: "retryStatus", label: "retry_status" },
+  { key: "retryStatus", label: "intentos_contacto" },
   { key: "attemptNumber", label: "attempt_number" },
   { key: "maxAttempts", label: "max_attempts" },
   { key: "sentiment", label: "sentiment" },
