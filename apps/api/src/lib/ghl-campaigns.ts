@@ -67,6 +67,12 @@ export type CampaignTestTransfer = {
 };
 
 export type CampaignCallRow = {
+  attemptId?: string | null;
+  callId?: string | null;
+  rootAttemptId?: string | null;
+  previousAttemptId?: string | null;
+  retryAttemptId?: string | null;
+  isRetryAttempt?: boolean | null;
   campaignName?: string | null;
   campaignId?: string | null;
   startedAt?: Date | string | null;

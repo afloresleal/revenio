@@ -27,7 +27,7 @@ import {
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
 import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
-import { summarizeGhlDoubleAttemptVisibility } from "./lib/ghl-double-attempt.js";
+import { extractGhlDoubleAttemptLink, summarizeGhlDoubleAttemptVisibility } from "./lib/ghl-double-attempt.js";
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from "./lib/round-robin-resolution.js";
 import { classifyTransferAnswer } from "./lib/transfer-failover.js";
 import { normalizeMetricClassification } from "./lib/metric-classification.js";
@@ -2845,6 +2845,7 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
     const result = adminRecord(attempt.resultJson);
     const integration = adminRecord(result?.ghlIntegration);
     const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(result);
+    const doubleAttemptLink = extractGhlDoubleAttemptLink(result, attempt.id);
     const roundRobin = adminRecord(result?.roundRobin);
     const selectedAgent = adminRecord(result?.selected_agent);
     const metric = attempt.providerId ? metricsByCallId.get(attempt.providerId) : null;
@@ -2896,6 +2897,12 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       "";
 
     return {
+      attemptId: attempt.id,
+      callId: attempt.providerId ?? "",
+      rootAttemptId: doubleAttemptLink.rootAttemptId,
+      previousAttemptId: doubleAttemptLink.previousAttemptId,
+      retryAttemptId: doubleAttemptLink.retryAttemptId,
+      isRetryAttempt: doubleAttemptLink.isRetryAttempt,
       campaignName: adminString(integration?.campaignName) ?? campaign.name,
       campaignId: adminString(integration?.campaignId) ?? campaign.campaignId,
       startedAt,
@@ -3407,7 +3414,7 @@ app.get("/api/admin/ghl-campaigns/:id/calls", async (req, res) => {
     campaignId: campaign.campaignId,
     summary,
     columns: CAMPAIGN_CALL_EXPORT_COLUMNS,
-    calls: buildCampaignCallExportRows(rows),
+    calls: rows,
     count: rows.length,
   });
 });

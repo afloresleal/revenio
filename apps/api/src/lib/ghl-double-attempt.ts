@@ -21,6 +21,15 @@ export type GhlDoubleAttemptVisibility = {
   label: string | null;
 };
 
+export type GhlDoubleAttemptLink = {
+  attemptId: string;
+  rootAttemptId: string;
+  retryAttemptId: string | null;
+  previousAttemptId: string | null;
+  attemptNumber: number;
+  isRetryAttempt: boolean;
+};
+
 export type GhlDoubleAttemptAction =
   | {
       action: "schedule_retry";
@@ -200,6 +209,63 @@ export function summarizeGhlDoubleAttemptVisibility(
     status: "single_attempt",
     label: null,
   };
+}
+
+export function extractGhlDoubleAttemptLink(
+  resultJson: Record<string, unknown> | null | undefined,
+  attemptId: string,
+): GhlDoubleAttemptLink {
+  const state = asRecord(resultJson?.ghlDoubleAttempt);
+  const attemptNumber = Math.max(1, asNumber(state?.attemptNumber) ?? 1);
+  const rootAttemptId = asString(state?.rootAttemptId) ?? attemptId;
+  const previousAttemptId = asString(state?.previousAttemptId) ?? null;
+  const isRetryAttempt = attemptNumber > 1 || Boolean(previousAttemptId);
+
+  return {
+    attemptId,
+    rootAttemptId,
+    retryAttemptId: asString(state?.retryAttemptId) ?? null,
+    previousAttemptId,
+    attemptNumber,
+    isRetryAttempt,
+  };
+}
+
+export function summarizeGhlDoubleAttemptFlow(params: {
+  rootVisibility: GhlDoubleAttemptVisibility | null;
+  retryVisibility?: GhlDoubleAttemptVisibility | null;
+  retryOutcome?: string | null;
+}): {
+  hasRetry: boolean;
+  label: "Sin re-call" | "Re-call pendiente" | "Re-call en curso" | "Re-call completado" | "Re-call fallido";
+} {
+  const root = params.rootVisibility;
+  const retry = params.retryVisibility ?? null;
+  const retryOutcome = params.retryOutcome ?? null;
+
+  if (!root) {
+    return { hasRetry: false, label: "Sin re-call" };
+  }
+
+  if (retry?.isRetryAttempt) {
+    if (retryOutcome === "transfer_success" || retryOutcome === "completed") {
+      return { hasRetry: true, label: "Re-call completado" };
+    }
+    if (retryOutcome === "voicemail" || retryOutcome === "abandoned" || retryOutcome === "failed" || retryOutcome === "no-answer") {
+      return { hasRetry: true, label: "Re-call fallido" };
+    }
+    return { hasRetry: true, label: "Re-call en curso" };
+  }
+
+  if (root.retryScheduled) {
+    return { hasRetry: true, label: "Re-call pendiente" };
+  }
+
+  if (root.retryTriggered) {
+    return { hasRetry: true, label: "Re-call en curso" };
+  }
+
+  return { hasRetry: false, label: "Sin re-call" };
 }
 
 function parseDate(value: unknown): Date | null {

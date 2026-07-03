@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {
   decideGhlDoubleAttemptAction,
   deriveOutcomeFromVapiSnapshot,
+  extractGhlDoubleAttemptLink,
+  summarizeGhlDoubleAttemptFlow,
   summarizeGhlDoubleAttemptVisibility,
   shouldProcessPersistedGhlSecondAttempt,
 } from "../src/lib/ghl-double-attempt.js";
@@ -161,6 +163,84 @@ assert.deepEqual(
     label: "Segundo intento",
   },
   "retry attempt should be labeled as the second call itself",
+);
+
+assert.deepEqual(
+  extractGhlDoubleAttemptLink(
+    {
+      ghlDoubleAttempt: {
+        attemptNumber: 2,
+        rootAttemptId: "attempt-root",
+        previousAttemptId: "attempt-1",
+      },
+    },
+    "attempt-2",
+  ),
+  {
+    attemptId: "attempt-2",
+    rootAttemptId: "attempt-root",
+    retryAttemptId: null,
+    previousAttemptId: "attempt-1",
+    attemptNumber: 2,
+    isRetryAttempt: true,
+  },
+  "linked retry attempts should expose their root grouping id",
+);
+
+assert.deepEqual(
+  summarizeGhlDoubleAttemptFlow({
+    rootVisibility: summarizeGhlDoubleAttemptVisibility({
+      ghlDoubleAttempt: {
+        enabled: true,
+        attemptNumber: 1,
+        maxAttempts: 2,
+        retryAttemptId: "attempt-2",
+        retryProcessedAt: "2026-07-03T10:00:30.000Z",
+      },
+    }),
+    retryVisibility: summarizeGhlDoubleAttemptVisibility({
+      ghlDoubleAttempt: {
+        enabled: true,
+        attemptNumber: 2,
+        maxAttempts: 2,
+        previousAttemptId: "attempt-1",
+      },
+    }),
+    retryOutcome: "completed",
+  }),
+  {
+    hasRetry: true,
+    label: "Re-call completado",
+  },
+  "successful second attempts should summarize as re-call completed",
+);
+
+assert.deepEqual(
+  summarizeGhlDoubleAttemptFlow({
+    rootVisibility: summarizeGhlDoubleAttemptVisibility({
+      ghlDoubleAttempt: {
+        enabled: true,
+        attemptNumber: 1,
+        maxAttempts: 2,
+        retryAttemptId: "attempt-2",
+        retryProcessedAt: "2026-07-03T10:00:30.000Z",
+      },
+    }),
+    retryVisibility: summarizeGhlDoubleAttemptVisibility({
+      ghlDoubleAttempt: {
+        enabled: true,
+        attemptNumber: 2,
+        maxAttempts: 2,
+        previousAttemptId: "attempt-1",
+      },
+    }),
+    retryOutcome: "voicemail",
+  }),
+  {
+    hasRetry: true,
+    label: "Re-call fallido",
+  },
+  "recoverable failures after the retry should summarize as re-call failed",
 );
 
 assert.deepEqual(

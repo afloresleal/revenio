@@ -82,7 +82,11 @@ interface DailyData {
 }
 
 interface RecentCall {
+  attemptId?: string | null;
   callId: string;
+  ghlRootAttemptId?: string | null;
+  ghlPreviousAttemptId?: string | null;
+  ghlRetryAttemptId?: string | null;
   leadName?: string | null;
   phone: string;
   campaignName?: string | null;
@@ -104,6 +108,12 @@ interface RecentCall {
   ghlRetryLabel?: string | null;
   ghlIsRetryAttempt?: boolean;
   ghlRetryTriggered?: boolean;
+  ghlFlowLabel?: string | null;
+  ghlAttemptTimeline?: Array<{
+    label: string;
+    outcome: string | null;
+    callId: string;
+  }>;
   ago: string;
   inProgress?: boolean;
 }
@@ -202,6 +212,70 @@ const RetryBadge: React.FC<{ label: string }> = ({ label }) => (
     {label}
   </span>
 );
+
+const buildFlowLabel = (primary: RecentCall, retry?: RecentCall | null): string => {
+  if (retry) {
+    if (retry.outcome === 'transfer_success' || retry.outcome === 'completed') return 'Re-call completado';
+    if (retry.outcome === 'voicemail' || retry.outcome === 'abandoned' || retry.outcome === 'failed') return 'Re-call fallido';
+    return 'Re-call en curso';
+  }
+  if (primary.ghlRetryStatus === 'retry_pending') return 'Re-call pendiente';
+  if (primary.ghlRetryTriggered) return 'Re-call en curso';
+  return 'Sin re-call';
+};
+
+const consolidateRecentCalls = (calls: RecentCall[]): RecentCall[] => {
+  const groups = new Map<string, { primary: RecentCall; retry: RecentCall | null }>();
+
+  calls.forEach((call) => {
+    const groupKey = call.ghlRootAttemptId ?? call.attemptId ?? call.callId;
+    const current = groups.get(groupKey);
+    if (!current) {
+      groups.set(groupKey, { primary: call, retry: call.ghlIsRetryAttempt ? call : null });
+      return;
+    }
+
+    if (call.ghlIsRetryAttempt) {
+      current.retry = call;
+      return;
+    }
+
+    current.primary = call;
+  });
+
+  return Array.from(groups.values())
+    .map(({ primary, retry }) => {
+      const display = primary.ghlIsRetryAttempt && retry ? retry : primary;
+      const base = primary.ghlIsRetryAttempt && retry ? retry : primary;
+      const timeline = [
+        {
+          label: 'Intento 1',
+          outcome: primary.ghlIsRetryAttempt ? null : primary.outcome,
+          callId: primary.callId,
+        },
+        retry
+          ? {
+              label: 'Intento 2',
+              outcome: retry.outcome,
+              callId: retry.callId,
+            }
+          : null,
+      ].filter((item): item is { label: string; outcome: string | null; callId: string } => !!item);
+
+      return {
+        ...base,
+        ghlFlowLabel: buildFlowLabel(primary, retry),
+        ghlAttemptTimeline: timeline,
+        ghlRetryLabel: retry ? buildFlowLabel(primary, retry) : primary.ghlRetryLabel,
+        ghlIsRetryAttempt: false,
+      };
+    })
+    .sort((a, b) => {
+      const left = new Date(a.startedAt ?? a.endedAt ?? 0).getTime();
+      const right = new Date(b.startedAt ?? b.endedAt ?? 0).getTime();
+      return right - left;
+    });
+};
 
 // --- Main Application ---
 
@@ -361,8 +435,9 @@ export default function App() {
   // Filter Logic
   const filteredCalls = useMemo(() => {
     if (!data) return [];
-    
-    const filtered = data.recent.filter(call => {
+    const consolidated = consolidateRecentCalls(data.recent);
+
+    const filtered = consolidated.filter(call => {
       // Search Filter
       if (debouncedSearch) {
         const term = debouncedSearch.trim().toLowerCase();
@@ -762,6 +837,8 @@ export default function App() {
     const detailGhlRetryLabel = asNonEmptyString(detail?.ghlRetryLabel) ?? call.ghlRetryLabel ?? null;
     const detailGhlRetryTriggered = asBoolean(detail?.ghlRetryTriggered) ?? call.ghlRetryTriggered ?? false;
     const detailGhlIsRetryAttempt = asBoolean(detail?.ghlIsRetryAttempt) ?? call.ghlIsRetryAttempt ?? false;
+    const detailGhlFlowLabel = call.ghlFlowLabel ?? detailGhlRetryLabel;
+    const detailGhlAttemptTimeline = Array.isArray(call.ghlAttemptTimeline) ? call.ghlAttemptTimeline : [];
     const detailFailedAgents = Array.isArray(detail?.roundRobinFailedAgents)
       ? detail.roundRobinFailedAgents
           .map((agent) => {
@@ -857,7 +934,7 @@ export default function App() {
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
         <div className="mb-3 flex flex-wrap gap-2">
           <StatusBadge outcome={detailOutcome} />
-          {detailGhlRetryLabel && <RetryBadge label={detailGhlRetryLabel} />}
+          {detailGhlFlowLabel && <RetryBadge label={detailGhlFlowLabel} />}
           {detailEndedReason && (
             <span className="inline-flex items-center rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
               Razón: {formatEndedReason(detailEndedReason)}
@@ -931,8 +1008,8 @@ export default function App() {
                 ? `Intento ${detailGhlAttemptNumber}${detailGhlMaxAttempts !== null ? ` de ${detailGhlMaxAttempts}` : ''}`
                 : '--'}
             </div>
-            {detailGhlRetryLabel && (
-              <div className="text-[11px] text-amber-300 mt-1">{detailGhlRetryLabel}</div>
+            {detailGhlFlowLabel && (
+              <div className="text-[11px] text-amber-300 mt-1">{detailGhlFlowLabel}</div>
             )}
             {!detailGhlRetryLabel && detailGhlRetryTriggered && (
               <div className="text-[11px] text-amber-300 mt-1">Segundo intento realizado</div>
@@ -942,6 +1019,15 @@ export default function App() {
             )}
             {!detailGhlIsRetryAttempt && detailGhlRetryTriggered && (
               <div className="text-[11px] text-slate-500 mt-1">Esta llamada disparó el re-call</div>
+            )}
+            {detailGhlAttemptTimeline.length > 0 && (
+              <div className="mt-2 space-y-1 text-[11px] text-slate-400">
+                {detailGhlAttemptTimeline.map((attempt) => (
+                  <div key={`${attempt.label}-${attempt.callId}`}>
+                    {attempt.label}: {attempt.outcome ?? 'sin dato'}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
@@ -1297,7 +1383,7 @@ export default function App() {
                             <div className="font-mono text-sm text-slate-200">{call.phone}</div>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
                               <span className="text-slate-500">{call.ago}</span>
-                              {call.ghlRetryLabel && <RetryBadge label={call.ghlRetryLabel} />}
+                              {call.ghlFlowLabel && <RetryBadge label={call.ghlFlowLabel} />}
                             </div>
                           </div>
                           <div className="hidden md:block min-w-0 text-left">

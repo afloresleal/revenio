@@ -54,7 +54,11 @@ export interface DailyData {
 }
 
 export interface RecentCall {
+  attemptId?: string | null;
   callId: string;
+  ghlRootAttemptId?: string | null;
+  ghlPreviousAttemptId?: string | null;
+  ghlRetryAttemptId?: string | null;
   leadName?: string | null;
   phone: string;
   campaignName?: string | null;

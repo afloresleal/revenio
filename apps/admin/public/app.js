@@ -473,6 +473,47 @@ function renderCallsTable(columns = [], calls = []) {
   });
 }
 
+function buildAdminFlowStatus(primary, retry) {
+  if (retry) {
+    if (retry.outcome === "transfer_success" || retry.outcome === "completed") return "Re-call completado";
+    if (retry.outcome === "voicemail" || retry.outcome === "abandoned" || retry.outcome === "failed") return "Re-call fallido";
+    return "Re-call en curso";
+  }
+  if (primary.retryStatus === "Segundo intento pendiente") return "Re-call pendiente";
+  if (primary.retryStatus === "Segundo intento realizado") return "Re-call en curso";
+  return "Sin re-call";
+}
+
+function consolidateAdminCalls(calls = []) {
+  const groups = new Map();
+
+  calls.forEach((call) => {
+    const key = call.rootAttemptId || call.attemptId || call.callId || `${call.phone || ""}-${call.startedAt || ""}`;
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        primary: call,
+        retry: call.isRetryAttempt === true ? call : null,
+      });
+      return;
+    }
+
+    if (call.isRetryAttempt === true) {
+      current.retry = call;
+      return;
+    }
+
+    current.primary = call;
+  });
+
+  return Array.from(groups.values()).map(({ primary, retry }) => ({
+    ...primary,
+    retryStatus: buildAdminFlowStatus(primary, retry),
+    attemptNumber: primary.attemptNumber || 1,
+    maxAttempts: retry ? Math.max(primary.maxAttempts || 2, retry.maxAttempts || 2) : primary.maxAttempts,
+  }));
+}
+
 function clearCampaignFieldErrors() {
   [
     "campaign_name",
@@ -957,9 +998,10 @@ async function loadCalls() {
   setStatus("Cargando llamadas...");
   const data = await request("GET", `/api/admin/ghl-campaigns/${selectedCampaignId}/calls`);
   if (token !== callsLoadToken || campaignAtRequest !== selectedCampaign?.id) return;
+  const consolidatedCalls = consolidateAdminCalls(data.calls ?? []);
   renderCallsSummary(data.summary ?? null);
-  renderCallsTable(data.columns ?? [], data.calls ?? []);
-  setCallsFeedback(`${data.count ?? 0} llamadas cargadas para ${selectedCampaign.name}.`);
+  renderCallsTable(data.columns ?? [], consolidatedCalls);
+  setCallsFeedback(`${consolidatedCalls.length ?? 0} llamadas cargadas para ${selectedCampaign.name}.`);
   setStatus("Llamadas cargadas.");
 }
 

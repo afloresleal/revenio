@@ -9,7 +9,7 @@ import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromU
 import { normalizeMetricClassification } from '../lib/metric-classification.js';
 import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from '../lib/round-robin-resolution.js';
-import { summarizeGhlDoubleAttemptVisibility } from '../lib/ghl-double-attempt.js';
+import { extractGhlDoubleAttemptLink, summarizeGhlDoubleAttemptVisibility } from '../lib/ghl-double-attempt.js';
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
 
 const router = Router();
@@ -1033,8 +1033,13 @@ router.get('/recent', async (req, res) => {
         postTransferDurationSec: c.postTransferDurationSec,
       });
       const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(attemptResult);
+      const doubleAttemptLink = attempt ? extractGhlDoubleAttemptLink(attemptResult, attempt.id) : null;
       return {
+        attemptId: attempt?.id ?? null,
         callId: c.callId,
+        ghlRootAttemptId: doubleAttemptLink?.rootAttemptId ?? null,
+        ghlPreviousAttemptId: doubleAttemptLink?.previousAttemptId ?? null,
+        ghlRetryAttemptId: doubleAttemptLink?.retryAttemptId ?? null,
         leadName: attempt?.lead?.name ?? null,
         phone: maskPhone(c.phoneNumber),
         campaignName,
@@ -1196,6 +1201,7 @@ router.get('/calls/:callId', async (req, res) => {
       asString(firstSnapshotAgent?.transfer_number) ??
       null;
     const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(attemptResult);
+    const doubleAttemptLink = attempt ? extractGhlDoubleAttemptLink(attemptResult, attempt.id) : null;
 
     const transferFailoverEvents = attempt?.leadId
       ? await prisma.event.findMany({
@@ -1316,6 +1322,9 @@ router.get('/calls/:callId', async (req, res) => {
 
     return res.json({
       callId: call.callId,
+      ghlRootAttemptId: doubleAttemptLink?.rootAttemptId ?? null,
+      ghlPreviousAttemptId: doubleAttemptLink?.previousAttemptId ?? null,
+      ghlRetryAttemptId: doubleAttemptLink?.retryAttemptId ?? null,
       leadName: attempt?.lead?.name ?? null,
       phone: maskPhone(call.phoneNumber),
       phoneRaw: call.phoneNumber,
