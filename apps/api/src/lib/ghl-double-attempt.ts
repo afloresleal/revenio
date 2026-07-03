@@ -6,6 +6,19 @@ export type GhlDoubleAttemptState = {
   scheduledAt?: string | null;
   retryProcessedAt?: string | null;
   retryAttemptId?: string | null;
+  previousAttemptId?: string | null;
+  rootAttemptId?: string | null;
+};
+
+export type GhlDoubleAttemptVisibility = {
+  enabled: boolean;
+  attemptNumber: number;
+  maxAttempts: number;
+  isRetryAttempt: boolean;
+  retryScheduled: boolean;
+  retryTriggered: boolean;
+  status: "single_attempt" | "retry_pending" | "retry_triggered" | "retry_attempt";
+  label: string | null;
 };
 
 export type GhlDoubleAttemptAction =
@@ -120,6 +133,72 @@ export function createInitialGhlDoubleAttemptState(): Required<
     attemptNumber: 1,
     maxAttempts: DEFAULT_MAX_ATTEMPTS,
     retryDelayMs: DEFAULT_RETRY_DELAY_MS,
+  };
+}
+
+export function summarizeGhlDoubleAttemptVisibility(
+  resultJson: Record<string, unknown> | null | undefined,
+): GhlDoubleAttemptVisibility | null {
+  const state = asRecord(resultJson?.ghlDoubleAttempt);
+  if (!state) return null;
+
+  const enabled = asBoolean(state.enabled) ?? false;
+  if (!enabled) return null;
+
+  const attemptNumber = Math.max(1, asNumber(state.attemptNumber) ?? 1);
+  const maxAttempts = Math.max(1, asNumber(state.maxAttempts) ?? DEFAULT_MAX_ATTEMPTS);
+  const isRetryAttempt = attemptNumber > 1 || Boolean(asString(state.previousAttemptId));
+  const retryScheduled = Boolean(asString(state.scheduledAt)) && !Boolean(asString(state.retryAttemptId));
+  const retryTriggered = Boolean(asString(state.retryAttemptId) || asString(state.retryProcessedAt));
+
+  if (isRetryAttempt) {
+    return {
+      enabled,
+      attemptNumber,
+      maxAttempts,
+      isRetryAttempt,
+      retryScheduled,
+      retryTriggered,
+      status: "retry_attempt",
+      label: "Segundo intento",
+    };
+  }
+
+  if (retryScheduled) {
+    return {
+      enabled,
+      attemptNumber,
+      maxAttempts,
+      isRetryAttempt,
+      retryScheduled,
+      retryTriggered,
+      status: "retry_pending",
+      label: "Segundo intento pendiente",
+    };
+  }
+
+  if (retryTriggered) {
+    return {
+      enabled,
+      attemptNumber,
+      maxAttempts,
+      isRetryAttempt,
+      retryScheduled,
+      retryTriggered,
+      status: "retry_triggered",
+      label: "Segundo intento realizado",
+    };
+  }
+
+  return {
+    enabled,
+    attemptNumber,
+    maxAttempts,
+    isRetryAttempt,
+    retryScheduled,
+    retryTriggered,
+    status: "single_attempt",
+    label: null,
   };
 }
 

@@ -98,6 +98,12 @@ interface RecentCall {
   sellerTalkSec?: number | null;
   sellerTalkSource?: 'post_transfer_duration_sec' | 'timestamp_fallback' | 'missing';
   postTransferDurationSec?: number | null;
+  ghlAttemptNumber?: number | null;
+  ghlMaxAttempts?: number | null;
+  ghlRetryStatus?: 'single_attempt' | 'retry_pending' | 'retry_triggered' | 'retry_attempt' | null;
+  ghlRetryLabel?: string | null;
+  ghlIsRetryAttempt?: boolean;
+  ghlRetryTriggered?: boolean;
   ago: string;
   inProgress?: boolean;
 }
@@ -189,6 +195,12 @@ const SkeletonCard = () => (
     <div className="h-10 w-16 bg-slate-800 rounded mb-2"></div>
     <div className="h-4 w-32 bg-slate-800 rounded"></div>
   </div>
+);
+
+const RetryBadge: React.FC<{ label: string }> = ({ label }) => (
+  <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+    {label}
+  </span>
 );
 
 // --- Main Application ---
@@ -745,6 +757,11 @@ export default function App() {
     const detailFirstAgentResultRaw = asNonEmptyString(detail?.roundRobinFirstAgentResult);
     const detailFirstAgentName = asNonEmptyString(detail?.roundRobinFirstAgentName);
     const detailFirstAgentNumber = asNonEmptyString(detail?.roundRobinFirstAgentNumber);
+    const detailGhlAttemptNumber = asFiniteNumber(detail?.ghlAttemptNumber) ?? call.ghlAttemptNumber ?? null;
+    const detailGhlMaxAttempts = asFiniteNumber(detail?.ghlMaxAttempts) ?? call.ghlMaxAttempts ?? null;
+    const detailGhlRetryLabel = asNonEmptyString(detail?.ghlRetryLabel) ?? call.ghlRetryLabel ?? null;
+    const detailGhlRetryTriggered = asBoolean(detail?.ghlRetryTriggered) ?? call.ghlRetryTriggered ?? false;
+    const detailGhlIsRetryAttempt = asBoolean(detail?.ghlIsRetryAttempt) ?? call.ghlIsRetryAttempt ?? false;
     const detailFailedAgents = Array.isArray(detail?.roundRobinFailedAgents)
       ? detail.roundRobinFailedAgents
           .map((agent) => {
@@ -840,6 +857,7 @@ export default function App() {
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
         <div className="mb-3 flex flex-wrap gap-2">
           <StatusBadge outcome={detailOutcome} />
+          {detailGhlRetryLabel && <RetryBadge label={detailGhlRetryLabel} />}
           {detailEndedReason && (
             <span className="inline-flex items-center rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
               Razón: {formatEndedReason(detailEndedReason)}
@@ -904,6 +922,26 @@ export default function App() {
             )}
             {fallbackOrderLabel && (
               <div className="text-[11px] text-amber-300 mt-1">Fallback final: {fallbackOrderLabel}</div>
+            )}
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Intento GHL</div>
+            <div className="text-slate-300">
+              {detailGhlAttemptNumber !== null
+                ? `Intento ${detailGhlAttemptNumber}${detailGhlMaxAttempts !== null ? ` de ${detailGhlMaxAttempts}` : ''}`
+                : '--'}
+            </div>
+            {detailGhlRetryLabel && (
+              <div className="text-[11px] text-amber-300 mt-1">{detailGhlRetryLabel}</div>
+            )}
+            {!detailGhlRetryLabel && detailGhlRetryTriggered && (
+              <div className="text-[11px] text-amber-300 mt-1">Segundo intento realizado</div>
+            )}
+            {detailGhlIsRetryAttempt && (
+              <div className="text-[11px] text-slate-500 mt-1">Esta llamada es el re-call</div>
+            )}
+            {!detailGhlIsRetryAttempt && detailGhlRetryTriggered && (
+              <div className="text-[11px] text-slate-500 mt-1">Esta llamada disparó el re-call</div>
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
@@ -1257,7 +1295,10 @@ export default function App() {
                           <div className="min-w-0 text-left">
                             <div className="truncate text-sm text-slate-100">{call.leadName || 'Lead sin nombre'}</div>
                             <div className="font-mono text-sm text-slate-200">{call.phone}</div>
-                            <div className="text-[11px] text-slate-500">{call.ago}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                              <span className="text-slate-500">{call.ago}</span>
+                              {call.ghlRetryLabel && <RetryBadge label={call.ghlRetryLabel} />}
+                            </div>
                           </div>
                           <div className="hidden md:block min-w-0 text-left">
                             <div className="truncate text-sm text-slate-200">{call.campaignName || 'Sin campaña'}</div>

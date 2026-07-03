@@ -9,6 +9,7 @@ import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromU
 import { normalizeMetricClassification } from '../lib/metric-classification.js';
 import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from '../lib/round-robin-resolution.js';
+import { summarizeGhlDoubleAttemptVisibility } from '../lib/ghl-double-attempt.js';
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
 
 const router = Router();
@@ -1031,6 +1032,7 @@ router.get('/recent', async (req, res) => {
         transferStatus: c.transferStatus,
         postTransferDurationSec: c.postTransferDurationSec,
       });
+      const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(attemptResult);
       return {
         callId: c.callId,
         leadName: attempt?.lead?.name ?? null,
@@ -1066,6 +1068,12 @@ router.get('/recent', async (req, res) => {
         transferRecordingSource,
         transferTranscriptSource,
         dataQuality,
+        ghlAttemptNumber: doubleAttemptVisibility?.attemptNumber ?? null,
+        ghlMaxAttempts: doubleAttemptVisibility?.maxAttempts ?? null,
+        ghlRetryStatus: doubleAttemptVisibility?.status ?? null,
+        ghlRetryLabel: doubleAttemptVisibility?.label ?? null,
+        ghlIsRetryAttempt: doubleAttemptVisibility?.isRetryAttempt ?? false,
+        ghlRetryTriggered: doubleAttemptVisibility?.retryTriggered ?? false,
         ago: formatRelativeTime(c.startedAt ?? c.createdAt),
         inProgress: c.inProgress,
       };
@@ -1187,6 +1195,7 @@ router.get('/calls/:callId', async (req, res) => {
       asString(firstSnapshotAgent?.transferNumber) ??
       asString(firstSnapshotAgent?.transfer_number) ??
       null;
+    const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(attemptResult);
 
     const transferFailoverEvents = attempt?.leadId
       ? await prisma.event.findMany({
@@ -1352,6 +1361,12 @@ router.get('/calls/:callId', async (req, res) => {
       transferTranscriptSource,
       recordings: call.recordingsJson,
       dataQuality,
+      ghlAttemptNumber: doubleAttemptVisibility?.attemptNumber ?? null,
+      ghlMaxAttempts: doubleAttemptVisibility?.maxAttempts ?? null,
+      ghlRetryStatus: doubleAttemptVisibility?.status ?? null,
+      ghlRetryLabel: doubleAttemptVisibility?.label ?? null,
+      ghlIsRetryAttempt: doubleAttemptVisibility?.isRetryAttempt ?? false,
+      ghlRetryTriggered: doubleAttemptVisibility?.retryTriggered ?? false,
       cost: call.cost,
       inProgress: call.inProgress,
       lastEventType: call.lastEventType,

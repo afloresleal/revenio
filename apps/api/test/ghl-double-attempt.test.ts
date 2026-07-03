@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   decideGhlDoubleAttemptAction,
   deriveOutcomeFromVapiSnapshot,
+  summarizeGhlDoubleAttemptVisibility,
   shouldProcessPersistedGhlSecondAttempt,
 } from "../src/lib/ghl-double-attempt.js";
 
@@ -115,6 +116,51 @@ assert.deepEqual(
   }),
   { ready: false, reason: "already_triggered" },
   "persisted retry should not be reprocessed after a retry attempt was linked",
+);
+
+assert.deepEqual(
+  summarizeGhlDoubleAttemptVisibility({
+    ghlDoubleAttempt: {
+      enabled: true,
+      attemptNumber: 1,
+      maxAttempts: 2,
+      retryProcessedAt: "2026-07-03T10:00:30.000Z",
+      retryAttemptId: "retry-1",
+    },
+  }),
+  {
+    enabled: true,
+    attemptNumber: 1,
+    maxAttempts: 2,
+    isRetryAttempt: false,
+    retryScheduled: false,
+    retryTriggered: true,
+    status: "retry_triggered",
+    label: "Segundo intento realizado",
+  },
+  "root attempt should expose that a second call was already triggered",
+);
+
+assert.deepEqual(
+  summarizeGhlDoubleAttemptVisibility({
+    ghlDoubleAttempt: {
+      enabled: true,
+      attemptNumber: 2,
+      maxAttempts: 2,
+      previousAttemptId: "attempt-1",
+    },
+  }),
+  {
+    enabled: true,
+    attemptNumber: 2,
+    maxAttempts: 2,
+    isRetryAttempt: true,
+    retryScheduled: false,
+    retryTriggered: false,
+    status: "retry_attempt",
+    label: "Segundo intento",
+  },
+  "retry attempt should be labeled as the second call itself",
 );
 
 assert.deepEqual(

@@ -27,6 +27,7 @@ import {
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
 import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
+import { summarizeGhlDoubleAttemptVisibility } from "./lib/ghl-double-attempt.js";
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from "./lib/round-robin-resolution.js";
 import { classifyTransferAnswer } from "./lib/transfer-failover.js";
 import { normalizeMetricClassification } from "./lib/metric-classification.js";
@@ -2843,6 +2844,7 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
   return attempts.map((attempt) => {
     const result = adminRecord(attempt.resultJson);
     const integration = adminRecord(result?.ghlIntegration);
+    const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(result);
     const roundRobin = adminRecord(result?.roundRobin);
     const selectedAgent = adminRecord(result?.selected_agent);
     const metric = attempt.providerId ? metricsByCallId.get(attempt.providerId) : null;
@@ -2900,6 +2902,9 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       leadName: attempt.lead?.name ?? "",
       phone: attempt.lead?.phone ?? metric?.phoneNumber ?? "",
       outcome,
+      retryStatus: doubleAttemptVisibility?.label ?? "",
+      attemptNumber: doubleAttemptVisibility?.attemptNumber ?? null,
+      maxAttempts: doubleAttemptVisibility?.maxAttempts ?? null,
       sentiment: metric?.sentiment ?? "",
       assignedTo: adminString(integration?.assignedTo) ?? adminString(result?.assignedTo) ?? "",
       firstAgentName:
