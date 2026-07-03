@@ -21,6 +21,9 @@ export type GhlDoubleAttemptAction =
 const DEFAULT_MAX_ATTEMPTS = 2;
 const DEFAULT_RETRY_DELAY_MS = 30_000;
 const RECOVERABLE_OUTCOMES = new Set(["voicemail", "no-answer"]);
+const VOICEMAIL_REASONS = new Set(["no-answer", "voicemail-beep", "voicemail", "customer-did-not-answer"]);
+const ABANDONED_REASONS = new Set(["timeout", "customer-busy", "system-error"]);
+const NORMAL_END_REASONS = new Set(["customer-ended-call", "assistant-ended-call", "completed"]);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -32,6 +35,45 @@ function asBoolean(value: unknown): boolean | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+export function deriveOutcomeFromVapiSnapshot(params: {
+  status: string | null | undefined;
+  endedReason: string | null | undefined;
+  transferredAt: string | null | undefined;
+  endedAt?: string | null | undefined;
+}): { isEnded: boolean; outcome: "in_progress" | "transfer_success" | "voicemail" | "abandoned" | "completed" } {
+  const status = params.status?.trim().toLowerCase() ?? null;
+  const endedReason = params.endedReason?.trim() ?? null;
+  const hasTransferredAt = Boolean(asString(params.transferredAt));
+  const hasEndedAt = Boolean(asString(params.endedAt));
+  const isEnded = status === "ended" || Boolean(endedReason || hasEndedAt);
+
+  if (!isEnded) {
+    return { isEnded: false, outcome: "in_progress" };
+  }
+
+  if (hasTransferredAt) {
+    return { isEnded: true, outcome: "transfer_success" };
+  }
+
+  if (endedReason && VOICEMAIL_REASONS.has(endedReason)) {
+    return { isEnded: true, outcome: "voicemail" };
+  }
+
+  if (endedReason && ABANDONED_REASONS.has(endedReason)) {
+    return { isEnded: true, outcome: "abandoned" };
+  }
+
+  if (endedReason && !NORMAL_END_REASONS.has(endedReason)) {
+    return { isEnded: true, outcome: "abandoned" };
+  }
+
+  return { isEnded: true, outcome: "completed" };
 }
 
 export function decideGhlDoubleAttemptAction(params: {

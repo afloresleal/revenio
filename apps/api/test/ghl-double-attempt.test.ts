@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   decideGhlDoubleAttemptAction,
+  deriveOutcomeFromVapiSnapshot,
   shouldProcessPersistedGhlSecondAttempt,
 } from "../src/lib/ghl-double-attempt.js";
 
@@ -114,6 +115,32 @@ assert.deepEqual(
   }),
   { ready: false, reason: "already_triggered" },
   "persisted retry should not be reprocessed after a retry attempt was linked",
+);
+
+assert.deepEqual(
+  deriveOutcomeFromVapiSnapshot({
+    status: "ended",
+    endedReason: "customer-did-not-answer",
+    transferredAt: null,
+  }),
+  {
+    isEnded: true,
+    outcome: "voicemail",
+  },
+  "ended Vapi snapshots with customer-did-not-answer should remain recoverable",
+);
+
+assert.deepEqual(
+  deriveOutcomeFromVapiSnapshot({
+    status: "ringing",
+    endedReason: null,
+    transferredAt: null,
+  }),
+  {
+    isEnded: false,
+    outcome: "in_progress",
+  },
+  "non-ended Vapi snapshots should stay in progress",
 );
 
 console.log("ghl-double-attempt tests passed");
