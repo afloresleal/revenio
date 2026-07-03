@@ -1003,11 +1003,6 @@ export default function App() {
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
             <div className="text-slate-500">Intentos de contacto</div>
-            <div className="text-slate-300">
-              {detailGhlAttemptNumber !== null
-                ? `Intento ${detailGhlAttemptNumber}${detailGhlMaxAttempts !== null ? ` de ${detailGhlMaxAttempts}` : ''}`
-                : '--'}
-            </div>
             {detailGhlFlowLabel && (
               <div className="text-[11px] text-amber-300 mt-1">{detailGhlFlowLabel}</div>
             )}
