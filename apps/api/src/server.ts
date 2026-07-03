@@ -10,6 +10,7 @@ import {
   resetCallWindowSettings,
   updateCallWindowSettings,
 } from "./lib/call-window.js";
+import { startGhlSecondAttemptWorker } from "./lib/ghl-second-attempt-worker.js";
 import { evaluateRoundRobinFailoverWindow } from "./lib/round-robin-window.js";
 
 // Import route modules
@@ -3994,6 +3995,21 @@ app.get("/api/recordings/:recordingSid", async (req, res) => {
     return res.status(500).json({ error: 'Failed to proxy recording' });
   }
 });
+
+const stopGhlSecondAttemptWorker = startGhlSecondAttemptWorker();
+
+function shutdown(signal: string) {
+  console.log(`Received ${signal}, shutting down...`);
+  stopGhlSecondAttemptWorker();
+  prisma.$disconnect().catch((error) => {
+    console.error("Failed to disconnect Prisma cleanly", error);
+  }).finally(() => {
+    process.exit(0);
+  });
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);
