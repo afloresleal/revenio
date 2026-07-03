@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
+import { processPendingGhlSecondAttempts } from './webhooks.js';
 
 const router = Router();
 
@@ -310,6 +311,18 @@ router.post('/sync-transfer-metrics', async (req, res) => {
     summary,
     results
   });
+});
+
+router.post('/process-ghl-second-attempts', async (req, res) => {
+  try {
+    const limitRaw = Number(req.query.limit ?? req.body?.limit ?? 50);
+    const limit = Number.isFinite(limitRaw) ? limitRaw : 50;
+    const result = await processPendingGhlSecondAttempts({ limit });
+    return res.json(result);
+  } catch (error) {
+    console.error('process-ghl-second-attempts failed:', error);
+    return res.status(500).json({ ok: false, error: 'internal_error', message: String(error) });
+  }
 });
 
 export default router;

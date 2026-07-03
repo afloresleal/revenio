@@ -1,0 +1,119 @@
+import assert from "node:assert/strict";
+import {
+  decideGhlDoubleAttemptAction,
+  shouldProcessPersistedGhlSecondAttempt,
+} from "../src/lib/ghl-double-attempt.js";
+
+const retryDecision = decideGhlDoubleAttemptAction({
+  outcome: "voicemail",
+  resultJson: {
+    ghlIntegration: {
+      campaignId: "campaign-1",
+      opportunityId: "opp-1",
+    },
+    ghlDoubleAttempt: {
+      enabled: true,
+      attemptNumber: 1,
+      maxAttempts: 2,
+      retryDelayMs: 30_000,
+    },
+  },
+});
+
+assert.deepEqual(retryDecision, {
+  action: "schedule_retry",
+  retryDelayMs: 30_000,
+  nextAttemptNumber: 2,
+});
+
+assert.deepEqual(
+  decideGhlDoubleAttemptAction({
+    outcome: "no-answer",
+    resultJson: {
+      ghlIntegration: {
+        campaignId: "campaign-1",
+        opportunityId: "opp-1",
+      },
+      ghlDoubleAttempt: {
+        enabled: true,
+        attemptNumber: 2,
+        maxAttempts: 2,
+        retryDelayMs: 30_000,
+      },
+    },
+  }),
+  {
+    action: "push_to_ghl",
+  },
+  "second recoverable failure should stop retrying and allow the normal GHL push",
+);
+
+assert.deepEqual(
+  decideGhlDoubleAttemptAction({
+    outcome: "transfer_success",
+    resultJson: {
+      ghlIntegration: {
+        campaignId: "campaign-1",
+        opportunityId: "opp-1",
+      },
+      ghlDoubleAttempt: {
+        enabled: true,
+        attemptNumber: 1,
+        maxAttempts: 2,
+        retryDelayMs: 30_000,
+      },
+    },
+  }),
+  {
+    action: "push_to_ghl",
+  },
+  "successful transfers should go straight to GHL",
+);
+
+assert.deepEqual(
+  shouldProcessPersistedGhlSecondAttempt({
+    status: "pending-second-attempt",
+    resultJson: {
+      ghlDoubleAttempt: {
+        enabled: true,
+        scheduledAt: "2026-07-03T10:00:00.000Z",
+      },
+    },
+    now: new Date("2026-07-03T10:00:30.000Z"),
+  }),
+  { ready: true, reason: "due" },
+  "persisted retry should become executable once scheduledAt is in the past",
+);
+
+assert.deepEqual(
+  shouldProcessPersistedGhlSecondAttempt({
+    status: "pending-second-attempt",
+    resultJson: {
+      ghlDoubleAttempt: {
+        enabled: true,
+        scheduledAt: "2026-07-03T10:01:00.000Z",
+      },
+    },
+    now: new Date("2026-07-03T10:00:30.000Z"),
+  }),
+  { ready: false, reason: "not_due_yet" },
+  "persisted retry should wait until the due time",
+);
+
+assert.deepEqual(
+  shouldProcessPersistedGhlSecondAttempt({
+    status: "pending-second-attempt",
+    resultJson: {
+      ghlDoubleAttempt: {
+        enabled: true,
+        scheduledAt: "2026-07-03T10:00:00.000Z",
+        retryAttemptId: "retry-1",
+      },
+    },
+    now: new Date("2026-07-03T10:00:30.000Z"),
+  }),
+  { ready: false, reason: "already_triggered" },
+  "persisted retry should not be reprocessed after a retry attempt was linked",
+);
+
+console.log("ghl-double-attempt tests passed");

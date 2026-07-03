@@ -13,6 +13,11 @@ import { startRecordingOnChildCalls, getRecordingForCall } from '../lib/twilio-r
 import { canStartOutboundCall, evaluateCampaignCallWindow } from '../lib/call-window.js';
 import { evaluateRoundRobinFailoverWindow } from '../lib/round-robin-window.js';
 import {
+  createInitialGhlDoubleAttemptState,
+  decideGhlDoubleAttemptAction,
+  shouldProcessPersistedGhlSecondAttempt,
+} from '../lib/ghl-double-attempt.js';
+import {
   type GhlAgentConfig,
   orderGhlAgentsForAssignment,
 } from '../lib/ghl-agents.js';
@@ -182,6 +187,340 @@ function buildAssistantOverrides(
   }
 
   return overrides;
+}
+
+async function createVapiPhoneCall(payload: Record<string, unknown>) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const resp = await fetch('https://api.vapi.ai/call/phone', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${VAPI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const data = await resp.json().catch(() => ({}));
+    return { resp, data };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function triggerGhlSecondAttempt(params: {
+  attemptId: string;
+  originalCallId: string;
+  firstOutcome: string;
+  nextAttemptNumber: number;
+}) {
+  const attempt = await prisma.callAttempt.findUnique({
+    where: { id: params.attemptId },
+    include: { lead: true },
+  });
+  if (!attempt) {
+    console.warn('GHL second attempt aborted: original attempt not found', params);
+    return;
+  }
+
+  const resultJson = asRecord(attempt.resultJson) ?? {};
+  const doubleAttempt = asRecord(resultJson.ghlDoubleAttempt) ?? {};
+  const lead = attempt.lead;
+  if (!lead) {
+    console.warn('GHL second attempt aborted: lead not found', params);
+    return;
+  }
+
+  const assistantId = asString(resultJson.assistantId);
+  const vapiPhoneNumberId = asString(resultJson.vapiPhoneNumberId);
+  const transferNumber = asString(resultJson.transferNumber) ?? null;
+  const roundRobin = asRecord(resultJson.roundRobin);
+  const agentName = asString(roundRobin?.selectedAgentName);
+
+  if (!assistantId || !vapiPhoneNumberId) {
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: 'second-attempt-failed',
+        resultJson: {
+          ...resultJson,
+          ghlDoubleAttempt: {
+            ...doubleAttempt,
+            retryProcessedAt: new Date().toISOString(),
+            retryFailureReason: 'missing_vapi_config',
+          },
+        } as any,
+      },
+    });
+    console.warn('GHL second attempt aborted: missing Vapi config in stored resultJson', {
+      attemptId: attempt.id,
+      hasAssistantId: !!assistantId,
+      hasPhoneNumberId: !!vapiPhoneNumberId,
+    });
+    return;
+  }
+
+  const retryAttempt = await prisma.callAttempt.create({
+    data: {
+      leadId: lead.id,
+      status: 'initiated',
+      resultJson: {
+        ...resultJson,
+        ghlDoubleAttempt: {
+          ...doubleAttempt,
+          attemptNumber: params.nextAttemptNumber,
+          scheduledAt: null,
+          rootAttemptId: asString(doubleAttempt.rootAttemptId) ?? attempt.id,
+          previousAttemptId: attempt.id,
+          firstOutcome: params.firstOutcome,
+          retryTriggeredAt: new Date().toISOString(),
+        },
+      } as any,
+    },
+  });
+
+  await prisma.callAttempt.update({
+    where: { id: attempt.id },
+    data: {
+      status: 'second-attempt-triggered',
+      resultJson: {
+        ...resultJson,
+        ghlDoubleAttempt: {
+          ...doubleAttempt,
+          retryAttemptId: retryAttempt.id,
+          retryTriggeredAt: new Date().toISOString(),
+          retryProcessedAt: new Date().toISOString(),
+        },
+      } as any,
+    },
+  });
+
+  const assistantOverrides = buildAssistantOverrides(
+    lead.name ?? null,
+    lead.id,
+    retryAttempt.id,
+    transferNumber,
+    agentName,
+  );
+  const payload = {
+    phoneNumberId: vapiPhoneNumberId,
+    assistantId,
+    customer: { number: lead.phone },
+    assistantOverrides,
+  };
+
+  let resp: Response;
+  let data: any = {};
+  try {
+    const vapiResponse = await createVapiPhoneCall(payload);
+    resp = vapiResponse.resp;
+    data = vapiResponse.data;
+  } catch (error) {
+    await prisma.callAttempt.update({
+      where: { id: retryAttempt.id },
+      data: { status: 'failed' },
+    });
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: 'second-attempt-failed',
+        resultJson: {
+          ...resultJson,
+          ghlDoubleAttempt: {
+            ...doubleAttempt,
+            retryAttemptId: retryAttempt.id,
+            retryProcessedAt: new Date().toISOString(),
+            retryFailureReason: 'vapi_network_error',
+          },
+        } as any,
+      },
+    });
+    console.error('GHL second attempt network error:', {
+      attemptId: attempt.id,
+      retryAttemptId: retryAttempt.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+
+  await prisma.event.create({
+    data: {
+      leadId: lead.id,
+      type: 'vapi_call_request',
+      detail: {
+        request: payload,
+        response: data,
+        status: resp.status,
+        flow: 'gohighlevel_second_attempt',
+        originalAttemptId: attempt.id,
+        retryAttemptId: retryAttempt.id,
+        originalCallId: params.originalCallId,
+      } as any,
+    },
+  });
+
+  if (!resp.ok) {
+    await prisma.callAttempt.update({
+      where: { id: retryAttempt.id },
+      data: { status: 'failed' },
+    });
+    await prisma.callAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: 'second-attempt-failed',
+        resultJson: {
+          ...resultJson,
+          ghlDoubleAttempt: {
+            ...doubleAttempt,
+            retryAttemptId: retryAttempt.id,
+            retryProcessedAt: new Date().toISOString(),
+            retryFailureReason: 'vapi_call_failed',
+            retryFailureStatus: resp.status,
+          },
+        } as any,
+      },
+    });
+    console.error('GHL second attempt Vapi call failed:', {
+      attemptId: attempt.id,
+      retryAttemptId: retryAttempt.id,
+      status: resp.status,
+      data,
+    });
+    return;
+  }
+
+  await prisma.callAttempt.update({
+    where: { id: retryAttempt.id },
+    data: {
+      status: 'sent',
+      providerId: typeof data.id === 'string' ? data.id : null,
+      controlUrl: data?.monitor?.controlUrl ?? null,
+    },
+  });
+
+  await upsertDashboardMetricFromVapiCall({
+    data,
+    fallbackPhone: lead.phone,
+    fallbackAssistantId: assistantId,
+    transferNumber,
+    lastEventType: 'call-created',
+  });
+
+  return { ok: true as const, retryAttemptId: retryAttempt.id };
+}
+
+async function scheduleGhlSecondAttempt(params: {
+  attemptId: string;
+  leadId: string | null;
+  resultJson: Record<string, unknown>;
+  callId: string;
+  firstOutcome: string;
+  retryDelayMs: number;
+  nextAttemptNumber: number;
+}) {
+  const doubleAttempt = asRecord(params.resultJson.ghlDoubleAttempt) ?? {};
+  if (asString(doubleAttempt.scheduledAt) || asString(doubleAttempt.retryAttemptId)) {
+    return { scheduled: false as const, reason: 'already_scheduled' as const };
+  }
+
+  const scheduledAt = new Date(Date.now() + params.retryDelayMs).toISOString();
+  await prisma.callAttempt.update({
+    where: { id: params.attemptId },
+    data: {
+      status: 'pending-second-attempt',
+      resultJson: {
+        ...params.resultJson,
+        ghlDoubleAttempt: {
+          ...doubleAttempt,
+          lastOutcome: params.firstOutcome,
+          nextAttemptNumber: params.nextAttemptNumber,
+          scheduledAt,
+          originalCallId: params.callId,
+        },
+      } as any,
+    },
+  });
+
+  if (params.leadId) {
+    await prisma.event.create({
+      data: {
+        leadId: params.leadId,
+        type: 'ghl_second_attempt_scheduled',
+        detail: {
+          attemptId: params.attemptId,
+          callId: params.callId,
+          firstOutcome: params.firstOutcome,
+          retryDelayMs: params.retryDelayMs,
+          nextAttemptNumber: params.nextAttemptNumber,
+          scheduledAt,
+        } as any,
+      },
+    });
+  }
+
+  return { scheduled: true as const, scheduledAt };
+}
+
+export async function processPendingGhlSecondAttempts(params?: { now?: Date; limit?: number }) {
+  const now = params?.now ?? new Date();
+  const limit = Math.max(1, Math.min(params?.limit ?? 50, 200));
+  const attempts = await prisma.callAttempt.findMany({
+    where: { status: 'pending-second-attempt' },
+    orderBy: { createdAt: 'asc' },
+    take: limit,
+    select: {
+      id: true,
+      status: true,
+      resultJson: true,
+    },
+  });
+
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const attempt of attempts) {
+    const resultJson = asRecord(attempt.resultJson);
+    const readiness = shouldProcessPersistedGhlSecondAttempt({
+      status: attempt.status,
+      resultJson,
+      now,
+    });
+    if (!readiness.ready) {
+      results.push({ attemptId: attempt.id, status: 'skipped', reason: readiness.reason });
+      continue;
+    }
+
+    const locked = await prisma.callAttempt.updateMany({
+      where: { id: attempt.id, status: 'pending-second-attempt' },
+      data: { status: 'processing-second-attempt' },
+    });
+    if (locked.count === 0) {
+      results.push({ attemptId: attempt.id, status: 'skipped', reason: 'lock_not_acquired' });
+      continue;
+    }
+
+    const doubleAttempt = asRecord(resultJson?.ghlDoubleAttempt) ?? {};
+    const nextAttemptNumber = asNumber(doubleAttempt.nextAttemptNumber) ?? asNumber(doubleAttempt.attemptNumber) ?? 2;
+    const originalCallId = asString(doubleAttempt.originalCallId) ?? asString(resultJson?.providerId) ?? 'unknown';
+    const firstOutcome = asString(doubleAttempt.lastOutcome) ?? 'voicemail';
+
+    await triggerGhlSecondAttempt({
+      attemptId: attempt.id,
+      originalCallId,
+      firstOutcome,
+      nextAttemptNumber,
+    });
+    results.push({ attemptId: attempt.id, status: 'processed', nextAttemptNumber, firstOutcome });
+  }
+
+  return {
+    ok: true,
+    now: now.toISOString(),
+    total: attempts.length,
+    processed: results.filter((item) => item.status === 'processed').length,
+    skipped: results.filter((item) => item.status === 'skipped').length,
+    results,
+  };
 }
 
 function parseDateValue(value: unknown): Date | null {
@@ -1466,19 +1805,9 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
   let resp: Response;
   let data: any = {};
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    resp = await fetch('https://api.vapi.ai/call/phone', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${VAPI_API_KEY}`,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    data = await resp.json().catch(() => ({}));
+    const vapiResponse = await createVapiPhoneCall(payload);
+    resp = vapiResponse.resp;
+    data = vapiResponse.data;
   } catch (error) {
     await prisma.callAttempt.update({
       where: { id: attempt.id },
@@ -1546,6 +1875,7 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
       resultJson: {
         transferNumber: selectedTransfer.transferNumber,
         assistantId: resolvedVapiAssistantId,
+        vapiPhoneNumberId: resolvedVapiPhoneNumberId,
         ghlIntegration: {
           locationId,
           propertyKey: property.key,
@@ -1562,6 +1892,10 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
             sellerTalkSec: property.sellerTalkFieldId ?? null,
             recordingUrl: property.recordingUrlFieldId ?? null,
           },
+        },
+        ghlDoubleAttempt: {
+          ...createInitialGhlDoubleAttemptState(),
+          rootAttemptId: attempt.id,
         },
         roundRobin: {
           enabled: true,
@@ -2265,13 +2599,46 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
   });
 
   let ghlPush: HandlerResult | null = null;
-  // Always attempt to push to GHL, regardless of transfer success
   const attempt = await prisma.callAttempt.findFirst({
     where: { providerId: callId },
     orderBy: { createdAt: 'desc' },
     select: { id: true, leadId: true, resultJson: true },
   });
   const attemptResultJson = asRecord(attempt?.resultJson);
+  const doubleAttemptAction = decideGhlDoubleAttemptAction({
+    outcome,
+    resultJson: attemptResultJson,
+  });
+
+  if (attempt && attemptResultJson && doubleAttemptAction.action === 'schedule_retry') {
+    const retryResult = await scheduleGhlSecondAttempt({
+      attemptId: attempt.id,
+      leadId: attempt.leadId,
+      resultJson: attemptResultJson,
+      callId,
+      firstOutcome: outcome,
+      retryDelayMs: doubleAttemptAction.retryDelayMs,
+      nextAttemptNumber: doubleAttemptAction.nextAttemptNumber,
+    });
+
+    return {
+      ok: true,
+      callId,
+      outcome,
+      hasTranscript: !!transcript,
+      hasRecording: !!recordingUrl,
+      durationSec: duration,
+      postTransferDurationSec,
+      ghlPush: null,
+      secondAttempt: {
+        scheduled: retryResult.scheduled,
+        retryDelayMs: doubleAttemptAction.retryDelayMs,
+        nextAttemptNumber: doubleAttemptAction.nextAttemptNumber,
+        reason: 'reason' in retryResult ? retryResult.reason : undefined,
+      },
+    };
+  }
+
   ghlPush = await pushSuccessfulTransferToGhl({
     callId,
     resultJson: attemptResultJson,
