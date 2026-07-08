@@ -11,6 +11,7 @@ import {
   updateCallWindowSettings,
 } from "./lib/call-window.js";
 import { startGhlSecondAttemptWorker } from "./lib/ghl-second-attempt-worker.js";
+import { startCallMetricsSyncWorker } from "./lib/call-metrics-sync-worker.js";
 import { evaluateRoundRobinFailoverWindow } from "./lib/round-robin-window.js";
 
 // Import route modules
@@ -4009,10 +4010,12 @@ app.get("/api/recordings/:recordingSid", async (req, res) => {
 });
 
 const stopGhlSecondAttemptWorker = startGhlSecondAttemptWorker();
+const stopCallMetricsSyncWorker = startCallMetricsSyncWorker();
 
 function shutdown(signal: string) {
   console.log(`Received ${signal}, shutting down...`);
   stopGhlSecondAttemptWorker();
+  stopCallMetricsSyncWorker();
   prisma.$disconnect().catch((error) => {
     console.error("Failed to disconnect Prisma cleanly", error);
   }).finally(() => {
