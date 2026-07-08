@@ -29,6 +29,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { fetchAllData, fetchRecent, fetchCallDetail, syncCallDetail } from './src/lib/api';
+import { consolidateContactAttempts } from './src/lib/contact-attempts';
 import {
   buildRoundRobinAttempts,
   formatRoundRobinAttemptStatus,
@@ -213,70 +214,6 @@ const RetryBadge: React.FC<{ label: string }> = ({ label }) => (
   </span>
 );
 
-const buildFlowLabel = (primary: RecentCall, retry?: RecentCall | null): string => {
-  if (retry) {
-    if (retry.outcome === 'transfer_success' || retry.outcome === 'completed') return 'Segunda llamada completada';
-    if (retry.outcome === 'voicemail' || retry.outcome === 'abandoned' || retry.outcome === 'failed') return 'Segunda llamada sin exito';
-    return 'Segunda llamada en curso';
-  }
-  if (primary.ghlRetryStatus === 'retry_pending') return 'Segunda llamada pendiente';
-  if (primary.ghlRetryTriggered) return 'Segunda llamada en curso';
-  return 'Sin segunda llamada';
-};
-
-const consolidateRecentCalls = (calls: RecentCall[]): RecentCall[] => {
-  const groups = new Map<string, { primary: RecentCall; retry: RecentCall | null }>();
-
-  calls.forEach((call) => {
-    const groupKey = call.ghlRootAttemptId ?? call.attemptId ?? call.callId;
-    const current = groups.get(groupKey);
-    if (!current) {
-      groups.set(groupKey, { primary: call, retry: call.ghlIsRetryAttempt ? call : null });
-      return;
-    }
-
-    if (call.ghlIsRetryAttempt) {
-      current.retry = call;
-      return;
-    }
-
-    current.primary = call;
-  });
-
-  return Array.from(groups.values())
-    .map(({ primary, retry }) => {
-      const display = primary.ghlIsRetryAttempt && retry ? retry : primary;
-      const base = primary.ghlIsRetryAttempt && retry ? retry : primary;
-      const timeline = [
-        {
-          label: 'Intento 1',
-          outcome: primary.ghlIsRetryAttempt ? null : primary.outcome,
-          callId: primary.callId,
-        },
-        retry
-          ? {
-              label: 'Intento 2',
-              outcome: retry.outcome,
-              callId: retry.callId,
-            }
-          : null,
-      ].filter((item): item is { label: string; outcome: string | null; callId: string } => !!item);
-
-      return {
-        ...base,
-        ghlFlowLabel: buildFlowLabel(primary, retry),
-        ghlAttemptTimeline: timeline,
-        ghlRetryLabel: retry ? buildFlowLabel(primary, retry) : primary.ghlRetryLabel,
-        ghlIsRetryAttempt: false,
-      };
-    })
-    .sort((a, b) => {
-      const left = new Date(a.startedAt ?? a.endedAt ?? 0).getTime();
-      const right = new Date(b.startedAt ?? b.endedAt ?? 0).getTime();
-      return right - left;
-    });
-};
-
 // --- Main Application ---
 
 export default function App() {
@@ -435,7 +372,7 @@ export default function App() {
   // Filter Logic
   const filteredCalls = useMemo(() => {
     if (!data) return [];
-    const consolidated = consolidateRecentCalls(data.recent);
+    const consolidated = consolidateContactAttempts(data.recent);
 
     const filtered = consolidated.filter(call => {
       // Search Filter

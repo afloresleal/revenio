@@ -506,12 +506,15 @@ function consolidateAdminCalls(calls = []) {
     current.primary = call;
   });
 
-  return Array.from(groups.values()).map(({ primary, retry }) => ({
-    ...primary,
-    retryStatus: buildAdminFlowStatus(primary, retry),
-    attemptNumber: primary.attemptNumber || 1,
-    maxAttempts: retry ? Math.max(primary.maxAttempts || 2, retry.maxAttempts || 2) : primary.maxAttempts,
-  }));
+  return Array.from(groups.values()).map(({ primary, retry }) => {
+    const base = retry || primary;
+    return {
+      ...base,
+      retryStatus: buildAdminFlowStatus(primary, retry),
+      attemptNumber: primary.attemptNumber || 1,
+      maxAttempts: retry ? Math.max(primary.maxAttempts || 2, retry.maxAttempts || 2) : primary.maxAttempts,
+    };
+  });
 }
 
 function clearCampaignFieldErrors() {
