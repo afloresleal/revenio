@@ -138,34 +138,7 @@ function sanitizeName(name: string): string {
     .slice(0, 80);
 }
 
-/**
- * Builds a Vapi hook to automatically trigger warm transfer after firstMessage.
- * Unlike blind-transfer, warm-transfer respects AMD and enables failover.
- * Transfer destination is obtained dynamically via transfer-destination-request webhook.
- */
-export function buildImmediateWarmTransferHook(): Record<string, unknown> {
-  return {
-    on: 'call.timeElapsed',
-    options: { seconds: 12 }, // After firstMessage completes (~12 sec)
-    do: [
-      {
-        type: 'tool',
-        tool: {
-          type: 'transferCall',
-          destinations: [], // No hardcoded destination - uses webhook
-          messages: [
-            {
-              type: 'request-failed',
-              content: 'I apologize, our specialists are currently busy. We will call you back within 30 minutes. Thank you!',
-            },
-          ],
-        },
-      },
-    ],
-  };
-}
-
-function buildAssistantOverrides(
+export function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
   attemptId: string,
@@ -179,13 +152,6 @@ function buildAssistantOverrides(
   if (agentName) variableValues.agent_name = agentName;
   const overrides: Record<string, unknown> = { metadata };
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
-
-  // Auto-trigger warm transfer after firstMessage completes
-  // Uses warm-transfer mode to enable AMD and failover (unlike blind-transfer)
-  // Transfer destination obtained dynamically via transfer-destination-request webhook
-  if (transferNumber) {
-    overrides.hooks = [buildImmediateWarmTransferHook()];
-  }
 
   return overrides;
 }
