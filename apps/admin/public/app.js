@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 const LOCAL_API_BASE_URL = "http://localhost:3000";
 const STAGING_API_BASE_URL = "https://revenioapi-staging.up.railway.app";
 const PRODUCTION_API_BASE_URL = "https://revenioapi-production.up.railway.app";
+const CDMX_TIMEZONE = "America/Mexico_City";
 
 const fields = [
   "client_name",
@@ -197,6 +198,22 @@ function getTwilioProxyUrl(twilioUrl) {
     return `${apiUrl}/api/recordings/${match[1]}`;
   }
   return twilioUrl; // Fallback to original if can't parse
+}
+
+function formatDateTimeCDMX(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString("es-MX", {
+    timeZone: CDMX_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
 }
 
 function setStatus(message) {
@@ -464,6 +481,8 @@ function renderCallsTable(columns = [], calls = []) {
         link.rel = "noopener noreferrer";
         link.textContent = "Abrir recording";
         td.appendChild(link);
+      } else if (column.key === "startedAt") {
+        td.textContent = formatDateTimeCDMX(value);
       } else {
         td.textContent = value;
       }
