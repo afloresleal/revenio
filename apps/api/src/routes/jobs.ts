@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
+import { isAuthorizedJobRequest } from '../lib/jobs-auth.js';
 import { processPendingGhlSecondAttempts } from './webhooks.js';
 
 const router = Router();
@@ -12,6 +13,7 @@ const router = Router();
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? '';
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? '';
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const JOBS_API_KEY = process.env.JOBS_API_KEY ?? '';
 const SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN = Number(process.env.SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN ?? 180);
 
 interface TwilioCall {
@@ -30,6 +32,28 @@ function parseBoolean(value: unknown): boolean {
   if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
   return false;
 }
+
+function getQueryKey(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+router.use((req, res, next) => {
+  const authorized = isAuthorizedJobRequest({
+    jobsApiKey: JOBS_API_KEY,
+    authorizationHeader: req.header('authorization') ?? undefined,
+    queryKey: getQueryKey(req.query.key ?? req.body?.key),
+  });
+
+  if (!authorized) {
+    return res.status(401).json({
+      ok: false,
+      error: 'unauthorized',
+      message: 'invalid jobs api key',
+    });
+  }
+
+  next();
+});
 
 interface TwilioCallsResponse {
   calls: TwilioCall[];

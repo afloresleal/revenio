@@ -10,6 +10,8 @@ import {
   resetCallWindowSettings,
   updateCallWindowSettings,
 } from "./lib/call-window.js";
+import { startGhlSecondAttemptWorker } from "./lib/ghl-second-attempt-worker.js";
+import { startCallMetricsSyncWorker } from "./lib/call-metrics-sync-worker.js";
 import { evaluateRoundRobinFailoverWindow } from "./lib/round-robin-window.js";
 
 // Import route modules
@@ -26,6 +28,7 @@ import {
   selectCampaignTestTransfer,
 } from "./lib/ghl-campaigns.js";
 import { findDuplicateGhlUserIds } from "./lib/ghl-agents.js";
+import { extractGhlDoubleAttemptLink, summarizeGhlDoubleAttemptVisibility } from "./lib/ghl-double-attempt.js";
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from "./lib/round-robin-resolution.js";
 import { classifyTransferAnswer } from "./lib/transfer-failover.js";
 import { normalizeMetricClassification } from "./lib/metric-classification.js";
@@ -2842,6 +2845,8 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
   return attempts.map((attempt) => {
     const result = adminRecord(attempt.resultJson);
     const integration = adminRecord(result?.ghlIntegration);
+    const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(result);
+    const doubleAttemptLink = extractGhlDoubleAttemptLink(result, attempt.id);
     const roundRobin = adminRecord(result?.roundRobin);
     const selectedAgent = adminRecord(result?.selected_agent);
     const metric = attempt.providerId ? metricsByCallId.get(attempt.providerId) : null;
@@ -2893,12 +2898,21 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       "";
 
     return {
+      attemptId: attempt.id,
+      callId: attempt.providerId ?? "",
+      rootAttemptId: doubleAttemptLink.rootAttemptId,
+      previousAttemptId: doubleAttemptLink.previousAttemptId,
+      retryAttemptId: doubleAttemptLink.retryAttemptId,
+      isRetryAttempt: doubleAttemptLink.isRetryAttempt,
       campaignName: adminString(integration?.campaignName) ?? campaign.name,
       campaignId: adminString(integration?.campaignId) ?? campaign.campaignId,
       startedAt,
       leadName: attempt.lead?.name ?? "",
       phone: attempt.lead?.phone ?? metric?.phoneNumber ?? "",
       outcome,
+      retryStatus: doubleAttemptVisibility?.label ?? "",
+      attemptNumber: doubleAttemptVisibility?.attemptNumber ?? null,
+      maxAttempts: doubleAttemptVisibility?.maxAttempts ?? null,
       sentiment: metric?.sentiment ?? "",
       assignedTo: adminString(integration?.assignedTo) ?? adminString(result?.assignedTo) ?? "",
       firstAgentName:
@@ -3401,7 +3415,7 @@ app.get("/api/admin/ghl-campaigns/:id/calls", async (req, res) => {
     campaignId: campaign.campaignId,
     summary,
     columns: CAMPAIGN_CALL_EXPORT_COLUMNS,
-    calls: buildCampaignCallExportRows(rows),
+    calls: rows,
     count: rows.length,
   });
 });
@@ -3994,6 +4008,23 @@ app.get("/api/recordings/:recordingSid", async (req, res) => {
     return res.status(500).json({ error: 'Failed to proxy recording' });
   }
 });
+
+const stopGhlSecondAttemptWorker = startGhlSecondAttemptWorker();
+const stopCallMetricsSyncWorker = startCallMetricsSyncWorker();
+
+function shutdown(signal: string) {
+  console.log(`Received ${signal}, shutting down...`);
+  stopGhlSecondAttemptWorker();
+  stopCallMetricsSyncWorker();
+  prisma.$disconnect().catch((error) => {
+    console.error("Failed to disconnect Prisma cleanly", error);
+  }).finally(() => {
+    process.exit(0);
+  });
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);

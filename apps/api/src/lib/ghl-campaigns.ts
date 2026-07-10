@@ -67,12 +67,21 @@ export type CampaignTestTransfer = {
 };
 
 export type CampaignCallRow = {
+  attemptId?: string | null;
+  callId?: string | null;
+  rootAttemptId?: string | null;
+  previousAttemptId?: string | null;
+  retryAttemptId?: string | null;
+  isRetryAttempt?: boolean | null;
   campaignName?: string | null;
   campaignId?: string | null;
   startedAt?: Date | string | null;
   leadName?: string | null;
   phone?: string | null;
   outcome?: string | null;
+  retryStatus?: string | null;
+  attemptNumber?: number | null;
+  maxAttempts?: number | null;
   sentiment?: string | null;
   assignedTo?: string | null;
   firstAgentName?: string | null;
@@ -289,6 +298,9 @@ export const CAMPAIGN_CALL_EXPORT_COLUMNS: CampaignCallExportColumn[] = [
   { key: "leadName", label: "lead_name" },
   { key: "phone", label: "lead_phone" },
   { key: "outcome", label: "outcome" },
+  { key: "retryStatus", label: "intentos_contacto" },
+  { key: "attemptNumber", label: "attempt_number" },
+  { key: "maxAttempts", label: "max_attempts" },
   { key: "sentiment", label: "sentiment" },
   { key: "firstAgentName", label: "first_agent" },
   { key: "answeredAgentName", label: "answered_agent" },

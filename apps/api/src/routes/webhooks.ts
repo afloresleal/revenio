@@ -15,6 +15,7 @@ import { evaluateRoundRobinFailoverWindow } from '../lib/round-robin-window.js';
 import {
   createInitialGhlDoubleAttemptState,
   decideGhlDoubleAttemptAction,
+  deriveOutcomeFromVapiSnapshot,
   shouldProcessPersistedGhlSecondAttempt,
 } from '../lib/ghl-double-attempt.js';
 import {
@@ -137,34 +138,7 @@ function sanitizeName(name: string): string {
     .slice(0, 80);
 }
 
-/**
- * Builds a Vapi hook to automatically trigger warm transfer after firstMessage.
- * Unlike blind-transfer, warm-transfer respects AMD and enables failover.
- * Transfer destination is obtained dynamically via transfer-destination-request webhook.
- */
-export function buildImmediateWarmTransferHook(): Record<string, unknown> {
-  return {
-    on: 'call.timeElapsed',
-    options: { seconds: 12 }, // After firstMessage completes (~12 sec)
-    do: [
-      {
-        type: 'tool',
-        tool: {
-          type: 'transferCall',
-          destinations: [], // No hardcoded destination - uses webhook
-          messages: [
-            {
-              type: 'request-failed',
-              content: 'I apologize, our specialists are currently busy. We will call you back within 30 minutes. Thank you!',
-            },
-          ],
-        },
-      },
-    ],
-  };
-}
-
-function buildAssistantOverrides(
+export function buildAssistantOverrides(
   safeName: string | null,
   leadId: string,
   attemptId: string,
@@ -178,13 +152,6 @@ function buildAssistantOverrides(
   if (agentName) variableValues.agent_name = agentName;
   const overrides: Record<string, unknown> = { metadata };
   if (Object.keys(variableValues).length) overrides.variableValues = variableValues;
-
-  // Auto-trigger warm transfer after firstMessage completes
-  // Uses warm-transfer mode to enable AMD and failover (unlike blind-transfer)
-  // Transfer destination obtained dynamically via transfer-destination-request webhook
-  if (transferNumber) {
-    overrides.hooks = [buildImmediateWarmTransferHook()];
-  }
 
   return overrides;
 }
@@ -558,7 +525,13 @@ async function upsertDashboardMetricFromVapiCall(params: {
   const endedReason = asString(params.data.endedReason) ?? null;
   const startedAt = parseDateValue(params.data.startedAt) ?? parseDateValue(params.data.createdAt) ?? new Date();
   const endedAt = parseDateValue(params.data.endedAt) ?? parseDateValue(params.data.updatedAt);
-  const isEnded = status === 'ended' || Boolean(endedReason || endedAt);
+  const derivedSnapshot = deriveOutcomeFromVapiSnapshot({
+    status,
+    endedReason,
+    transferredAt: asString(params.data.transferredAt),
+    endedAt: endedAt?.toISOString() ?? null,
+  });
+  const isEnded = derivedSnapshot.isEnded;
   const duration = asNumber(params.data.duration);
   const artifact = asRecord(params.data.artifact);
   const transcript =
@@ -567,6 +540,14 @@ async function upsertDashboardMetricFromVapiCall(params: {
     buildTranscriptFromMessages(params.data.messages) ??
     null;
   const cost = asNumber(params.data.cost);
+  const outcome = derivedSnapshot.outcome === 'in_progress' ? 'in_progress' : derivedSnapshot.outcome;
+  const sentiment = derivedSnapshot.outcome === 'in_progress'
+    ? undefined
+    : deriveSentiment({
+        outcome,
+        durationSec: duration ? Math.max(0, Math.round(duration)) : null,
+        endedReason,
+      });
 
   await prisma.callMetric.upsert({
     where: { callId },
@@ -579,8 +560,8 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration ? Math.max(0, Math.round(duration)) : undefined,
       endedReason,
-      outcome: isEnded ? 'completed' : 'in_progress',
-      sentiment: isEnded ? 'neutral' : undefined,
+      outcome,
+      sentiment,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
       cost,
@@ -596,8 +577,8 @@ async function upsertDashboardMetricFromVapiCall(params: {
       endedAt: isEnded ? (endedAt ?? new Date()) : undefined,
       durationSec: duration ? Math.max(0, Math.round(duration)) : undefined,
       endedReason,
-      outcome: isEnded ? 'completed' : 'in_progress',
-      sentiment: isEnded ? 'neutral' : undefined,
+      outcome,
+      sentiment,
       transcript: transcript ?? undefined,
       recordingUrl: extractVapiRecordingUrl(params.data) ?? undefined,
       cost,
@@ -1920,6 +1901,78 @@ async function startVapiCallFromGhlWebhook(input: z.infer<typeof ghlOpportunityA
     transferNumber: selectedTransfer.transferNumber,
     lastEventType: 'call-created',
   });
+
+  const initialSnapshotOutcome = deriveOutcomeFromVapiSnapshot({
+    status: asString(data?.status),
+    endedReason: asString(data?.endedReason),
+    transferredAt: asString(data?.transferredAt),
+    endedAt: asString(data?.endedAt) ?? asString(data?.updatedAt),
+  });
+  if (initialSnapshotOutcome.isEnded) {
+    const doubleAttemptAction = decideGhlDoubleAttemptAction({
+      outcome: initialSnapshotOutcome.outcome,
+      resultJson: {
+        ghlIntegration: {
+          locationId,
+          propertyKey: property.key,
+          campaignId: campaign?.campaignId ?? requestedCampaignId ?? null,
+          campaignKey: campaign?.key ?? null,
+          campaignName: campaign?.name ?? null,
+          opportunityId,
+          contactId: contactId ?? null,
+          pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
+          triggerStageId: stageId ?? null,
+          connectedStageId: property.connectedStageId ?? null,
+          customFieldIds: {
+            outcome: property.outcomeFieldId ?? null,
+            sellerTalkSec: property.sellerTalkFieldId ?? null,
+            recordingUrl: property.recordingUrlFieldId ?? null,
+          },
+        },
+        ghlDoubleAttempt: {
+          ...createInitialGhlDoubleAttemptState(),
+          rootAttemptId: attempt.id,
+        },
+      },
+    });
+
+    if (doubleAttemptAction.action === 'schedule_retry' && typeof data.id === 'string') {
+      await scheduleGhlSecondAttempt({
+        attemptId: attempt.id,
+        leadId: lead.id,
+        resultJson: {
+          transferNumber: selectedTransfer.transferNumber,
+          assistantId: resolvedVapiAssistantId,
+          vapiPhoneNumberId: resolvedVapiPhoneNumberId,
+          ghlIntegration: {
+            locationId,
+            propertyKey: property.key,
+            campaignId: campaign?.campaignId ?? requestedCampaignId ?? null,
+            campaignKey: campaign?.key ?? null,
+            campaignName: campaign?.name ?? null,
+            opportunityId,
+            contactId: contactId ?? null,
+            pipelineId: input.pipeline?.id ?? input.pipelineId ?? null,
+            triggerStageId: stageId ?? null,
+            connectedStageId: property.connectedStageId ?? null,
+            customFieldIds: {
+              outcome: property.outcomeFieldId ?? null,
+              sellerTalkSec: property.sellerTalkFieldId ?? null,
+              recordingUrl: property.recordingUrlFieldId ?? null,
+            },
+          },
+          ghlDoubleAttempt: {
+            ...createInitialGhlDoubleAttemptState(),
+            rootAttemptId: attempt.id,
+          },
+        },
+        callId: data.id,
+        firstOutcome: initialSnapshotOutcome.outcome,
+        retryDelayMs: doubleAttemptAction.retryDelayMs,
+        nextAttemptNumber: doubleAttemptAction.nextAttemptNumber,
+      });
+    }
+  }
 
   return {
     ok: true,

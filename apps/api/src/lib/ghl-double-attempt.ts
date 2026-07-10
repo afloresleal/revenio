@@ -6,6 +6,28 @@ export type GhlDoubleAttemptState = {
   scheduledAt?: string | null;
   retryProcessedAt?: string | null;
   retryAttemptId?: string | null;
+  previousAttemptId?: string | null;
+  rootAttemptId?: string | null;
+};
+
+export type GhlDoubleAttemptVisibility = {
+  enabled: boolean;
+  attemptNumber: number;
+  maxAttempts: number;
+  isRetryAttempt: boolean;
+  retryScheduled: boolean;
+  retryTriggered: boolean;
+  status: "single_attempt" | "retry_pending" | "retry_triggered" | "retry_attempt";
+  label: string | null;
+};
+
+export type GhlDoubleAttemptLink = {
+  attemptId: string;
+  rootAttemptId: string;
+  retryAttemptId: string | null;
+  previousAttemptId: string | null;
+  attemptNumber: number;
+  isRetryAttempt: boolean;
 };
 
 export type GhlDoubleAttemptAction =
@@ -21,6 +43,9 @@ export type GhlDoubleAttemptAction =
 const DEFAULT_MAX_ATTEMPTS = 2;
 const DEFAULT_RETRY_DELAY_MS = 30_000;
 const RECOVERABLE_OUTCOMES = new Set(["voicemail", "no-answer"]);
+const VOICEMAIL_REASONS = new Set(["no-answer", "voicemail-beep", "voicemail", "customer-did-not-answer"]);
+const ABANDONED_REASONS = new Set(["timeout", "customer-busy", "system-error"]);
+const NORMAL_END_REASONS = new Set(["customer-ended-call", "assistant-ended-call", "completed"]);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -32,6 +57,45 @@ function asBoolean(value: unknown): boolean | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+export function deriveOutcomeFromVapiSnapshot(params: {
+  status: string | null | undefined;
+  endedReason: string | null | undefined;
+  transferredAt: string | null | undefined;
+  endedAt?: string | null | undefined;
+}): { isEnded: boolean; outcome: "in_progress" | "transfer_success" | "voicemail" | "abandoned" | "completed" } {
+  const status = params.status?.trim().toLowerCase() ?? null;
+  const endedReason = params.endedReason?.trim() ?? null;
+  const hasTransferredAt = Boolean(asString(params.transferredAt));
+  const hasEndedAt = Boolean(asString(params.endedAt));
+  const isEnded = status === "ended" || Boolean(endedReason || hasEndedAt);
+
+  if (!isEnded) {
+    return { isEnded: false, outcome: "in_progress" };
+  }
+
+  if (hasTransferredAt) {
+    return { isEnded: true, outcome: "transfer_success" };
+  }
+
+  if (endedReason && VOICEMAIL_REASONS.has(endedReason)) {
+    return { isEnded: true, outcome: "voicemail" };
+  }
+
+  if (endedReason && ABANDONED_REASONS.has(endedReason)) {
+    return { isEnded: true, outcome: "abandoned" };
+  }
+
+  if (endedReason && !NORMAL_END_REASONS.has(endedReason)) {
+    return { isEnded: true, outcome: "abandoned" };
+  }
+
+  return { isEnded: true, outcome: "completed" };
 }
 
 export function decideGhlDoubleAttemptAction(params: {
@@ -79,6 +143,134 @@ export function createInitialGhlDoubleAttemptState(): Required<
     maxAttempts: DEFAULT_MAX_ATTEMPTS,
     retryDelayMs: DEFAULT_RETRY_DELAY_MS,
   };
+}
+
+export function summarizeGhlDoubleAttemptVisibility(
+  resultJson: Record<string, unknown> | null | undefined,
+): GhlDoubleAttemptVisibility | null {
+  const state = asRecord(resultJson?.ghlDoubleAttempt);
+  if (!state) return null;
+
+  const enabled = asBoolean(state.enabled) ?? false;
+  if (!enabled) return null;
+
+  const attemptNumber = Math.max(1, asNumber(state.attemptNumber) ?? 1);
+  const maxAttempts = Math.max(1, asNumber(state.maxAttempts) ?? DEFAULT_MAX_ATTEMPTS);
+  const isRetryAttempt = attemptNumber > 1 || Boolean(asString(state.previousAttemptId));
+  const retryScheduled = Boolean(asString(state.scheduledAt)) && !Boolean(asString(state.retryAttemptId));
+  const retryTriggered = Boolean(asString(state.retryAttemptId) || asString(state.retryProcessedAt));
+
+  if (isRetryAttempt) {
+    return {
+      enabled,
+      attemptNumber,
+      maxAttempts,
+      isRetryAttempt,
+      retryScheduled,
+      retryTriggered,
+      status: "retry_attempt",
+      label: "Segundo intento",
+    };
+  }
+
+  if (retryScheduled) {
+    return {
+      enabled,
+      attemptNumber,
+      maxAttempts,
+      isRetryAttempt,
+      retryScheduled,
+      retryTriggered,
+      status: "retry_pending",
+      label: "Segundo intento pendiente",
+    };
+  }
+
+  if (retryTriggered) {
+    return {
+      enabled,
+      attemptNumber,
+      maxAttempts,
+      isRetryAttempt,
+      retryScheduled,
+      retryTriggered,
+      status: "retry_triggered",
+      label: "Segundo intento realizado",
+    };
+  }
+
+  return {
+    enabled,
+    attemptNumber,
+    maxAttempts,
+    isRetryAttempt,
+    retryScheduled,
+    retryTriggered,
+    status: "single_attempt",
+    label: null,
+  };
+}
+
+export function extractGhlDoubleAttemptLink(
+  resultJson: Record<string, unknown> | null | undefined,
+  attemptId: string,
+): GhlDoubleAttemptLink {
+  const state = asRecord(resultJson?.ghlDoubleAttempt);
+  const attemptNumber = Math.max(1, asNumber(state?.attemptNumber) ?? 1);
+  const rootAttemptId = asString(state?.rootAttemptId) ?? attemptId;
+  const previousAttemptId = asString(state?.previousAttemptId) ?? null;
+  const isRetryAttempt = attemptNumber > 1 || Boolean(previousAttemptId);
+
+  return {
+    attemptId,
+    rootAttemptId,
+    retryAttemptId: asString(state?.retryAttemptId) ?? null,
+    previousAttemptId,
+    attemptNumber,
+    isRetryAttempt,
+  };
+}
+
+export function summarizeGhlDoubleAttemptFlow(params: {
+  rootVisibility: GhlDoubleAttemptVisibility | null;
+  retryVisibility?: GhlDoubleAttemptVisibility | null;
+  retryOutcome?: string | null;
+}): {
+  hasRetry: boolean;
+  label:
+    | "Sin segunda llamada"
+    | "Segunda llamada pendiente"
+    | "Segunda llamada en curso"
+    | "Segunda llamada completada"
+    | "Segunda llamada sin exito";
+} {
+  const root = params.rootVisibility;
+  const retry = params.retryVisibility ?? null;
+  const retryOutcome = params.retryOutcome ?? null;
+
+  if (!root) {
+    return { hasRetry: false, label: "Sin segunda llamada" };
+  }
+
+  if (retry?.isRetryAttempt) {
+    if (retryOutcome === "transfer_success" || retryOutcome === "completed") {
+      return { hasRetry: true, label: "Segunda llamada completada" };
+    }
+    if (retryOutcome === "voicemail" || retryOutcome === "abandoned" || retryOutcome === "failed" || retryOutcome === "no-answer") {
+      return { hasRetry: true, label: "Segunda llamada sin exito" };
+    }
+    return { hasRetry: true, label: "Segunda llamada en curso" };
+  }
+
+  if (root.retryScheduled) {
+    return { hasRetry: true, label: "Segunda llamada pendiente" };
+  }
+
+  if (root.retryTriggered) {
+    return { hasRetry: true, label: "Segunda llamada en curso" };
+  }
+
+  return { hasRetry: false, label: "Sin segunda llamada" };
 }
 
 function parseDate(value: unknown): Date | null {

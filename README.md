@@ -158,6 +158,9 @@ RECORDING_DOWNLOAD_TIMEOUT_MS=45000
 SYNC_TRANSFER_DEFAULT_LOOKBACK_MIN=180
 METRICS_BACKFILL_LIMIT=100
 METRICS_BACKFILL_MAX_LIMIT=500
+JOBS_API_KEY=define-un-secret-compartido-para-crons-y-jobs
+GHL_SECOND_ATTEMPT_WORKER_ENABLED=true
+GHL_SECOND_ATTEMPT_WORKER_INTERVAL_MS=5000
 
 # Enlaces webhook generados por API
 WEBHOOK_BASE_URL=https://tu-api-publica
@@ -256,6 +259,11 @@ Base: `/api/jobs`
 
 - `POST /sync-transfer-metrics`
   - Query opcionales: `limit`, `lookback_minutes`, `dry_run`
+- `POST /process-ghl-second-attempts`
+  - Query opcionales: `limit`
+  - Si `JOBS_API_KEY` está definido, enviar `Authorization: Bearer <JOBS_API_KEY>`
+  - Fallback compatible con scheduler: `?key=<JOBS_API_KEY>` si no puedes mandar headers
+  - Uso principal hoy: endpoint manual/debug; el flujo normal ya puede procesarse con worker interno
 
 ### Webhooks
 Base: `/webhooks`
@@ -338,6 +346,22 @@ Checklist post-deploy:
 2. Ejecutar llamada de prueba (`/call/test/direct`)
 3. Verificar registros en `/lab/history`
 4. Validar panel en `/api/metrics/summary` y `/api/metrics/recent`
+5. Si usas doble intento GHL, verificar que `GHL_SECOND_ATTEMPT_WORKER_ENABLED=true`
+
+### Worker interno para doble intento GHL
+
+El segundo intento ya puede ejecutarse desde el propio API:
+
+- Persistencia: `CallAttempt.resultJson`
+- Ejecutor: worker interno con polling
+- Seguridad multi-instancia: el claim del pendiente se hace en BD antes de procesar
+- Ajuste recomendado: `GHL_SECOND_ATTEMPT_WORKER_INTERVAL_MS=5000`
+
+El endpoint manual sigue disponible para debug:
+
+```bash
+curl -X POST "https://revenioapi-staging.up.railway.app/api/jobs/process-ghl-second-attempts?key=$JOBS_API_KEY"
+```
 
 ---
 

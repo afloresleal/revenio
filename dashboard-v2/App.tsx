@@ -29,6 +29,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { fetchAllData, fetchRecent, fetchCallDetail, syncCallDetail } from './src/lib/api';
+import { consolidateContactAttempts } from './src/lib/contact-attempts';
 import {
   buildRoundRobinAttempts,
   formatRoundRobinAttemptStatus,
@@ -82,7 +83,11 @@ interface DailyData {
 }
 
 interface RecentCall {
+  attemptId?: string | null;
   callId: string;
+  ghlRootAttemptId?: string | null;
+  ghlPreviousAttemptId?: string | null;
+  ghlRetryAttemptId?: string | null;
   leadName?: string | null;
   phone: string;
   campaignName?: string | null;
@@ -98,6 +103,18 @@ interface RecentCall {
   sellerTalkSec?: number | null;
   sellerTalkSource?: 'post_transfer_duration_sec' | 'timestamp_fallback' | 'missing';
   postTransferDurationSec?: number | null;
+  ghlAttemptNumber?: number | null;
+  ghlMaxAttempts?: number | null;
+  ghlRetryStatus?: 'single_attempt' | 'retry_pending' | 'retry_triggered' | 'retry_attempt' | null;
+  ghlRetryLabel?: string | null;
+  ghlIsRetryAttempt?: boolean;
+  ghlRetryTriggered?: boolean;
+  ghlFlowLabel?: string | null;
+  ghlAttemptTimeline?: Array<{
+    label: string;
+    outcome: string | null;
+    callId: string;
+  }>;
   ago: string;
   inProgress?: boolean;
 }
@@ -189,6 +206,12 @@ const SkeletonCard = () => (
     <div className="h-10 w-16 bg-slate-800 rounded mb-2"></div>
     <div className="h-4 w-32 bg-slate-800 rounded"></div>
   </div>
+);
+
+const RetryBadge: React.FC<{ label: string }> = ({ label }) => (
+  <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+    {label}
+  </span>
 );
 
 // --- Main Application ---
@@ -349,8 +372,9 @@ export default function App() {
   // Filter Logic
   const filteredCalls = useMemo(() => {
     if (!data) return [];
-    
-    const filtered = data.recent.filter(call => {
+    const consolidated = consolidateContactAttempts(data.recent);
+
+    const filtered = consolidated.filter(call => {
       // Search Filter
       if (debouncedSearch) {
         const term = debouncedSearch.trim().toLowerCase();
@@ -745,6 +769,13 @@ export default function App() {
     const detailFirstAgentResultRaw = asNonEmptyString(detail?.roundRobinFirstAgentResult);
     const detailFirstAgentName = asNonEmptyString(detail?.roundRobinFirstAgentName);
     const detailFirstAgentNumber = asNonEmptyString(detail?.roundRobinFirstAgentNumber);
+    const detailGhlAttemptNumber = asFiniteNumber(detail?.ghlAttemptNumber) ?? call.ghlAttemptNumber ?? null;
+    const detailGhlMaxAttempts = asFiniteNumber(detail?.ghlMaxAttempts) ?? call.ghlMaxAttempts ?? null;
+    const detailGhlRetryLabel = asNonEmptyString(detail?.ghlRetryLabel) ?? call.ghlRetryLabel ?? null;
+    const detailGhlRetryTriggered = asBoolean(detail?.ghlRetryTriggered) ?? call.ghlRetryTriggered ?? false;
+    const detailGhlIsRetryAttempt = asBoolean(detail?.ghlIsRetryAttempt) ?? call.ghlIsRetryAttempt ?? false;
+    const detailGhlFlowLabel = call.ghlFlowLabel ?? detailGhlRetryLabel;
+    const detailGhlAttemptTimeline = Array.isArray(call.ghlAttemptTimeline) ? call.ghlAttemptTimeline : [];
     const detailFailedAgents = Array.isArray(detail?.roundRobinFailedAgents)
       ? detail.roundRobinFailedAgents
           .map((agent) => {
@@ -840,6 +871,7 @@ export default function App() {
       <div className={`${inModal ? 'bg-transparent px-4 py-4' : 'border-t border-slate-800 bg-slate-950/50 px-3 py-3'}`}>
         <div className="mb-3 flex flex-wrap gap-2">
           <StatusBadge outcome={detailOutcome} />
+          {detailGhlFlowLabel && <RetryBadge label={detailGhlFlowLabel} />}
           {detailEndedReason && (
             <span className="inline-flex items-center rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
               Razón: {formatEndedReason(detailEndedReason)}
@@ -904,6 +936,30 @@ export default function App() {
             )}
             {fallbackOrderLabel && (
               <div className="text-[11px] text-amber-300 mt-1">Fallback final: {fallbackOrderLabel}</div>
+            )}
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
+            <div className="text-slate-500">Intentos de contacto</div>
+            {detailGhlFlowLabel && (
+              <div className="text-[11px] text-amber-300 mt-1">{detailGhlFlowLabel}</div>
+            )}
+            {!detailGhlRetryLabel && detailGhlRetryTriggered && (
+              <div className="text-[11px] text-amber-300 mt-1">Segunda llamada en curso</div>
+            )}
+            {detailGhlIsRetryAttempt && (
+              <div className="text-[11px] text-slate-500 mt-1">Esta llamada es la segunda llamada</div>
+            )}
+            {!detailGhlIsRetryAttempt && detailGhlRetryTriggered && (
+              <div className="text-[11px] text-slate-500 mt-1">Esta llamada generó una segunda llamada</div>
+            )}
+            {detailGhlAttemptTimeline.length > 0 && (
+              <div className="mt-2 space-y-1 text-[11px] text-slate-400">
+                {detailGhlAttemptTimeline.map((attempt) => (
+                  <div key={`${attempt.label}-${attempt.callId}`}>
+                    {attempt.label}: {attempt.outcome ?? 'sin dato'}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
           <div className="rounded-md border border-slate-800 bg-slate-900/80 p-2">
@@ -1257,7 +1313,10 @@ export default function App() {
                           <div className="min-w-0 text-left">
                             <div className="truncate text-sm text-slate-100">{call.leadName || 'Lead sin nombre'}</div>
                             <div className="font-mono text-sm text-slate-200">{call.phone}</div>
-                            <div className="text-[11px] text-slate-500">{call.ago}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                              <span className="text-slate-500">{call.ago}</span>
+                              {call.ghlFlowLabel && <RetryBadge label={call.ghlFlowLabel} />}
+                            </div>
                           </div>
                           <div className="hidden md:block min-w-0 text-left">
                             <div className="truncate text-sm text-slate-200">{call.campaignName || 'Sin campaña'}</div>

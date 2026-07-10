@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 const LOCAL_API_BASE_URL = "http://localhost:3000";
 const STAGING_API_BASE_URL = "https://revenioapi-staging.up.railway.app";
 const PRODUCTION_API_BASE_URL = "https://revenioapi-production.up.railway.app";
+const CDMX_TIMEZONE = "America/Mexico_City";
 
 const fields = [
   "client_name",
@@ -197,6 +198,22 @@ function getTwilioProxyUrl(twilioUrl) {
     return `${apiUrl}/api/recordings/${match[1]}`;
   }
   return twilioUrl; // Fallback to original if can't parse
+}
+
+function formatDateTimeCDMX(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString("es-MX", {
+    timeZone: CDMX_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
 }
 
 function setStatus(message) {
@@ -464,12 +481,58 @@ function renderCallsTable(columns = [], calls = []) {
         link.rel = "noopener noreferrer";
         link.textContent = "Abrir recording";
         td.appendChild(link);
+      } else if (column.key === "startedAt") {
+        td.textContent = formatDateTimeCDMX(value);
       } else {
         td.textContent = value;
       }
       row.appendChild(td);
     });
     callsTableBodyEl.appendChild(row);
+  });
+}
+
+function buildAdminFlowStatus(primary, retry) {
+  if (retry) {
+    if (retry.outcome === "transfer_success" || retry.outcome === "completed") return "Segunda llamada completada";
+    if (retry.outcome === "voicemail" || retry.outcome === "abandoned" || retry.outcome === "failed") return "Segunda llamada sin exito";
+    return "Segunda llamada en curso";
+  }
+  if (primary.retryStatus === "Segundo intento pendiente") return "Segunda llamada pendiente";
+  if (primary.retryStatus === "Segundo intento realizado") return "Segunda llamada en curso";
+  return "Sin segunda llamada";
+}
+
+function consolidateAdminCalls(calls = []) {
+  const groups = new Map();
+
+  calls.forEach((call) => {
+    const key = call.rootAttemptId || call.attemptId || call.callId || `${call.phone || ""}-${call.startedAt || ""}`;
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        primary: call,
+        retry: call.isRetryAttempt === true ? call : null,
+      });
+      return;
+    }
+
+    if (call.isRetryAttempt === true) {
+      current.retry = call;
+      return;
+    }
+
+    current.primary = call;
+  });
+
+  return Array.from(groups.values()).map(({ primary, retry }) => {
+    const base = retry || primary;
+    return {
+      ...base,
+      retryStatus: buildAdminFlowStatus(primary, retry),
+      attemptNumber: base.attemptNumber || primary.attemptNumber || 1,
+      maxAttempts: retry ? Math.max(primary.maxAttempts || 2, retry.maxAttempts || 2) : primary.maxAttempts,
+    };
   });
 }
 
@@ -957,9 +1020,10 @@ async function loadCalls() {
   setStatus("Cargando llamadas...");
   const data = await request("GET", `/api/admin/ghl-campaigns/${selectedCampaignId}/calls`);
   if (token !== callsLoadToken || campaignAtRequest !== selectedCampaign?.id) return;
+  const consolidatedCalls = consolidateAdminCalls(data.calls ?? []);
   renderCallsSummary(data.summary ?? null);
-  renderCallsTable(data.columns ?? [], data.calls ?? []);
-  setCallsFeedback(`${data.count ?? 0} llamadas cargadas para ${selectedCampaign.name}.`);
+  renderCallsTable(data.columns ?? [], consolidatedCalls);
+  setCallsFeedback(`${consolidatedCalls.length ?? 0} llamadas cargadas para ${selectedCampaign.name}.`);
   setStatus("Llamadas cargadas.");
 }
 

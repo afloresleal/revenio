@@ -54,7 +54,11 @@ export interface DailyData {
 }
 
 export interface RecentCall {
+  attemptId?: string | null;
   callId: string;
+  ghlRootAttemptId?: string | null;
+  ghlPreviousAttemptId?: string | null;
+  ghlRetryAttemptId?: string | null;
   leadName?: string | null;
   phone: string;
   campaignName?: string | null;
@@ -71,6 +75,12 @@ export interface RecentCall {
   sellerTalkSec?: number | null;
   sellerTalkSource?: 'post_transfer_duration_sec' | 'timestamp_fallback' | 'missing';
   postTransferDurationSec?: number | null;
+  ghlAttemptNumber?: number | null;
+  ghlMaxAttempts?: number | null;
+  ghlRetryStatus?: 'single_attempt' | 'retry_pending' | 'retry_triggered' | 'retry_attempt' | null;
+  ghlRetryLabel?: string | null;
+  ghlIsRetryAttempt?: boolean;
+  ghlRetryTriggered?: boolean;
   ago: string;
   inProgress: boolean;
 }

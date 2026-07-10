@@ -9,6 +9,7 @@ import { canTranscribeRecording, composeFullTranscript, transcribeRecordingFromU
 import { normalizeMetricClassification } from '../lib/metric-classification.js';
 import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmation.js';
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from '../lib/round-robin-resolution.js';
+import { extractGhlDoubleAttemptLink, summarizeGhlDoubleAttemptVisibility } from '../lib/ghl-double-attempt.js';
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
 
 const router = Router();
@@ -472,6 +473,358 @@ function parseBooleanFlag(value: unknown, defaultValue: boolean): boolean {
   if (raw === 'true' || raw === '1') return true;
   if (raw === 'false' || raw === '0') return false;
   return defaultValue;
+}
+
+type SyncMetricRecord = {
+  callId: string;
+  phoneNumber: string;
+  assistantId: string | null;
+  transferNumber: string | null;
+  startedAt: Date | null;
+  transferredAt: Date | null;
+  endedAt: Date | null;
+  durationSec: number | null;
+  endedReason: string | null;
+  transcript: string | null;
+  transferTranscript: string | null;
+  fullTranscript: string | null;
+  recordingUrl: string | null;
+  transferRecordingUrl: string | null;
+  transferRecordingDurationSec: number | null;
+  twilioParentCallSid: string | null;
+  twilioTransferCallSid: string | null;
+  transferStatus: string | null;
+  postTransferDurationSec: number | null;
+  outcome: string | null;
+  cost: unknown;
+};
+
+type SyncCallMetricResult = {
+  ok: true;
+  callId: string;
+  force: boolean;
+  updated: boolean;
+  updatedFields: string[];
+  metric: {
+    callId: string;
+    transcript: string | null;
+    recordingUrl: string | null;
+    durationSec: number | null;
+    startedAt: Date | null;
+    endedAt: Date | null;
+    updatedAt: Date;
+  } | null;
+};
+
+async function findSyncMetricRecord(callId: string): Promise<SyncMetricRecord | null> {
+  return prisma.callMetric.findUnique({
+    where: { callId },
+    select: {
+      callId: true,
+      phoneNumber: true,
+      assistantId: true,
+      transferNumber: true,
+      startedAt: true,
+      transferredAt: true,
+      endedAt: true,
+      durationSec: true,
+      endedReason: true,
+      transcript: true,
+      transferTranscript: true,
+      fullTranscript: true,
+      recordingUrl: true,
+      transferRecordingUrl: true,
+      transferRecordingDurationSec: true,
+      twilioParentCallSid: true,
+      twilioTransferCallSid: true,
+      transferStatus: true,
+      postTransferDurationSec: true,
+      outcome: true,
+      cost: true,
+    },
+  });
+}
+
+function buildCallMetricAutoSyncWhere(cutoff: Date) {
+  return {
+    inProgress: false,
+    AND: [
+      {
+        OR: [
+          { endedAt: { gte: cutoff } },
+          { updatedAt: { gte: cutoff } },
+        ],
+      },
+      {
+        OR: [
+          {
+            twilioParentCallSid: { not: null },
+            transferRecordingUrl: null,
+          },
+          {
+            twilioParentCallSid: { not: null },
+            transferRecordingDurationSec: null,
+          },
+          {
+            twilioParentCallSid: { not: null },
+            postTransferDurationSec: null,
+          },
+          {
+            twilioParentCallSid: { not: null },
+            twilioTransferCallSid: null,
+          },
+          {
+            twilioParentCallSid: { not: null },
+            OR: [
+              { fullTranscript: null },
+              { fullTranscript: '' },
+            ],
+          },
+          {
+            durationSec: null,
+          },
+          {
+            endedAt: null,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export async function syncCallMetricById(params: {
+  callId: string;
+  apiKey?: string;
+  force?: boolean;
+}): Promise<SyncCallMetricResult> {
+  const callId = params.callId.trim();
+  const apiKey = params.apiKey || VAPI_API_KEY;
+  const force = params.force ?? false;
+
+  if (!callId) {
+    throw new Error('invalid_call_id');
+  }
+
+  if (!apiKey) {
+    throw new Error('missing_vapi_config');
+  }
+
+  const metric = await findSyncMetricRecord(callId);
+  if (!metric) {
+    throw new Error(`call_not_found:${callId}`);
+  }
+
+  const vapiResponse = await fetch(`https://api.vapi.ai/call/${callId}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  const payload = await vapiResponse.json().catch(() => ({}));
+  if (!vapiResponse.ok) {
+    const message = asString(asRecord(payload)?.message) || 'lookup failed';
+    throw new Error(`vapi_call_lookup_failed:${vapiResponse.status}:${message}`);
+  }
+
+  const snapshot = extractCallSnapshotFromVapiPayload(payload);
+  if (!snapshot) {
+    throw new Error('invalid_vapi_payload');
+  }
+
+  const patch = force
+    ? {
+        phoneNumber: snapshot.phoneNumber ?? metric.phoneNumber,
+        assistantId: snapshot.assistantId ?? metric.assistantId,
+        transferNumber: snapshot.transferNumber ?? metric.transferNumber,
+        startedAt: snapshot.startedAt ?? metric.startedAt,
+        transferredAt: snapshot.transferredAt ?? metric.transferredAt,
+        endedAt: snapshot.endedAt ?? metric.endedAt,
+        durationSec: snapshot.durationSec ?? metric.durationSec,
+        endedReason: snapshot.endedReason ?? metric.endedReason,
+        transcript: snapshot.transcript ?? metric.transcript,
+        recordingUrl: snapshot.recordingUrl ?? metric.recordingUrl,
+        cost: snapshot.cost ?? metric.cost,
+      }
+    : buildMetricPatch(metric, snapshot);
+  const updatedFields = [...Object.keys(patch)];
+
+  if (Object.keys(patch).length) {
+    await prisma.callMetric.update({
+      where: { callId },
+      data: patch,
+    });
+  }
+
+  if (canUseTwilioSync()) {
+    let nextChildCallSid = metric.twilioTransferCallSid;
+    if (!nextChildCallSid && metric.twilioParentCallSid) {
+      const childCalls = await fetchTwilioChildCalls(metric.twilioParentCallSid);
+      const picked = pickTransferChild(childCalls, metric.transferNumber ?? snapshot.transferNumber ?? null);
+      nextChildCallSid = asString(picked?.sid) ?? null;
+    }
+
+    if (nextChildCallSid) {
+      const rec = await fetchTwilioLatestRecording(nextChildCallSid);
+      const recFromParent =
+        !rec.recordingUrl && metric.twilioParentCallSid
+          ? await fetchTwilioLatestRecording(metric.twilioParentCallSid)
+          : { recordingUrl: null, recordingDurationSec: null };
+      const effectiveRecordingUrl = rec.recordingUrl ?? recFromParent.recordingUrl;
+      const effectiveRecordingDurationSec = rec.recordingDurationSec ?? recFromParent.recordingDurationSec;
+      if (effectiveRecordingUrl) {
+        const nextTransferTranscript =
+          metric.transferTranscript ||
+          (canTranscribeRecording()
+            ? (await transcribeRecordingFromUrl(effectiveRecordingUrl)).text
+            : null);
+        const nextFullTranscript = composeFullTranscript(
+          metric.transcript ?? snapshot.transcript ?? null,
+          nextTransferTranscript
+        );
+
+        await prisma.callMetric.update({
+          where: { callId },
+          data: {
+            twilioTransferCallSid: nextChildCallSid,
+            transferRecordingUrl: effectiveRecordingUrl,
+            transferRecordingDurationSec: effectiveRecordingDurationSec ?? metric.transferRecordingDurationSec ?? undefined,
+            postTransferDurationSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? undefined,
+            transferTranscript: nextTransferTranscript ?? undefined,
+            fullTranscript: nextFullTranscript ?? undefined,
+            transferStatus: metric.transferStatus ?? 'completed',
+            lastEventType: 'manual-sync-twilio-transfer-recording',
+            lastEventAt: new Date(),
+          },
+        });
+        updatedFields.push(
+          'twilioTransferCallSid',
+          'transferRecordingUrl',
+          'transferRecordingDurationSec',
+          'postTransferDurationSec',
+          'transferTranscript',
+          'fullTranscript',
+          'transferStatus',
+        );
+        if (shouldPromoteLateTransferSuccess({
+          currentOutcome: metric.outcome,
+          postTransferDurationSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? null,
+        })) {
+          const attempt = await prisma.callAttempt.findFirst({
+            where: { providerId: callId },
+            orderBy: { createdAt: 'desc' },
+            select: { resultJson: true },
+          });
+          await prisma.callMetric.update({
+            where: { callId },
+            data: {
+              outcome: 'transfer_success',
+              sentiment: 'positive',
+            },
+          });
+          updatedFields.push('outcome', 'sentiment');
+          await pushSuccessfulTransferToGhl({
+            callId,
+            resultJson: asRecord(attempt?.resultJson),
+            transferNumber: metric.transferNumber,
+            transcript: nextFullTranscript ?? metric.fullTranscript ?? metric.transferTranscript ?? metric.transcript ?? null,
+            outcome: 'transfer_success',
+            sellerTalkSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? null,
+            recordingUrl: effectiveRecordingUrl ?? metric.transferRecordingUrl ?? metric.recordingUrl ?? null,
+          });
+        }
+      }
+    }
+  }
+
+  const updatedMetric = await prisma.callMetric.findUnique({
+    where: { callId },
+    select: {
+      callId: true,
+      transcript: true,
+      recordingUrl: true,
+      durationSec: true,
+      startedAt: true,
+      endedAt: true,
+      updatedAt: true,
+    },
+  });
+
+  return {
+    ok: true,
+    callId,
+    force,
+    updated: updatedFields.length > 0,
+    updatedFields: [...new Set(updatedFields)],
+    metric: updatedMetric,
+  };
+}
+
+export async function syncRecentIncompleteCallMetrics(params?: {
+  limit?: number;
+  lookbackMinutes?: number;
+  apiKey?: string;
+  force?: boolean;
+}) {
+  const limit = Math.max(1, Math.min(Number(params?.limit ?? 25), 100));
+  const lookbackMinutes = Math.max(5, Math.min(Number(params?.lookbackMinutes ?? 180), 24 * 60));
+  const cutoff = new Date(Date.now() - lookbackMinutes * 60 * 1000);
+  const apiKey = params?.apiKey || VAPI_API_KEY;
+  const force = params?.force ?? false;
+
+  if (!apiKey) {
+    return {
+      ok: false as const,
+      reason: 'missing_vapi_config',
+      processed: 0,
+      total: 0,
+      updated: 0,
+      failed: 0,
+      lookbackMinutes,
+      results: [] as Array<{ callId: string; status: 'failed'; reason: string }>,
+    };
+  }
+
+  const candidates = await prisma.callMetric.findMany({
+    where: buildCallMetricAutoSyncWhere(cutoff) as any,
+    orderBy: [{ updatedAt: 'desc' }, { endedAt: 'desc' }],
+    take: limit,
+    select: { callId: true },
+  });
+
+  const results: Array<{
+    callId: string;
+    status: 'updated' | 'skipped' | 'failed';
+    updatedFields?: string[];
+    reason?: string;
+  }> = [];
+
+  for (const candidate of candidates) {
+    try {
+      const result = await syncCallMetricById({
+        callId: candidate.callId,
+        apiKey,
+        force,
+      });
+      results.push({
+        callId: candidate.callId,
+        status: result.updated || result.updatedFields.length > 0 ? 'updated' : 'skipped',
+        updatedFields: result.updatedFields,
+      });
+    } catch (error) {
+      results.push({
+        callId: candidate.callId,
+        status: 'failed',
+        reason: String(error),
+      });
+    }
+  }
+
+  return {
+    ok: true as const,
+    lookbackMinutes,
+    total: candidates.length,
+    processed: results.length,
+    updated: results.filter((result) => result.status === 'updated').length,
+    failed: results.filter((result) => result.status === 'failed').length,
+    results,
+  };
 }
 
 // Helper: Get date range for period
@@ -1030,8 +1383,14 @@ router.get('/recent', async (req, res) => {
         transferStatus: c.transferStatus,
         postTransferDurationSec: c.postTransferDurationSec,
       });
+      const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(attemptResult);
+      const doubleAttemptLink = attempt ? extractGhlDoubleAttemptLink(attemptResult, attempt.id) : null;
       return {
+        attemptId: attempt?.id ?? null,
         callId: c.callId,
+        ghlRootAttemptId: doubleAttemptLink?.rootAttemptId ?? null,
+        ghlPreviousAttemptId: doubleAttemptLink?.previousAttemptId ?? null,
+        ghlRetryAttemptId: doubleAttemptLink?.retryAttemptId ?? null,
         leadName: attempt?.lead?.name ?? null,
         phone: maskPhone(c.phoneNumber),
         campaignName,
@@ -1065,6 +1424,12 @@ router.get('/recent', async (req, res) => {
         transferRecordingSource,
         transferTranscriptSource,
         dataQuality,
+        ghlAttemptNumber: doubleAttemptVisibility?.attemptNumber ?? null,
+        ghlMaxAttempts: doubleAttemptVisibility?.maxAttempts ?? null,
+        ghlRetryStatus: doubleAttemptVisibility?.status ?? null,
+        ghlRetryLabel: doubleAttemptVisibility?.label ?? null,
+        ghlIsRetryAttempt: doubleAttemptVisibility?.isRetryAttempt ?? false,
+        ghlRetryTriggered: doubleAttemptVisibility?.retryTriggered ?? false,
         ago: formatRelativeTime(c.startedAt ?? c.createdAt),
         inProgress: c.inProgress,
       };
@@ -1186,6 +1551,8 @@ router.get('/calls/:callId', async (req, res) => {
       asString(firstSnapshotAgent?.transferNumber) ??
       asString(firstSnapshotAgent?.transfer_number) ??
       null;
+    const doubleAttemptVisibility = summarizeGhlDoubleAttemptVisibility(attemptResult);
+    const doubleAttemptLink = attempt ? extractGhlDoubleAttemptLink(attemptResult, attempt.id) : null;
 
     const transferFailoverEvents = attempt?.leadId
       ? await prisma.event.findMany({
@@ -1306,6 +1673,9 @@ router.get('/calls/:callId', async (req, res) => {
 
     return res.json({
       callId: call.callId,
+      ghlRootAttemptId: doubleAttemptLink?.rootAttemptId ?? null,
+      ghlPreviousAttemptId: doubleAttemptLink?.previousAttemptId ?? null,
+      ghlRetryAttemptId: doubleAttemptLink?.retryAttemptId ?? null,
       leadName: attempt?.lead?.name ?? null,
       phone: maskPhone(call.phoneNumber),
       phoneRaw: call.phoneNumber,
@@ -1351,6 +1721,12 @@ router.get('/calls/:callId', async (req, res) => {
       transferTranscriptSource,
       recordings: call.recordingsJson,
       dataQuality,
+      ghlAttemptNumber: doubleAttemptVisibility?.attemptNumber ?? null,
+      ghlMaxAttempts: doubleAttemptVisibility?.maxAttempts ?? null,
+      ghlRetryStatus: doubleAttemptVisibility?.status ?? null,
+      ghlRetryLabel: doubleAttemptVisibility?.label ?? null,
+      ghlIsRetryAttempt: doubleAttemptVisibility?.isRetryAttempt ?? false,
+      ghlRetryTriggered: doubleAttemptVisibility?.retryTriggered ?? false,
       cost: call.cost,
       inProgress: call.inProgress,
       lastEventType: call.lastEventType,
@@ -1543,173 +1919,35 @@ router.post('/calls/:callId/sync', async (req, res) => {
         message: 'VAPI_API_KEY is required (env or request body vapi_api_key).',
       });
     }
-
-    const metric = await prisma.callMetric.findUnique({
-      where: { callId },
-      select: {
-        callId: true,
-        phoneNumber: true,
-        assistantId: true,
-        transferNumber: true,
-        startedAt: true,
-        transferredAt: true,
-        endedAt: true,
-        durationSec: true,
-        endedReason: true,
-        transcript: true,
-        transferTranscript: true,
-        fullTranscript: true,
-        recordingUrl: true,
-        transferRecordingUrl: true,
-        transferRecordingDurationSec: true,
-        twilioParentCallSid: true,
-        twilioTransferCallSid: true,
-        transferStatus: true,
-        postTransferDurationSec: true,
-        outcome: true,
-        cost: true,
-      },
-    });
-    if (!metric) {
-      return res.status(404).json({ error: 'call_not_found', callId });
+    const result = await syncCallMetricById({ callId, apiKey, force });
+    return res.json(result);
+  } catch (error) {
+    const message = String(error);
+    if (message === 'invalid_call_id') {
+      return res.status(400).json({ error: 'invalid_call_id' });
     }
-
-    const vapiResponse = await fetch(`https://api.vapi.ai/call/${callId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    const payload = await vapiResponse.json().catch(() => ({}));
-    if (!vapiResponse.ok) {
+    if (message === 'missing_vapi_config') {
+      return res.status(400).json({
+        error: 'missing_vapi_config',
+        message: 'VAPI_API_KEY is required (env or request body vapi_api_key).',
+      });
+    }
+    if (message.startsWith('call_not_found:')) {
+      return res.status(404).json({ error: 'call_not_found', callId: String(req.params.callId || '').trim() });
+    }
+    if (message.startsWith('vapi_call_lookup_failed:')) {
+      const [, statusRaw, ...rest] = message.split(':');
       return res.status(502).json({
         error: 'vapi_call_lookup_failed',
-        status: vapiResponse.status,
-        message: asString(asRecord(payload)?.message) || 'lookup failed',
+        status: Number(statusRaw) || 502,
+        message: rest.join(':') || 'lookup failed',
       });
     }
-
-    const snapshot = extractCallSnapshotFromVapiPayload(payload);
-    if (!snapshot) {
+    if (message === 'invalid_vapi_payload') {
       return res.status(422).json({ error: 'invalid_vapi_payload', message: 'No call snapshot found in Vapi response.' });
     }
-
-    const patch = force
-      ? {
-          phoneNumber: snapshot.phoneNumber ?? metric.phoneNumber,
-          assistantId: snapshot.assistantId ?? metric.assistantId,
-          transferNumber: snapshot.transferNumber ?? metric.transferNumber,
-          startedAt: snapshot.startedAt ?? metric.startedAt,
-          transferredAt: snapshot.transferredAt ?? metric.transferredAt,
-          endedAt: snapshot.endedAt ?? metric.endedAt,
-          durationSec: snapshot.durationSec ?? metric.durationSec,
-          endedReason: snapshot.endedReason ?? metric.endedReason,
-          transcript: snapshot.transcript ?? metric.transcript,
-          recordingUrl: snapshot.recordingUrl ?? metric.recordingUrl,
-          cost: snapshot.cost ?? metric.cost,
-        }
-      : buildMetricPatch(metric, snapshot);
-
-    if (Object.keys(patch).length) {
-      await prisma.callMetric.update({
-        where: { callId },
-        data: patch,
-      });
-    }
-
-    // Twilio enrichment for transfer leg recording/transcript, used by dashboard "sync this call".
-    if (canUseTwilioSync()) {
-      let nextChildCallSid = metric.twilioTransferCallSid;
-      if (!nextChildCallSid && metric.twilioParentCallSid) {
-        const childCalls = await fetchTwilioChildCalls(metric.twilioParentCallSid);
-        const picked = pickTransferChild(childCalls, metric.transferNumber ?? snapshot.transferNumber ?? null);
-        nextChildCallSid = asString(picked?.sid) ?? null;
-      }
-
-      if (nextChildCallSid) {
-        const rec = await fetchTwilioLatestRecording(nextChildCallSid);
-        const recFromParent =
-          !rec.recordingUrl && metric.twilioParentCallSid
-            ? await fetchTwilioLatestRecording(metric.twilioParentCallSid)
-            : { recordingUrl: null, recordingDurationSec: null };
-        const effectiveRecordingUrl = rec.recordingUrl ?? recFromParent.recordingUrl;
-        const effectiveRecordingDurationSec = rec.recordingDurationSec ?? recFromParent.recordingDurationSec;
-        if (effectiveRecordingUrl) {
-          const nextTransferTranscript =
-            metric.transferTranscript ||
-            (canTranscribeRecording()
-              ? (await transcribeRecordingFromUrl(effectiveRecordingUrl)).text
-              : null);
-          const nextFullTranscript = composeFullTranscript(
-            metric.transcript ?? snapshot.transcript ?? null,
-            nextTransferTranscript
-          );
-
-          await prisma.callMetric.update({
-            where: { callId },
-            data: {
-              twilioTransferCallSid: nextChildCallSid,
-              transferRecordingUrl: effectiveRecordingUrl,
-              transferRecordingDurationSec: effectiveRecordingDurationSec ?? metric.transferRecordingDurationSec ?? undefined,
-              postTransferDurationSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? undefined,
-              transferTranscript: nextTransferTranscript ?? undefined,
-              fullTranscript: nextFullTranscript ?? undefined,
-              transferStatus: metric.transferStatus ?? 'completed',
-              lastEventType: 'manual-sync-twilio-transfer-recording',
-              lastEventAt: new Date(),
-            },
-          });
-          if (shouldPromoteLateTransferSuccess({
-            currentOutcome: metric.outcome,
-            postTransferDurationSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? null,
-          })) {
-            const attempt = await prisma.callAttempt.findFirst({
-              where: { providerId: callId },
-              orderBy: { createdAt: 'desc' },
-              select: { resultJson: true },
-            });
-            await prisma.callMetric.update({
-              where: { callId },
-              data: {
-                outcome: 'transfer_success',
-                sentiment: 'positive',
-              },
-            });
-            await pushSuccessfulTransferToGhl({
-              callId,
-              resultJson: asRecord(attempt?.resultJson),
-              transferNumber: metric.transferNumber,
-              transcript: nextFullTranscript ?? metric.fullTranscript ?? metric.transferTranscript ?? metric.transcript ?? null,
-              outcome: 'transfer_success',
-              sellerTalkSec: effectiveRecordingDurationSec ?? metric.postTransferDurationSec ?? null,
-              recordingUrl: effectiveRecordingUrl ?? metric.transferRecordingUrl ?? metric.recordingUrl ?? null,
-            });
-          }
-        }
-      }
-    }
-
-    const updatedMetric = await prisma.callMetric.findUnique({
-      where: { callId },
-      select: {
-        callId: true,
-        transcript: true,
-        recordingUrl: true,
-        durationSec: true,
-        startedAt: true,
-        endedAt: true,
-        updatedAt: true,
-      },
-    });
-
-    return res.json({
-      ok: true,
-      callId,
-      force,
-      updated: Object.keys(patch).length > 0,
-      updatedFields: Object.keys(patch),
-      metric: updatedMetric,
-    });
-  } catch (error) {
     console.error('Call sync error:', error);
-    return res.status(500).json({ error: 'Internal error', message: String(error) });
+    return res.status(500).json({ error: 'Internal error', message });
   }
 });
 
