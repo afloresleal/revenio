@@ -530,7 +530,7 @@ function consolidateAdminCalls(calls = []) {
     return {
       ...base,
       retryStatus: buildAdminFlowStatus(primary, retry),
-      attemptNumber: primary.attemptNumber || 1,
+      attemptNumber: base.attemptNumber || primary.attemptNumber || 1,
       maxAttempts: retry ? Math.max(primary.maxAttempts || 2, retry.maxAttempts || 2) : primary.maxAttempts,
     };
   });
