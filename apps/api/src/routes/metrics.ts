@@ -119,7 +119,6 @@ function extractCampaignName(resultJson: Record<string, unknown> | null): string
     null
   );
 }
-
 async function loadCanonicalRoundRobinAgents(resultJson: Record<string, unknown> | null): Promise<RoundRobinAgentCandidate[]> {
   const scope = extractCampaignScope(resultJson);
   if (!scope.propertyKey || !scope.campaignId) return [];
