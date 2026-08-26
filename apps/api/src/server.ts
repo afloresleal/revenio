@@ -4161,13 +4161,72 @@ app.get("/api/vapi-recordings/:callId/:type", async (req, res) => {
   }
 });
 
-// ============ VAPI STORAGE DIRECT PROXY ============
+// ============ VAPI STORAGE PROXY (via Vapi API) ============
+
 /**
- * Proxy endpoint to serve Vapi storage.vapi.ai recordings directly
+ * Helper function to parse storage.vapi.ai URLs and extract call ID and recording type
+ *
+ * Example URL format:
+ * https://storage.vapi.ai/019f4e1d-d3ca-788e-83fa-4d369ca656d2-1783722022715-19cc3388-0f3b-4df1-91e3-254f0c4439f1-mono.wav
+ *
+ * Pattern: {callId}-{timestamp}-{fileId}-{type}.{ext}
+ *
+ * @returns { callId: string, recordingType: 'mono' | 'stereo' | null } or null if parsing fails
+ */
+function parseVapiStorageUrl(storageUrl: string): { callId: string; recordingType: string } | null {
+  try {
+    // Extract filename from URL
+    const filename = storageUrl.split('/').pop();
+    if (!filename) return null;
+
+    // Remove extension
+    const nameWithoutExt = filename.replace(/\.(wav|mp3|m4a|webm)$/i, '');
+
+    // Split by hyphens
+    const parts = nameWithoutExt.split('-');
+
+    // The recording type is the last part (mono, stereo, etc.)
+    const recordingType = parts[parts.length - 1];
+
+    // The callId is everything before the first timestamp (13-digit number)
+    // Find the first part that's a 13-digit number (timestamp)
+    let callIdParts: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (/^\d{13}$/.test(parts[i])) {
+        // Found timestamp, callId is everything before this
+        break;
+      }
+      callIdParts.push(parts[i]);
+    }
+
+    const callId = callIdParts.join('-');
+
+    if (!callId || !recordingType) {
+      console.warn('Failed to parse callId or recordingType from storage URL:', {
+        filename,
+        callId,
+        recordingType,
+      });
+      return null;
+    }
+
+    return { callId, recordingType };
+  } catch (error) {
+    console.error('Error parsing Vapi storage URL:', { error: String(error) });
+    return null;
+  }
+}
+
+/**
+ * Proxy endpoint to serve Vapi recordings via official Vapi API endpoints
  * GET /api/vapi-storage-proxy
  *
- * For old recordings where the call no longer exists in Vapi API,
- * we can still download directly from storage.vapi.ai with authentication.
+ * As of 2026, Vapi uses access-controlled storage. Storage URLs from webhooks
+ * cannot be downloaded directly. Instead, we must use Vapi's official API endpoints:
+ * - GET /call/{id}/mono-recording
+ * - GET /call/{id}/stereo-recording
+ *
+ * These endpoints return 302 redirects to short-lived signed URLs.
  *
  * Query param: url (the full storage.vapi.ai URL)
  */
@@ -4187,26 +4246,57 @@ app.get("/api/vapi-storage-proxy", async (req, res) => {
   }
 
   try {
-    console.log('Fetching Vapi storage recording directly:', {
-      urlPrefix: storageUrl.substring(0, 60),
+    // Parse the storage URL to extract callId and recording type
+    const parsed = parseVapiStorageUrl(storageUrl);
+
+    if (!parsed) {
+      console.error('Failed to parse Vapi storage URL:', { storageUrl });
+      return res.status(400).json({
+        error: 'Invalid storage URL format',
+        details: 'Could not extract call ID and recording type from URL'
+      });
+    }
+
+    const { callId, recordingType } = parsed;
+
+    console.log('Fetching Vapi recording via API endpoint:', {
+      callId,
+      recordingType,
+      storageUrlPrefix: storageUrl.substring(0, 60),
     });
 
-    // Attempt to download directly from storage.vapi.ai with auth
-    const recordingResponse = await fetch(storageUrl, {
-      redirect: 'follow',
+    // Use Vapi's official API endpoint to download the recording
+    // These endpoints return 302 redirects to signed URLs
+    const vapiEndpoint = `https://api.vapi.ai/call/${encodeURIComponent(callId)}/${recordingType}-recording`;
+
+    const recordingResponse = await fetch(vapiEndpoint, {
+      redirect: 'follow', // Automatically follow 302 redirects to signed URLs
       headers: {
         'Authorization': `Bearer ${VAPI_API_KEY}`,
       },
     });
 
     if (!recordingResponse.ok) {
-      console.error('Failed to fetch recording from Vapi storage:', {
-        url: storageUrl,
+      console.error('Failed to fetch recording from Vapi API:', {
+        callId,
+        recordingType,
+        endpoint: vapiEndpoint,
         status: recordingResponse.status,
+        statusText: recordingResponse.statusText,
       });
+
+      // If 404, the recording might not exist or the call is too old
+      if (recordingResponse.status === 404) {
+        return res.status(404).json({
+          error: 'Recording not found',
+          details: 'The recording may no longer be available in Vapi storage',
+        });
+      }
+
       return res.status(recordingResponse.status).json({
-        error: 'Failed to fetch recording from Vapi storage',
-        status: recordingResponse.status
+        error: 'Failed to fetch recording from Vapi API',
+        status: recordingResponse.status,
+        statusText: recordingResponse.statusText,
       });
     }
 
@@ -4223,12 +4313,17 @@ app.get("/api/vapi-storage-proxy", async (req, res) => {
     const buffer = await recordingResponse.arrayBuffer();
     res.send(Buffer.from(buffer));
 
-    console.log('Successfully proxied Vapi storage recording:', {
+    console.log('Successfully proxied Vapi recording via API:', {
+      callId,
+      recordingType,
       size: buffer.byteLength,
       contentType,
     });
   } catch (error) {
-    console.error('Vapi storage proxy error:', { error: String(error) });
+    console.error('Vapi storage proxy error:', {
+      storageUrl,
+      error: String(error),
+    });
     return res.status(500).json({ error: 'Failed to proxy Vapi storage recording' });
   }
 });
