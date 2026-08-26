@@ -11,6 +11,7 @@ import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmat
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from '../lib/round-robin-resolution.js';
 import { extractGhlDoubleAttemptLink, summarizeGhlDoubleAttemptVisibility } from '../lib/ghl-double-attempt.js';
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
+import { extractVapiRecordingUrl } from '../lib/vapi-recording-extraction.js';
 
 const router = Router();
 const DASHBOARD_TIMEZONE = 'America/Mexico_City';
@@ -266,7 +267,6 @@ function extractCallSnapshotFromVapiPayload(payload: unknown) {
 
   const customer = asRecord(call.customer);
   const destination = asRecord(call.destination);
-  const recording = asRecord(artifact?.recording);
   const transcript =
     asString(artifact?.transcript) ||
     asString(root.transcript) ||
@@ -279,6 +279,10 @@ function extractCallSnapshotFromVapiPayload(payload: unknown) {
   const startedAt = pickTimestamp(call, ['startedAt', 'started_at', 'createdAt', 'created_at']);
   const transferredAt = pickTimestamp(call, ['transferredAt', 'transferred_at']);
   const endedAt = pickTimestamp(call, ['endedAt', 'ended_at', 'updatedAt', 'updated_at']);
+
+  // Use unified recording extraction logic (lib/vapi-recording-extraction.ts)
+  // Disable logging here to avoid duplicate logs (webhooks already log)
+  const recordingUrl = extractVapiRecordingUrl(call, { enableLogging: false });
 
   return {
     callId,
@@ -294,7 +298,7 @@ function extractCallSnapshotFromVapiPayload(payload: unknown) {
     durationSec: duration ?? null,
     endedReason: asString(call.endedReason) || asString(call.ended_reason) || null,
     transcript,
-    recordingUrl: asString(recording?.url) || asString(artifact?.recordingUrl) || null,
+    recordingUrl,
     cost: cost ?? null,
   };
 }

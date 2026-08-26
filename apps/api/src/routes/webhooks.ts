@@ -24,6 +24,7 @@ import {
 } from '../lib/ghl-agents.js';
 import { buildGhlOpportunityUpdateBody, getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
 import { findRoundRobinAgentByTransferNumber, hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent } from '../lib/round-robin-resolution.js';
+import { extractVapiRecordingUrl } from '../lib/vapi-recording-extraction.js';
 
 const router = Router();
 
@@ -496,48 +497,7 @@ function parseDateValue(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/**
- * Extract recording URL from Vapi call data
- * Tries multiple paths for compatibility with different Vapi webhook versions
- * Note: As of 2026, Vapi uses access-controlled storage - these URLs may not be directly downloadable
- */
-function extractVapiRecordingUrl(data: Record<string, unknown>): string | null {
-  const artifact = asRecord(data.artifact);
-  const recording = asRecord(artifact?.recording);
-  const mono = asRecord(recording?.mono);
-
-  const url = (
-    asString(data.recordingUrl) ??
-    asString(artifact?.recordingUrl) ??
-    asString(recording?.url) ??
-    asString(mono?.combinedUrl) ??
-    asString(mono?.url) ??
-    asString(data.stereoRecordingUrl) ??
-    asString(artifact?.stereoRecordingUrl) ??
-    null
-  );
-
-  // Log when recording URL is found or missing for debugging
-  const callId = asString(data.id);
-  if (!url && callId) {
-    console.log('⚠️ No recording URL found in Vapi data:', {
-      callId,
-      hasArtifact: !!artifact,
-      hasRecording: !!recording,
-      hasMono: !!mono,
-      artifactKeys: artifact ? Object.keys(artifact) : [],
-      recordingKeys: recording ? Object.keys(recording) : [],
-    });
-  } else if (url && callId) {
-    console.log('✅ Recording URL extracted from Vapi:', {
-      callId,
-      urlLength: url.length,
-      urlPrefix: url.substring(0, 50),
-    });
-  }
-
-  return url;
-}
+// Recording extraction now handled by lib/vapi-recording-extraction.ts
 
 async function upsertDashboardMetricFromVapiCall(params: {
   data: Record<string, unknown>;

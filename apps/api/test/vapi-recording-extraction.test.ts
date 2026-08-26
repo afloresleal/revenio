@@ -5,34 +5,7 @@
 
 import assert from 'node:assert';
 import { describe, test } from 'node:test';
-
-// Helper to simulate the extraction logic (mirrors webhooks.ts)
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function extractVapiRecordingUrl(data: Record<string, unknown>): string | null {
-  const artifact = asRecord(data.artifact);
-  const recording = asRecord(artifact?.recording);
-  const mono = asRecord(recording?.mono);
-
-  return (
-    asString(data.recordingUrl) ??
-    asString(artifact?.recordingUrl) ??
-    asString(recording?.url) ??
-    asString(mono?.combinedUrl) ??
-    asString(mono?.url) ??
-    asString(data.stereoRecordingUrl) ??
-    asString(artifact?.stereoRecordingUrl) ??
-    null
-  );
-}
+import { extractVapiRecordingUrl } from '../src/lib/vapi-recording-extraction.js';
 
 describe('extractVapiRecordingUrl', () => {
   test('extracts from data.recordingUrl (legacy format)', () => {
@@ -41,7 +14,7 @@ describe('extractVapiRecordingUrl', () => {
       recordingUrl: 'https://example.com/recording.mp3',
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/recording.mp3');
   });
 
@@ -53,7 +26,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/artifact-recording.mp3');
   });
 
@@ -67,7 +40,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/new-recording.mp3');
   });
 
@@ -83,7 +56,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/mono-combined.mp3');
   });
 
@@ -99,7 +72,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/mono.mp3');
   });
 
@@ -109,7 +82,7 @@ describe('extractVapiRecordingUrl', () => {
       stereoRecordingUrl: 'https://example.com/stereo.mp3',
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/stereo.mp3');
   });
 
@@ -121,7 +94,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/artifact-stereo.mp3');
   });
 
@@ -133,7 +106,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, null);
   });
 
@@ -142,7 +115,7 @@ describe('extractVapiRecordingUrl', () => {
       id: 'call-123',
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, null);
   });
 
@@ -158,7 +131,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/priority.mp3');
   });
 
@@ -174,7 +147,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, 'https://example.com/valid.mp3');
   });
 
@@ -188,7 +161,7 @@ describe('extractVapiRecordingUrl', () => {
       },
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     assert.strictEqual(result, null);
   });
 
@@ -213,7 +186,7 @@ describe('extractVapiRecordingUrl', () => {
       stereoRecordingUrl: 'https://example.com/data-stereo.mp3',
     };
 
-    const result = extractVapiRecordingUrl(data);
+    const result = extractVapiRecordingUrl(data, { enableLogging: false });
     // Should pick the first available in priority order
     assert.strictEqual(result, 'https://example.com/data-recording-url.mp3');
   });
