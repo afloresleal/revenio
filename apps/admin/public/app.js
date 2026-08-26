@@ -200,6 +200,14 @@ function getTwilioProxyUrl(twilioUrl) {
   return twilioUrl; // Fallback to original if can't parse
 }
 
+// Converts Vapi call IDs to our proxy endpoint for recordings
+// As of 2026, Vapi uses access-controlled storage - direct URLs require authentication
+function getVapiProxyUrl(callId, type = 'mono') {
+  if (!callId) return null;
+  const apiUrl = apiBase();
+  return `${apiUrl}/api/vapi-recordings/${callId}/${type}`;
+}
+
 function formatDateTimeCDMX(value) {
   if (!value) return "";
   const parsed = new Date(value);
@@ -475,8 +483,16 @@ function renderCallsTable(columns = [], calls = []) {
       } else if (column.key === "recordingUrl" && value) {
         td.className = "cell-long";
         const link = document.createElement("a");
-        // Use proxy URL if it's a Twilio recording to avoid authentication prompt
-        link.href = value.includes('twilio.com') ? getTwilioProxyUrl(value) : value;
+        // Use proxy URL to avoid authentication prompts
+        // Vapi: storage.vapi.ai URLs require auth (2026 change)
+        // Twilio: api.twilio.com URLs require auth
+        if (value.includes('storage.vapi.ai') && call.callId) {
+          link.href = getVapiProxyUrl(call.callId, 'mono');
+        } else if (value.includes('twilio.com')) {
+          link.href = getTwilioProxyUrl(value);
+        } else {
+          link.href = value; // Fallback to direct URL
+        }
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.textContent = "Abrir recording";
