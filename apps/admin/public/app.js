@@ -208,6 +208,14 @@ function getVapiProxyUrl(callId, type = 'mono') {
   return `${apiUrl}/api/vapi-recordings/${callId}/${type}`;
 }
 
+// Converts Vapi storage URLs to our direct storage proxy
+// For old recordings where the call no longer exists in Vapi API
+function getVapiStorageProxyUrl(storageUrl) {
+  if (!storageUrl) return null;
+  const apiUrl = apiBase();
+  return `${apiUrl}/api/vapi-storage-proxy?url=${encodeURIComponent(storageUrl)}`;
+}
+
 function formatDateTimeCDMX(value) {
   if (!value) return "";
   const parsed = new Date(value);
@@ -486,8 +494,9 @@ function renderCallsTable(columns = [], calls = []) {
         // Use proxy URL to avoid authentication prompts
         // Vapi: storage.vapi.ai URLs require auth (2026 change)
         // Twilio: api.twilio.com URLs require auth
-        if (value.includes('storage.vapi.ai') && call.callId) {
-          link.href = getVapiProxyUrl(call.callId, 'mono');
+        if (value.includes('storage.vapi.ai')) {
+          // For old Vapi recordings, use direct storage proxy (call may not exist in API anymore)
+          link.href = getVapiStorageProxyUrl(value);
         } else if (value.includes('twilio.com')) {
           link.href = getTwilioProxyUrl(value);
         } else {

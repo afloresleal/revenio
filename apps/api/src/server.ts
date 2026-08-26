@@ -4161,6 +4161,78 @@ app.get("/api/vapi-recordings/:callId/:type", async (req, res) => {
   }
 });
 
+// ============ VAPI STORAGE DIRECT PROXY ============
+/**
+ * Proxy endpoint to serve Vapi storage.vapi.ai recordings directly
+ * GET /api/vapi-storage-proxy
+ *
+ * For old recordings where the call no longer exists in Vapi API,
+ * we can still download directly from storage.vapi.ai with authentication.
+ *
+ * Query param: url (the full storage.vapi.ai URL)
+ */
+app.get("/api/vapi-storage-proxy", async (req, res) => {
+  const storageUrl = req.query.url as string;
+
+  if (!storageUrl) {
+    return res.status(400).json({ error: 'Missing url query parameter' });
+  }
+
+  if (!storageUrl.includes('storage.vapi.ai')) {
+    return res.status(400).json({ error: 'URL must be from storage.vapi.ai' });
+  }
+
+  if (!VAPI_API_KEY) {
+    return res.status(500).json({ error: 'Vapi API key not configured' });
+  }
+
+  try {
+    console.log('Fetching Vapi storage recording directly:', {
+      urlPrefix: storageUrl.substring(0, 60),
+    });
+
+    // Attempt to download directly from storage.vapi.ai with auth
+    const recordingResponse = await fetch(storageUrl, {
+      redirect: 'follow',
+      headers: {
+        'Authorization': `Bearer ${VAPI_API_KEY}`,
+      },
+    });
+
+    if (!recordingResponse.ok) {
+      console.error('Failed to fetch recording from Vapi storage:', {
+        url: storageUrl,
+        status: recordingResponse.status,
+      });
+      return res.status(recordingResponse.status).json({
+        error: 'Failed to fetch recording from Vapi storage',
+        status: recordingResponse.status
+      });
+    }
+
+    const contentType = recordingResponse.headers.get('content-type') || 'audio/wav';
+    const contentLength = recordingResponse.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=3600'); // 1 hour cache
+
+    // Stream the response
+    const buffer = await recordingResponse.arrayBuffer();
+    res.send(Buffer.from(buffer));
+
+    console.log('Successfully proxied Vapi storage recording:', {
+      size: buffer.byteLength,
+      contentType,
+    });
+  } catch (error) {
+    console.error('Vapi storage proxy error:', { error: String(error) });
+    return res.status(500).json({ error: 'Failed to proxy Vapi storage recording' });
+  }
+});
+
 const stopGhlSecondAttemptWorker = startGhlSecondAttemptWorker();
 const stopCallMetricsSyncWorker = startCallMetricsSyncWorker();
 
