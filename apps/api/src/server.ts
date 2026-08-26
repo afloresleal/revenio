@@ -4269,6 +4269,8 @@ app.get("/api/vapi-storage-proxy", async (req, res) => {
     // These endpoints return 302 redirects to signed URLs
     const vapiEndpoint = `https://api.vapi.ai/call/${encodeURIComponent(callId)}/${recordingType}-recording`;
 
+    console.log('Calling Vapi endpoint:', vapiEndpoint);
+
     const recordingResponse = await fetch(vapiEndpoint, {
       redirect: 'follow', // Automatically follow 302 redirects to signed URLs
       headers: {
@@ -4276,13 +4278,24 @@ app.get("/api/vapi-storage-proxy", async (req, res) => {
       },
     });
 
+    console.log('Vapi response status:', recordingResponse.status, recordingResponse.statusText);
+
     if (!recordingResponse.ok) {
+      // Try to get error body from Vapi
+      let errorBody = '';
+      try {
+        errorBody = await recordingResponse.text();
+      } catch (e) {
+        errorBody = 'Could not read error body';
+      }
+
       console.error('Failed to fetch recording from Vapi API:', {
         callId,
         recordingType,
         endpoint: vapiEndpoint,
         status: recordingResponse.status,
         statusText: recordingResponse.statusText,
+        errorBody: errorBody.substring(0, 500),
       });
 
       // If 404, the recording might not exist or the call is too old
@@ -4290,6 +4303,7 @@ app.get("/api/vapi-storage-proxy", async (req, res) => {
         return res.status(404).json({
           error: 'Recording not found',
           details: 'The recording may no longer be available in Vapi storage',
+          vapiError: errorBody.substring(0, 200),
         });
       }
 
@@ -4297,6 +4311,7 @@ app.get("/api/vapi-storage-proxy", async (req, res) => {
         error: 'Failed to fetch recording from Vapi API',
         status: recordingResponse.status,
         statusText: recordingResponse.statusText,
+        vapiError: errorBody.substring(0, 200),
       });
     }
 
@@ -4323,8 +4338,13 @@ app.get("/api/vapi-storage-proxy", async (req, res) => {
     console.error('Vapi storage proxy error:', {
       storageUrl,
       error: String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      message: error instanceof Error ? error.message : String(error),
     });
-    return res.status(500).json({ error: 'Failed to proxy Vapi storage recording' });
+    return res.status(500).json({
+      error: 'Failed to proxy Vapi storage recording',
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 
