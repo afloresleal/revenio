@@ -146,6 +146,18 @@ const getTwilioProxyUrl = (twilioUrl: string): string => {
   return twilioUrl; // Fallback to original if can't parse
 };
 
+// --- Vapi Storage Proxy ---
+// Converts storage.vapi.ai URLs to our proxy endpoint
+// As of 2026, Vapi uses access-controlled storage and URLs are not directly downloadable
+const getVapiStorageProxyUrl = (vapiUrl: string): string => {
+  // Check if this is a storage.vapi.ai URL
+  if (vapiUrl.includes('storage.vapi.ai')) {
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+    return `${API_URL}/api/vapi-storage-proxy?url=${encodeURIComponent(vapiUrl)}`;
+  }
+  return vapiUrl; // Return as-is if not a storage URL
+};
+
 // --- Helper Components ---
 
 const StatusBadge: React.FC<{ outcome: OutcomeType }> = ({ outcome }) => {
@@ -740,7 +752,7 @@ export default function App() {
     const recordingUrl = typeof detail?.recordingUrl === 'string' ? detail.recordingUrl : '';
     const transferRecordingUrl = typeof detail?.transferRecordingUrl === 'string' ? detail.transferRecordingUrl : '';
     const audioEntries = [
-      recordingUrl ? { label: 'Audio Vapi', url: recordingUrl } : null,
+      recordingUrl ? { label: 'Audio Vapi', url: getVapiStorageProxyUrl(recordingUrl) } : null,
       transferRecordingUrl ? { label: 'Audio Twilio (transfer)', url: getTwilioProxyUrl(transferRecordingUrl) } : null,
     ].filter((entry): entry is { label: string; url: string } => !!entry);
     const audioSources = audioEntries.filter((entry, index, all) => all.findIndex((other) => other.url === entry.url) === index);
