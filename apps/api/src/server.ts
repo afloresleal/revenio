@@ -59,6 +59,22 @@ function convertToPublicRecordingUrl(twilioUrl: string | null | undefined): stri
   return twilioUrl;
 }
 
+/**
+ * Converts Vapi call IDs to public proxy URLs for recordings
+ * Converts: any Vapi URL or callId
+ * To:       https://revenioapi-production.up.railway.app/api/vapi-recordings/{callId}/mono
+ */
+function convertToPublicVapiRecordingUrl(vapiCallId: string | null | undefined, type: 'mono' | 'stereo' = 'mono'): string {
+  if (!vapiCallId) return "";
+  // If it's already a full URL, extract callId or return empty
+  if (vapiCallId.startsWith('http')) {
+    // Vapi URLs might not be directly downloadable anymore
+    console.warn('Vapi recording URL detected, may require authentication:', vapiCallId);
+    return "";
+  }
+  return `${PUBLIC_API_BASE_URL}/api/vapi-recordings/${vapiCallId}/${type}`;
+}
+
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
@@ -4006,6 +4022,142 @@ app.get("/api/recordings/:recordingSid", async (req, res) => {
   } catch (error) {
     console.error('Recording proxy error:', error);
     return res.status(500).json({ error: 'Failed to proxy recording' });
+  }
+});
+
+// ============ VAPI RECORDING PROXY ============
+/**
+ * Proxy endpoint to serve Vapi recordings with authentication
+ * GET /api/vapi-recordings/:callId/:type
+ *
+ * As of 2026, Vapi uses access-controlled storage. Recording URLs from webhooks
+ * may not be directly downloadable. This endpoint:
+ * 1. Fetches the call data from Vapi API (authenticated)
+ * 2. Extracts the recording URL from call.artifact.recording
+ * 3. Follows any 302 redirects to signed URLs
+ * 4. Streams the recording to the client
+ */
+app.get("/api/vapi-recordings/:callId/:type", async (req, res) => {
+  const { callId, type } = req.params;
+
+  if (!callId) {
+    return res.status(400).json({ error: 'Missing call ID' });
+  }
+
+  if (type !== 'mono' && type !== 'stereo') {
+    return res.status(400).json({ error: 'Invalid recording type. Use "mono" or "stereo"' });
+  }
+
+  if (!VAPI_API_KEY) {
+    return res.status(500).json({ error: 'Vapi API key not configured' });
+  }
+
+  try {
+    // First, fetch the call data from Vapi to get the recording URL
+    console.log('Fetching Vapi call data for recording:', { callId, type });
+
+    const vapiResponse = await fetch(`https://api.vapi.ai/call/${encodeURIComponent(callId)}`, {
+      headers: {
+        'Authorization': `Bearer ${VAPI_API_KEY}`,
+      },
+    });
+
+    if (!vapiResponse.ok) {
+      console.error('Failed to fetch call from Vapi:', {
+        callId,
+        status: vapiResponse.status,
+        statusText: vapiResponse.statusText,
+      });
+      return res.status(vapiResponse.status).json({
+        error: 'Failed to fetch call data from Vapi',
+        status: vapiResponse.status
+      });
+    }
+
+    const callData = await vapiResponse.json() as Record<string, unknown>;
+    const artifact = callData.artifact as Record<string, unknown> | null | undefined;
+    const recording = artifact?.recording as Record<string, unknown> | null | undefined;
+
+    // Try to get the recording URL based on type
+    let recordingUrl: string | null = null;
+
+    if (type === 'stereo') {
+      recordingUrl =
+        (callData.stereoRecordingUrl as string | null) ??
+        (artifact?.stereoRecordingUrl as string | null) ??
+        (recording?.stereo as Record<string, unknown>)?.url as string | null ??
+        null;
+    } else {
+      // mono (default)
+      const mono = recording?.mono as Record<string, unknown> | null | undefined;
+      recordingUrl =
+        (callData.recordingUrl as string | null) ??
+        (artifact?.recordingUrl as string | null) ??
+        (recording?.url as string | null) ??
+        (mono?.combinedUrl as string | null) ??
+        (mono?.url as string | null) ??
+        null;
+    }
+
+    if (!recordingUrl) {
+      console.warn('No recording URL found in Vapi call data:', {
+        callId,
+        type,
+        hasArtifact: !!artifact,
+        hasRecording: !!recording,
+        artifactKeys: artifact ? Object.keys(artifact) : [],
+        recordingKeys: recording ? Object.keys(recording) : [],
+      });
+      return res.status(404).json({
+        error: 'Recording not found',
+        details: 'No recording URL available in call data. Recording may still be processing.'
+      });
+    }
+
+    console.log('Found recording URL, fetching audio:', {
+      callId,
+      type,
+      urlPrefix: recordingUrl.substring(0, 50),
+    });
+
+    // Fetch the actual recording (may involve 302 redirects)
+    const recordingResponse = await fetch(recordingUrl, {
+      redirect: 'follow', // Automatically follow 302 redirects to signed URLs
+      headers: {
+        // Include auth in case it's needed
+        'Authorization': `Bearer ${VAPI_API_KEY}`,
+      },
+    });
+
+    if (!recordingResponse.ok) {
+      console.error('Failed to fetch recording from URL:', {
+        callId,
+        url: recordingUrl,
+        status: recordingResponse.status,
+      });
+      return res.status(recordingResponse.status).json({
+        error: 'Failed to fetch recording',
+        status: recordingResponse.status
+      });
+    }
+
+    const contentType = recordingResponse.headers.get('content-type') || 'audio/mpeg';
+    const contentLength = recordingResponse.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=900'); // 15 minutes cache
+
+    // Stream the response
+    const buffer = await recordingResponse.arrayBuffer();
+    res.send(Buffer.from(buffer));
+
+    console.log('Successfully proxied Vapi recording:', { callId, type, size: buffer.byteLength });
+  } catch (error) {
+    console.error('Vapi recording proxy error:', { callId, type, error: String(error) });
+    return res.status(500).json({ error: 'Failed to proxy Vapi recording' });
   }
 });
 
