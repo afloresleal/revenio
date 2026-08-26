@@ -131,7 +131,7 @@ El plan actual de Vapi solo permite acceder al historial de llamadas de los últ
 
 **Commits:**
 - SHA: 92cf9ca - fix(dashboard-v2): use Vapi storage proxy for recordings
-- SHA: [pending] - fix(api): handle Vapi retention window gracefully in sync
+- SHA: 91e0ad2 - fix(api): handle Vapi retention window gracefully in sync ⭐
 **Fix final (commit 4) - Storage Direct Proxy:**
 Problema detectado: Llamadas viejas ya no existen en Vapi API (400 error)
 - Nuevo endpoint: `GET /api/vapi-storage-proxy?url=...`
