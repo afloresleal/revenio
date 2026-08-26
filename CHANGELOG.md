@@ -2,6 +2,65 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## 2026-08-25 - Sesión: Manejo de ventana de retención de Vapi (14 días)
+
+### Resumen
+Implementado manejo graceful de errores cuando se intenta sincronizar llamadas fuera de la ventana de retención de Vapi (>14 días). El plan actual de Vapi solo permite acceso a historial de los últimos 14 días. Ahora el botón "Sincronizar" funciona sin error 500 para llamadas antiguas, ocultando automáticamente el reproductor de Vapi y preservando transcripts de Twilio.
+
+### Cambios realizados
+1. **Detección de errores de retención en `syncCallMetricById()`:**
+   - Detecta error 400 de Vapi con mensaje "retention window" o "retention period"
+   - Marca `vapiUnavailable = true` y `snapshot = null` en lugar de lanzar error
+   - Continúa sincronización de Twilio aunque Vapi falle
+
+2. **Limpieza automática de `recordingUrl`:**
+   - Cuando Vapi no disponible, limpia `recordingUrl` si contiene `storage.vapi.ai`
+   - Preserva URLs de Twilio (`api.twilio.com`)
+   - Dashboard automáticamente oculta reproductor cuando no hay URL
+
+3. **Uso de optional chaining:**
+   - Cambiado `snapshot.transferNumber` → `snapshot?.transferNumber`
+   - Cambiado `snapshot.transcript` → `snapshot?.transcript`
+   - Previene errores de null reference cuando snapshot es null
+
+4. **Dashboard v2 - Proxy de Vapi (commit anterior):**
+   - Agregada función `getVapiStorageProxyUrl()` para usar proxy
+   - Filtrado automático de reproductores sin URL (ya existía)
+
+### Archivos modificados
+- `apps/api/src/routes/metrics.ts` - Manejo de retención en `syncCallMetricById()`
+- `apps/api/src/server.ts` - Logging mejorado en proxy de Vapi
+- `dashboard-v2/App.tsx` - Uso de proxy para grabaciones de Vapi
+- `CHANGELOG.md` - Documentación completa del fix
+
+### Decisiones técnicas
+- **Continuar usando OpenAI Whisper para transcripción** (solo grabaciones de Twilio por ahora)
+- **Aceptar pérdida de grabaciones de Vapi >14 días** (no recuperables sin upgrade de plan)
+- **Priorizar sync de Twilio** (vendor-cliente) sobre Vapi (AI-cliente)
+- **No hacer upgrade de plan Vapi** (decisión pendiente con socios)
+
+### Resultado
+- ✅ Sincronización funciona sin error 500 para llamadas antiguas
+- ✅ Reproductor de Vapi se oculta cuando no hay grabación
+- ✅ Transcripts y grabaciones de Twilio se sincronizan exitosamente
+- ✅ Datos históricos preservados en base de datos
+- ⚠️ Grabaciones de Vapi >14 días perdidas permanentemente
+
+### Commits
+- `92cf9ca` - fix(dashboard-v2): use Vapi storage proxy for recordings
+- `91e0ad2` - fix(api): handle Vapi retention window gracefully in sync ⭐
+- `df461f8` - docs: update changelog with retention fix commit SHA
+
+### Estado
+- ✅ Pushed to origin/develop
+- ✅ Deploy automático a Railway staging
+- ✅ Probado y funcionando en producción
+
+### Próximos pasos
+- Ajustes adicionales según necesidades (continuar mañana)
+
+---
+
 ## [0.3.10] - 2026-08-25
 
 ### Fix: Mejorada extracción y acceso a grabaciones de Vapi
