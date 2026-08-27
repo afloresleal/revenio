@@ -24,6 +24,7 @@ import {
 } from '../lib/ghl-agents.js';
 import { buildGhlOpportunityUpdateBody, getGhlCampaignRuntimeStatus } from '../lib/ghl-campaigns.js';
 import { findRoundRobinAgentByTransferNumber, hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent } from '../lib/round-robin-resolution.js';
+import { extractVapiRecordingUrl } from '../lib/vapi-recording-extraction.js';
 
 const router = Router();
 
@@ -496,19 +497,7 @@ function parseDateValue(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function extractVapiRecordingUrl(data: Record<string, unknown>): string | null {
-  const artifact = asRecord(data.artifact);
-  const recording = asRecord(artifact?.recording);
-  const mono = asRecord(recording?.mono);
-  return (
-    asString(data.recordingUrl) ??
-    asString(artifact?.recordingUrl) ??
-    asString(mono?.combinedUrl) ??
-    asString(data.stereoRecordingUrl) ??
-    asString(artifact?.stereoRecordingUrl) ??
-    null
-  );
-}
+// Recording extraction now handled by lib/vapi-recording-extraction.ts
 
 async function upsertDashboardMetricFromVapiCall(params: {
   data: Record<string, unknown>;
@@ -2391,9 +2380,8 @@ async function processEndOfCallReport(body: unknown): Promise<HandlerResult | nu
     buildTranscriptFromMessages(call.messages) ||
     null;
   
-  // Extract recording URL
-  const recording = asRecord(artifact?.recording);
-  const recordingUrl = asString(recording?.url) || asString(artifact?.recordingUrl);
+  // Extract recording URL using unified extraction function
+  const recordingUrl = extractVapiRecordingUrl(call);
   
   // Extract timestamps
   // VAPI sends createdAt/updatedAt, not startedAt/endedAt

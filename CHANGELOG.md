@@ -2,6 +2,330 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## 2026-08-25 - Sesión: Manejo de ventana de retención de Vapi (14 días)
+
+### Resumen
+Implementado manejo graceful de errores cuando se intenta sincronizar llamadas fuera de la ventana de retención de Vapi (>14 días). El plan actual de Vapi solo permite acceso a historial de los últimos 14 días. Ahora el botón "Sincronizar" funciona sin error 500 para llamadas antiguas, ocultando automáticamente el reproductor de Vapi y preservando transcripts de Twilio.
+
+### Cambios realizados
+1. **Detección de errores de retención en `syncCallMetricById()`:**
+   - Detecta error 400 de Vapi con mensaje "retention window" o "retention period"
+   - Marca `vapiUnavailable = true` y `snapshot = null` en lugar de lanzar error
+   - Continúa sincronización de Twilio aunque Vapi falle
+
+2. **Limpieza automática de `recordingUrl`:**
+   - Cuando Vapi no disponible, limpia `recordingUrl` si contiene `storage.vapi.ai`
+   - Preserva URLs de Twilio (`api.twilio.com`)
+   - Dashboard automáticamente oculta reproductor cuando no hay URL
+
+3. **Uso de optional chaining:**
+   - Cambiado `snapshot.transferNumber` → `snapshot?.transferNumber`
+   - Cambiado `snapshot.transcript` → `snapshot?.transcript`
+   - Previene errores de null reference cuando snapshot es null
+
+4. **Dashboard v2 - Proxy de Vapi (commit anterior):**
+   - Agregada función `getVapiStorageProxyUrl()` para usar proxy
+   - Filtrado automático de reproductores sin URL (ya existía)
+
+### Archivos modificados
+- `apps/api/src/routes/metrics.ts` - Manejo de retención en `syncCallMetricById()`
+- `apps/api/src/server.ts` - Logging mejorado en proxy de Vapi
+- `dashboard-v2/App.tsx` - Uso de proxy para grabaciones de Vapi
+- `CHANGELOG.md` - Documentación completa del fix
+
+### Decisiones técnicas
+- **Continuar usando OpenAI Whisper para transcripción** (solo grabaciones de Twilio por ahora)
+- **Aceptar pérdida de grabaciones de Vapi >14 días** (no recuperables sin upgrade de plan)
+- **Priorizar sync de Twilio** (vendor-cliente) sobre Vapi (AI-cliente)
+- **No hacer upgrade de plan Vapi** (decisión pendiente con socios)
+
+### Resultado
+- ✅ Sincronización funciona sin error 500 para llamadas antiguas
+- ✅ Reproductor de Vapi se oculta cuando no hay grabación
+- ✅ Transcripts y grabaciones de Twilio se sincronizan exitosamente
+- ✅ Datos históricos preservados en base de datos
+- ⚠️ Grabaciones de Vapi >14 días perdidas permanentemente
+
+### Commits
+- `92cf9ca` - fix(dashboard-v2): use Vapi storage proxy for recordings
+- `91e0ad2` - fix(api): handle Vapi retention window gracefully in sync ⭐
+- `df461f8` - docs: update changelog with retention fix commit SHA
+
+### Estado
+- ✅ Pushed to origin/develop
+- ✅ Deploy automático a Railway staging
+- ✅ Probado y funcionando en producción
+
+### Próximos pasos
+- Ajustes adicionales según necesidades (continuar mañana)
+
+---
+
+## [0.3.10] - 2026-08-25
+
+### Fix: Mejorada extracción y acceso a grabaciones de Vapi
+
+**Contexto:**
+Vapi cambió su sistema de almacenamiento de grabaciones a un modelo de acceso controlado durante 2026. Las URLs de grabaciones que vienen en los webhooks ya no son directamente descargables sin autenticación con la Vapi API key.
+
+**Problema detectado:**
+- Las grabaciones de llamadas no se estaban guardando consistentemente en la base de datos
+- Diferentes webhooks de Vapi usan diferentes estructuras JSON para las grabaciones (`artifact.recordingUrl`, `artifact.recording.url`, `artifact.recording.mono.combinedUrl`, etc.)
+- La función `extractVapiRecordingUrl()` y el handler de `end-of-call-report` usaban lógicas diferentes para extraer URLs
+- URLs de grabaciones pueden venir vacías o pueden requerir autenticación para descargarse
+
+**Solución implementada:**
+
+1. **Unificada extracción de recording URLs:**
+   - Consolidada lógica en `extractVapiRecordingUrl()` para intentar múltiples paths de forma consistente
+   - Agregados paths adicionales: `recording.url`, `mono.url`
+   - Agregado logging cuando no se encuentra URL o cuando sí se extrae exitosamente
+   - Actualizado `end-of-call-report` handler para usar función unificada
+
+2. **Nuevo endpoint proxy para grabaciones de Vapi:**
+   - Creado `GET /api/vapi-recordings/:callId/:type` (type: mono/stereo)
+   - Maneja autenticación con Vapi API automáticamente
+   - Sigue redirects 302 a URLs firmadas temporales
+   - Permite acceso a grabaciones sin exponer credenciales
+   - Cache de 15 minutos para reducir peticiones a Vapi
+
+3. **Helper para URLs públicas:**
+   - Nueva función `convertToPublicVapiRecordingUrl()` similar al patrón de Twilio
+   - Convierte callIds a URLs del proxy público
+
+**Impacto:**
+- ✅ Grabaciones se extraen de forma más confiable desde webhooks de Vapi
+- ✅ Compatibilidad con diferentes versiones de estructura de webhooks de Vapi
+- ✅ Dashboard/Admin pueden acceder a grabaciones sin credenciales expuestas
+- ✅ Logging mejorado para debuggear cuando grabaciones no están disponibles
+- ✅ Preparado para cuando Vapi requiera autenticación obligatoria
+
+**Archivos principales:**
+- `apps/api/src/routes/webhooks.ts` - Función unificada de extracción con logging
+- `apps/api/src/server.ts` - Endpoint proxy `/api/vapi-recordings/:callId/:type`
+- `apps/api/test/vapi-recording-extraction.test.ts` - 13 tests de extracción (nuevo)
+
+**Tests:**
+- ✅ 13/13 tests pasando para diferentes estructuras de webhooks Vapi
+- ✅ Build exitoso
+- ✅ TypeScript compila sin errores
+
+**Documentación de referencia:**
+- Vapi API: Call recording, logging and transcribing (https://docs.vapi.ai/assistants/call-recording)
+- Vapi API: Retrieve call artifacts (https://docs.vapi.ai/assistants/retrieve-call-artifacts)
+
+**Próximos pasos (si es necesario):**
+- Monitorear logs para ver qué estructuras de webhook están llegando en producción
+- Si las grabaciones siguen sin aparecer, investigar si Vapi cambió completamente el modelo de entrega
+- Considerar migrar URLs existentes en DB a usar el proxy
+
+**Commits:**
+1. SHA: 44de54d - fix(api): improve Vapi recording extraction and add proxy endpoint
+2. SHA: 612a5fb - refactor(api): unify Vapi recording extraction across webhooks and sync worker
+3. SHA: 55fa22b - fix(admin): use proxy endpoint for Vapi recordings
+4. SHA: 324cd7d - fix(api+admin): add direct storage proxy for old Vapi recordings ⭐
+
+**Rama:** develop (staging Railway)
+**Estado:** ✅ Pushed to origin/develop (4 commits)
+**Deploy:** Railway staging auto-deploy activado
+
+**Flujo de grabaciones:**
+- Vapi graba el primer contacto (AI) → `recordingUrl` (storage.vapi.ai)
+- Twilio graba post-transfer (humano) → `transferRecordingUrl` (api.twilio.com)
+- Admin usa proxy para AMBAS grabaciones
+
+---
+
+### Fix: Manejo de ventana de retención de Vapi (14 días)
+
+**Contexto:**
+El plan actual de Vapi solo permite acceder al historial de llamadas de los últimos 14 días. Intentar sincronizar llamadas más antiguas causa errores 400 con mensaje "Your subscription plan only covers the last 14 days of call history. This call exceeds your retention window."
+
+**Problema detectado:**
+- Al sincronizar llamadas antiguas (>14 días), el endpoint `/api/metrics/:callId/sync` fallaba con HTTP 500
+- El error 500 aparecía en el Dashboard cuando el usuario hacía clic en "Sincronizar llamada"
+- El transcript mostraba "HTTP 500:" después de intentar sincronizar
+- Las grabaciones de Vapi para llamadas antiguas ya no son accesibles (Vapi devuelve 400)
+- El reproductor de Vapi seguía visible aunque la grabación ya no existiera
+
+**Solución implementada:**
+
+1. **Detección de errores de retención en `syncCallMetricById()`:**
+   - Detecta errores 400 de Vapi con mensajes que incluyen "retention window" o "retention period"
+   - En lugar de lanzar error, marca `vapiUnavailable = true` y `snapshot = null`
+   - Continúa con la sincronización de Twilio (vendor-cliente) aunque Vapi falle
+
+2. **Limpieza de `recordingUrl` cuando Vapi no disponible:**
+   - Si la llamada está fuera de la ventana de retención, limpia `recordingUrl` de la base de datos
+   - Solo limpia URLs de Vapi (`storage.vapi.ai`), preserva URLs de Twilio
+   - Esto hace que el Dashboard automáticamente oculte el reproductor de Vapi (ya filtra entries sin URL)
+
+3. **Uso de optional chaining para acceso seguro:**
+   - Cambiado `snapshot.transferNumber` a `snapshot?.transferNumber` en sync de Twilio
+   - Cambiado `snapshot.transcript` a `snapshot?.transcript` en composición de transcript completo
+   - Previene errores cuando `snapshot` es `null` debido a retención
+
+4. **Dashboard v2 - Proxy de Vapi:**
+   - Agregada función `getVapiStorageProxyUrl()` para convertir URLs de Vapi al proxy
+   - Actualizado rendering de audio para usar proxy (igual que Admin)
+   - El filtro existente (`audioEntries.filter`) automáticamente oculta player cuando no hay URL
+
+**Impacto:**
+- ✅ Sincronización de llamadas antiguas ahora funciona sin error 500
+- ✅ Se recuperan transcripts y grabaciones de Twilio aunque Vapi no esté disponible
+- ✅ Reproductor de Vapi se oculta automáticamente cuando grabación no disponible
+- ✅ Datos existentes (transcript, duración, etc.) se preservan en la DB
+- ✅ Logging claro cuando una llamada está fuera de ventana de retención
+- ⚠️ Grabaciones de Vapi >14 días se pierden (no recuperables sin upgrade de plan)
+
+**Archivos principales:**
+- `apps/api/src/routes/metrics.ts` - Manejo de errores de retención en sync
+- `apps/api/src/server.ts` - Logging mejorado en proxy de Vapi
+- `dashboard-v2/App.tsx` - Proxy de Vapi y filtrado automático de players
+
+**Decisión de producto:**
+- Continuar usando OpenAI Whisper para transcripción (solo grabaciones de Twilio por ahora)
+- Aceptar que grabaciones de Vapi >14 días no son recuperables sin upgrade
+- Priorizar sincronización de Twilio (vendor-cliente) sobre Vapi (AI-cliente)
+
+**Commits:**
+- SHA: 92cf9ca - fix(dashboard-v2): use Vapi storage proxy for recordings
+- SHA: 91e0ad2 - fix(api): handle Vapi retention window gracefully in sync ⭐
+**Fix final (commit 4) - Storage Direct Proxy:**
+Problema detectado: Llamadas viejas ya no existen en Vapi API (400 error)
+- Nuevo endpoint: `GET /api/vapi-storage-proxy?url=...`
+- Descarga directamente desde storage.vapi.ai sin consultar Vapi API primero
+- Admin ahora usa este endpoint para URLs de storage.vapi.ai
+- **Resultado:** ❌ Falló - storage.vapi.ai requiere usar endpoints oficiales de Vapi API
+
+**Fix definitivo (commit 5) - Uso de endpoints oficiales de Vapi:**
+Problema detectado: El storage proxy directo devuelve "Failed to proxy Vapi storage recording"
+- Investigación: Vapi publica OpenAPI spec en `https://api.vapi.ai/api-json`
+- Descubierto: Endpoints oficiales para descargar grabaciones:
+  - `GET /call/{id}/mono-recording` → 302 redirect a URL firmada
+  - `GET /call/{id}/stereo-recording` → 302 redirect a URL firmada
+- Solución:
+  - Nueva función `parseVapiStorageUrl()` extrae callId y tipo de recording de URLs storage.vapi.ai
+  - Formato: `{callId}-{timestamp}-{fileId}-{type}.wav`
+  - Endpoint actualizado para usar `https://api.vapi.ai/call/{callId}/{type}-recording`
+  - Sigue redirects 302 automáticamente a URLs firmadas temporales
+- **Impacto:** ✅ Grabaciones viejas ahora funcionan en Admin usando endpoints oficiales de Vapi
+- **Documentación:** https://docs.vapi.ai/assistants/retrieve-call-artifacts
+
+**Fix Dashboard v2 (commit 6) - Aplicar mismo proxy a Dashboard:**
+Problema detectado: Admin funciona pero Dashboard v2 aún carga URLs de storage.vapi.ai directamente
+- Error en consola: `ERR_NAME_NOT_RESOLVED` para storage.vapi.ai
+- Dashboard usaba `getTwilioProxyUrl()` para Twilio pero no tenía equivalente para Vapi
+- Solución:
+  - Nueva función `getVapiStorageProxyUrl()` similar a `getTwilioProxyUrl()`
+  - Actualizada línea de renderizado de audios para usar proxy en grabaciones Vapi
+  - Ahora AMBAS grabaciones (Vapi y Twilio) pasan por proxy en Dashboard v2
+- **Impacto:** ✅ Dashboard v2 ahora reproduce grabaciones de Vapi igual que Admin
+
+**Commits totales:**
+1. SHA: 44de54d - fix(api): improve Vapi recording extraction and add proxy endpoint
+2. SHA: 612a5fb - refactor(api): unify Vapi recording extraction across webhooks and sync worker
+3. SHA: 55fa22b - fix(admin): use proxy endpoint for Vapi recordings
+4. SHA: 324cd7d - fix(api+admin): add direct storage proxy for old Vapi recordings
+5. SHA: 834c24d - fix(api): use Vapi official API endpoints to download old recordings ⭐
+6. SHA: 92cf9ca - fix(dashboard-v2): use proxy endpoint for Vapi storage recordings ⭐
+
+---
+
+## [0.3.9] - 2026-07-10
+
+### Feature/Fix: Segundo intento GHL, reconciliación automática y visibilidad operativa
+
+**Contexto:**
+Durante pruebas operativas con leads de GHL, el equipo necesitaba cubrir un flujo muy específico:
+- si la primera llamada caía en buzón o no contestaban, hacer un segundo intento automático 30 segundos después;
+- consolidar ambos intentos en Dashboard/Admin para que marketing y operación vieran el flujo completo;
+- evitar que el equipo tuviera que sincronizar manualmente cada llamada para ver duración, transcript o recordings finales;
+- corregir dos regresiones de UI detectadas durante el rollout: fechas crudas en admin y `attempt_number` incorrecto en filas consolidadas.
+
+**Problema 1 - Segundo intento sin persistencia operativa:**
+- El patrón inicial no dejaba trazabilidad suficiente para reporting.
+- Dashboard/Admin no distinguían claramente cuándo una llamada completada venía del segundo intento.
+- El flujo necesitaba reutilizar primitives existentes sin montar una solución más grande de callback inbound.
+
+**Solución implementada:**
+- Se introdujo persistencia explícita para el estado de `ghlDoubleAttempt`.
+- El sistema ahora agenda un segundo intento automático 30 segundos después cuando el primer outcome es `voicemail` o `no-answer`.
+- Si el segundo intento también falla, el flujo continúa como `No contactado`.
+- Dashboard v2 y Admin consolidan intentos relacionados bajo una sola lectura operativa:
+  - `Segunda llamada pendiente`
+  - `Segunda llamada en curso`
+  - `Segunda llamada completada`
+  - `Segunda llamada sin exito`
+
+**Problema 2 - Datos finales solo aparecían tras sincronización manual:**
+- Algunas llamadas necesitaban abrir `Sincronizar solo esta llamada` para poblar recording, transcript o duración post-transfer.
+- Eso metía fricción operativa y riesgo de métricas incompletas.
+
+**Solución implementada:**
+- Se extrajo la lógica de sync manual a una ruta reusable de reconciliación.
+- Se agregó un worker interno que revisa llamadas recientes incompletas y ejecuta esa misma reconciliación en background.
+- El botón manual sigue existiendo, pero ya no es la vía principal para cerrar artifacts tardíos de Vapi/Twilio.
+
+**Problema 3 - Transferencia forzada antes de detectar buzón:**
+- Un hook temporizado disparaba `transferCall` a los 12 segundos en llamadas GHL.
+- En pruebas reales, eso podía mandar la llamada al vendedor aunque el lead no hubiera contestado y solo se escuchara el buzón.
+
+**Solución implementada:**
+- Se eliminó el hook temporizado de auto-transfer para llamadas outbound de GHL.
+- La transferencia volvió a depender del comportamiento natural del agente y la detección real de voicemail.
+
+**Problema 4 - Visibilidad y consistencia en Admin:**
+- `STARTED_AT` podía aparecer como ISO crudo en lugar de fecha/hora local.
+- `ATTEMPT_NUMBER` mostraba `1` incluso cuando la llamada consolidada se había completado en el segundo intento.
+
+**Solución implementada:**
+- Admin ahora formatea `startedAt` en zona `America/Mexico_City`.
+- Las filas consolidadas de Admin muestran el `attemptNumber` final de la llamada base (`retry || primary`), no siempre el del primer intento.
+
+**Impacto:**
+- ✅ GHL ahora reintenta automáticamente una vez cuando el primer intento cae en buzón o no contestan
+- ✅ Dashboard/Admin muestran el flujo completo de contactación con lenguaje operativo
+- ✅ Las llamadas recientes incompletas se enriquecen solas sin intervención manual
+- ✅ Se redujo el riesgo de transferir al vendedor cuando solo respondió un buzón
+- ✅ Admin muestra `STARTED_AT` y `ATTEMPT_NUMBER` de forma consistente con la realidad operativa
+
+**Archivos principales:**
+- `apps/api/src/lib/ghl-double-attempt.ts`
+- `apps/api/src/routes/webhooks.ts`
+- `apps/api/src/routes/metrics.ts`
+- `apps/api/src/lib/call-metrics-sync-worker.ts`
+- `apps/api/src/lib/ghl-second-attempt-worker.ts`
+- `apps/api/src/routes/jobs.ts`
+- `apps/api/src/server.ts`
+- `dashboard-v2/App.tsx`
+- `dashboard-v2/src/lib/api.ts`
+- `dashboard-v2/src/lib/contact-attempts.ts`
+- `apps/admin/public/app.js`
+
+**Tests/soporte:**
+- `apps/api/test/ghl-double-attempt.test.ts`
+- `apps/api/test/ghl-second-attempt-worker.test.ts`
+- `apps/api/test/call-metrics-sync-worker.test.ts`
+- `apps/api/test/jobs-auth.test.ts`
+- `apps/api/test/webhooks-assistant-overrides.test.ts`
+- `dashboard-v2/test/contact-attempts.test.ts`
+- `docs/superpowers/plans/2026-07-07-call-metrics-auto-sync.md`
+
+**Commits principales:**
+- `8128e07` - `Add persistent GHL second-attempt retry`
+- `396c7e9` - `feat(api): run GHL second attempts with internal worker`
+- `d0159b4` - `fix(api): schedule GHL retries from ended Vapi snapshots`
+- `41f43bf` - `feat(metrics): show GHL second-attempt visibility`
+- `83a75c1` - `feat(ui): consolidate GHL re-call flow`
+- `9a659d1` - `chore(ui): refine contact-attempt copy`
+- `4c969d3` - `chore(ui): simplify contact-attempt detail card`
+- `dbfab81` - `fix(ui): use final contact attempt in consolidated rows`
+- `56197b3` - `feat(api): auto-sync recent call metrics`
+- `4c2476c` - `Reapply "fix(api): stop forced timed transfer for GHL calls"`
+- `aab0130` - `fix(admin): format call started timestamps`
+- `180d7cc` - `fix(admin): show final contact attempt number`
+
 ## [0.3.8] - 2026-06-04
 
 ### Fix: Resolver correctamente qué vendedor contestó

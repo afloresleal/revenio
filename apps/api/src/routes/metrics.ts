@@ -11,6 +11,7 @@ import { shouldPromoteLateTransferSuccess } from '../lib/late-transfer-confirmat
 import { hasHumanTransferEvidence, resolveRoundRobinAnsweredAgent, type RoundRobinAgentCandidate } from '../lib/round-robin-resolution.js';
 import { extractGhlDoubleAttemptLink, summarizeGhlDoubleAttemptVisibility } from '../lib/ghl-double-attempt.js';
 import { pushSuccessfulTransferToGhl } from './webhooks.js';
+import { extractVapiRecordingUrl } from '../lib/vapi-recording-extraction.js';
 
 const router = Router();
 const DASHBOARD_TIMEZONE = 'America/Mexico_City';
@@ -266,7 +267,6 @@ function extractCallSnapshotFromVapiPayload(payload: unknown) {
 
   const customer = asRecord(call.customer);
   const destination = asRecord(call.destination);
-  const recording = asRecord(artifact?.recording);
   const transcript =
     asString(artifact?.transcript) ||
     asString(root.transcript) ||
@@ -279,6 +279,10 @@ function extractCallSnapshotFromVapiPayload(payload: unknown) {
   const startedAt = pickTimestamp(call, ['startedAt', 'started_at', 'createdAt', 'created_at']);
   const transferredAt = pickTimestamp(call, ['transferredAt', 'transferred_at']);
   const endedAt = pickTimestamp(call, ['endedAt', 'ended_at', 'updatedAt', 'updated_at']);
+
+  // Use unified recording extraction logic (lib/vapi-recording-extraction.ts)
+  // Disable logging here to avoid duplicate logs (webhooks already log)
+  const recordingUrl = extractVapiRecordingUrl(call, { enableLogging: false });
 
   return {
     callId,
@@ -294,7 +298,7 @@ function extractCallSnapshotFromVapiPayload(payload: unknown) {
     durationSec: duration ?? null,
     endedReason: asString(call.endedReason) || asString(call.ended_reason) || null,
     transcript,
-    recordingUrl: asString(recording?.url) || asString(artifact?.recordingUrl) || null,
+    recordingUrl,
     cost: cost ?? null,
   };
 }
@@ -618,31 +622,52 @@ export async function syncCallMetricById(params: {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   const payload = await vapiResponse.json().catch(() => ({}));
+
+  // Handle Vapi retention window limit (calls older than plan's retention period)
+  let snapshot: ReturnType<typeof extractCallSnapshotFromVapiPayload> = null;
+  let vapiUnavailable = false;
+
   if (!vapiResponse.ok) {
     const message = asString(asRecord(payload)?.message) || 'lookup failed';
-    throw new Error(`vapi_call_lookup_failed:${vapiResponse.status}:${message}`);
+    const isRetentionError = vapiResponse.status === 400 &&
+      (message.includes('retention window') || message.includes('retention period'));
+
+    if (isRetentionError) {
+      // Call is outside Vapi's retention window - skip Vapi sync, only sync Twilio
+      console.warn('Vapi call outside retention window, skipping Vapi sync:', { callId, message });
+      vapiUnavailable = true;
+      snapshot = null;
+    } else {
+      throw new Error(`vapi_call_lookup_failed:${vapiResponse.status}:${message}`);
+    }
+  } else {
+    snapshot = extractCallSnapshotFromVapiPayload(payload);
+    if (!snapshot) {
+      throw new Error('invalid_vapi_payload');
+    }
   }
 
-  const snapshot = extractCallSnapshotFromVapiPayload(payload);
-  if (!snapshot) {
-    throw new Error('invalid_vapi_payload');
-  }
-
-  const patch = force
+  // Only update Vapi data if snapshot is available
+  const patch = vapiUnavailable
+    ? // Clear Vapi recording URL when outside retention window (no longer accessible)
+      metric.recordingUrl?.includes('storage.vapi.ai')
+      ? { recordingUrl: null }
+      : {}
+    : force
     ? {
-        phoneNumber: snapshot.phoneNumber ?? metric.phoneNumber,
-        assistantId: snapshot.assistantId ?? metric.assistantId,
-        transferNumber: snapshot.transferNumber ?? metric.transferNumber,
-        startedAt: snapshot.startedAt ?? metric.startedAt,
-        transferredAt: snapshot.transferredAt ?? metric.transferredAt,
-        endedAt: snapshot.endedAt ?? metric.endedAt,
-        durationSec: snapshot.durationSec ?? metric.durationSec,
-        endedReason: snapshot.endedReason ?? metric.endedReason,
-        transcript: snapshot.transcript ?? metric.transcript,
-        recordingUrl: snapshot.recordingUrl ?? metric.recordingUrl,
-        cost: snapshot.cost ?? metric.cost,
+        phoneNumber: snapshot!.phoneNumber ?? metric.phoneNumber,
+        assistantId: snapshot!.assistantId ?? metric.assistantId,
+        transferNumber: snapshot!.transferNumber ?? metric.transferNumber,
+        startedAt: snapshot!.startedAt ?? metric.startedAt,
+        transferredAt: snapshot!.transferredAt ?? metric.transferredAt,
+        endedAt: snapshot!.endedAt ?? metric.endedAt,
+        durationSec: snapshot!.durationSec ?? metric.durationSec,
+        endedReason: snapshot!.endedReason ?? metric.endedReason,
+        transcript: snapshot!.transcript ?? metric.transcript,
+        recordingUrl: snapshot!.recordingUrl ?? metric.recordingUrl,
+        cost: snapshot!.cost ?? metric.cost,
       }
-    : buildMetricPatch(metric, snapshot);
+    : buildMetricPatch(metric, snapshot!);
   const updatedFields = [...Object.keys(patch)];
 
   if (Object.keys(patch).length) {
@@ -656,7 +681,7 @@ export async function syncCallMetricById(params: {
     let nextChildCallSid = metric.twilioTransferCallSid;
     if (!nextChildCallSid && metric.twilioParentCallSid) {
       const childCalls = await fetchTwilioChildCalls(metric.twilioParentCallSid);
-      const picked = pickTransferChild(childCalls, metric.transferNumber ?? snapshot.transferNumber ?? null);
+      const picked = pickTransferChild(childCalls, metric.transferNumber ?? snapshot?.transferNumber ?? null);
       nextChildCallSid = asString(picked?.sid) ?? null;
     }
 
@@ -675,7 +700,7 @@ export async function syncCallMetricById(params: {
             ? (await transcribeRecordingFromUrl(effectiveRecordingUrl)).text
             : null);
         const nextFullTranscript = composeFullTranscript(
-          metric.transcript ?? snapshot.transcript ?? null,
+          metric.transcript ?? snapshot?.transcript ?? null,
           nextTransferTranscript
         );
 

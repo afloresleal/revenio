@@ -59,6 +59,22 @@ function convertToPublicRecordingUrl(twilioUrl: string | null | undefined): stri
   return twilioUrl;
 }
 
+/**
+ * Converts Vapi call IDs to public proxy URLs for recordings
+ * Converts: any Vapi URL or callId
+ * To:       https://revenioapi-production.up.railway.app/api/vapi-recordings/{callId}/mono
+ */
+function convertToPublicVapiRecordingUrl(vapiCallId: string | null | undefined, type: 'mono' | 'stereo' = 'mono'): string {
+  if (!vapiCallId) return "";
+  // If it's already a full URL, extract callId or return empty
+  if (vapiCallId.startsWith('http')) {
+    // Vapi URLs might not be directly downloadable anymore
+    console.warn('Vapi recording URL detected, may require authentication:', vapiCallId);
+    return "";
+  }
+  return `${PUBLIC_API_BASE_URL}/api/vapi-recordings/${vapiCallId}/${type}`;
+}
+
 const FAILOVER_FAILURE_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]);
 const FAILOVER_CLEAR_TIMER_STATUSES = new Set([
   "in-progress",
@@ -4006,6 +4022,329 @@ app.get("/api/recordings/:recordingSid", async (req, res) => {
   } catch (error) {
     console.error('Recording proxy error:', error);
     return res.status(500).json({ error: 'Failed to proxy recording' });
+  }
+});
+
+// ============ VAPI RECORDING PROXY ============
+/**
+ * Proxy endpoint to serve Vapi recordings with authentication
+ * GET /api/vapi-recordings/:callId/:type
+ *
+ * As of 2026, Vapi uses access-controlled storage. Recording URLs from webhooks
+ * may not be directly downloadable. This endpoint:
+ * 1. Fetches the call data from Vapi API (authenticated)
+ * 2. Extracts the recording URL from call.artifact.recording
+ * 3. Follows any 302 redirects to signed URLs
+ * 4. Streams the recording to the client
+ */
+app.get("/api/vapi-recordings/:callId/:type", async (req, res) => {
+  const { callId, type } = req.params;
+
+  if (!callId) {
+    return res.status(400).json({ error: 'Missing call ID' });
+  }
+
+  if (type !== 'mono' && type !== 'stereo') {
+    return res.status(400).json({ error: 'Invalid recording type. Use "mono" or "stereo"' });
+  }
+
+  if (!VAPI_API_KEY) {
+    return res.status(500).json({ error: 'Vapi API key not configured' });
+  }
+
+  try {
+    // First, fetch the call data from Vapi to get the recording URL
+    console.log('Fetching Vapi call data for recording:', { callId, type });
+
+    const vapiResponse = await fetch(`https://api.vapi.ai/call/${encodeURIComponent(callId)}`, {
+      headers: {
+        'Authorization': `Bearer ${VAPI_API_KEY}`,
+      },
+    });
+
+    if (!vapiResponse.ok) {
+      console.error('Failed to fetch call from Vapi:', {
+        callId,
+        status: vapiResponse.status,
+        statusText: vapiResponse.statusText,
+      });
+      return res.status(vapiResponse.status).json({
+        error: 'Failed to fetch call data from Vapi',
+        status: vapiResponse.status
+      });
+    }
+
+    const callData = await vapiResponse.json() as Record<string, unknown>;
+    const artifact = callData.artifact as Record<string, unknown> | null | undefined;
+    const recording = artifact?.recording as Record<string, unknown> | null | undefined;
+
+    // Try to get the recording URL based on type
+    let recordingUrl: string | null = null;
+
+    if (type === 'stereo') {
+      recordingUrl =
+        (callData.stereoRecordingUrl as string | null) ??
+        (artifact?.stereoRecordingUrl as string | null) ??
+        (recording?.stereo as Record<string, unknown>)?.url as string | null ??
+        null;
+    } else {
+      // mono (default)
+      const mono = recording?.mono as Record<string, unknown> | null | undefined;
+      recordingUrl =
+        (callData.recordingUrl as string | null) ??
+        (artifact?.recordingUrl as string | null) ??
+        (recording?.url as string | null) ??
+        (mono?.combinedUrl as string | null) ??
+        (mono?.url as string | null) ??
+        null;
+    }
+
+    if (!recordingUrl) {
+      console.warn('No recording URL found in Vapi call data:', {
+        callId,
+        type,
+        hasArtifact: !!artifact,
+        hasRecording: !!recording,
+        artifactKeys: artifact ? Object.keys(artifact) : [],
+        recordingKeys: recording ? Object.keys(recording) : [],
+      });
+      return res.status(404).json({
+        error: 'Recording not found',
+        details: 'No recording URL available in call data. Recording may still be processing.'
+      });
+    }
+
+    console.log('Found recording URL, fetching audio:', {
+      callId,
+      type,
+      urlPrefix: recordingUrl.substring(0, 50),
+    });
+
+    // Fetch the actual recording (may involve 302 redirects)
+    const recordingResponse = await fetch(recordingUrl, {
+      redirect: 'follow', // Automatically follow 302 redirects to signed URLs
+      headers: {
+        // Include auth in case it's needed
+        'Authorization': `Bearer ${VAPI_API_KEY}`,
+      },
+    });
+
+    if (!recordingResponse.ok) {
+      console.error('Failed to fetch recording from URL:', {
+        callId,
+        url: recordingUrl,
+        status: recordingResponse.status,
+      });
+      return res.status(recordingResponse.status).json({
+        error: 'Failed to fetch recording',
+        status: recordingResponse.status
+      });
+    }
+
+    const contentType = recordingResponse.headers.get('content-type') || 'audio/mpeg';
+    const contentLength = recordingResponse.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=900'); // 15 minutes cache
+
+    // Stream the response
+    const buffer = await recordingResponse.arrayBuffer();
+    res.send(Buffer.from(buffer));
+
+    console.log('Successfully proxied Vapi recording:', { callId, type, size: buffer.byteLength });
+  } catch (error) {
+    console.error('Vapi recording proxy error:', { callId, type, error: String(error) });
+    return res.status(500).json({ error: 'Failed to proxy Vapi recording' });
+  }
+});
+
+// ============ VAPI STORAGE PROXY (via Vapi API) ============
+
+/**
+ * Helper function to parse storage.vapi.ai URLs and extract call ID and recording type
+ *
+ * Example URL format:
+ * https://storage.vapi.ai/019f4e1d-d3ca-788e-83fa-4d369ca656d2-1783722022715-19cc3388-0f3b-4df1-91e3-254f0c4439f1-mono.wav
+ *
+ * Pattern: {callId}-{timestamp}-{fileId}-{type}.{ext}
+ *
+ * @returns { callId: string, recordingType: 'mono' | 'stereo' | null } or null if parsing fails
+ */
+function parseVapiStorageUrl(storageUrl: string): { callId: string; recordingType: string } | null {
+  try {
+    // Extract filename from URL
+    const filename = storageUrl.split('/').pop();
+    if (!filename) return null;
+
+    // Remove extension
+    const nameWithoutExt = filename.replace(/\.(wav|mp3|m4a|webm)$/i, '');
+
+    // Split by hyphens
+    const parts = nameWithoutExt.split('-');
+
+    // The recording type is the last part (mono, stereo, etc.)
+    const recordingType = parts[parts.length - 1];
+
+    // The callId is everything before the first timestamp (13-digit number)
+    // Find the first part that's a 13-digit number (timestamp)
+    let callIdParts: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (/^\d{13}$/.test(parts[i])) {
+        // Found timestamp, callId is everything before this
+        break;
+      }
+      callIdParts.push(parts[i]);
+    }
+
+    const callId = callIdParts.join('-');
+
+    if (!callId || !recordingType) {
+      console.warn('Failed to parse callId or recordingType from storage URL:', {
+        filename,
+        callId,
+        recordingType,
+      });
+      return null;
+    }
+
+    return { callId, recordingType };
+  } catch (error) {
+    console.error('Error parsing Vapi storage URL:', { error: String(error) });
+    return null;
+  }
+}
+
+/**
+ * Proxy endpoint to serve Vapi recordings via official Vapi API endpoints
+ * GET /api/vapi-storage-proxy
+ *
+ * As of 2026, Vapi uses access-controlled storage. Storage URLs from webhooks
+ * cannot be downloaded directly. Instead, we must use Vapi's official API endpoints:
+ * - GET /call/{id}/mono-recording
+ * - GET /call/{id}/stereo-recording
+ *
+ * These endpoints return 302 redirects to short-lived signed URLs.
+ *
+ * Query param: url (the full storage.vapi.ai URL)
+ */
+app.get("/api/vapi-storage-proxy", async (req, res) => {
+  const storageUrl = req.query.url as string;
+
+  if (!storageUrl) {
+    return res.status(400).json({ error: 'Missing url query parameter' });
+  }
+
+  if (!storageUrl.includes('storage.vapi.ai')) {
+    return res.status(400).json({ error: 'URL must be from storage.vapi.ai' });
+  }
+
+  if (!VAPI_API_KEY) {
+    return res.status(500).json({ error: 'Vapi API key not configured' });
+  }
+
+  try {
+    // Parse the storage URL to extract callId and recording type
+    const parsed = parseVapiStorageUrl(storageUrl);
+
+    if (!parsed) {
+      console.error('Failed to parse Vapi storage URL:', { storageUrl });
+      return res.status(400).json({
+        error: 'Invalid storage URL format',
+        details: 'Could not extract call ID and recording type from URL'
+      });
+    }
+
+    const { callId, recordingType } = parsed;
+
+    console.log('Fetching Vapi recording via API endpoint:', {
+      callId,
+      recordingType,
+      storageUrlPrefix: storageUrl.substring(0, 60),
+    });
+
+    // Use Vapi's official API endpoint to download the recording
+    // These endpoints return 302 redirects to signed URLs
+    const vapiEndpoint = `https://api.vapi.ai/call/${encodeURIComponent(callId)}/${recordingType}-recording`;
+
+    console.log('Calling Vapi endpoint:', vapiEndpoint);
+
+    const recordingResponse = await fetch(vapiEndpoint, {
+      redirect: 'follow', // Automatically follow 302 redirects to signed URLs
+      headers: {
+        'Authorization': `Bearer ${VAPI_API_KEY}`,
+      },
+    });
+
+    console.log('Vapi response status:', recordingResponse.status, recordingResponse.statusText);
+
+    if (!recordingResponse.ok) {
+      // Try to get error body from Vapi
+      let errorBody = '';
+      try {
+        errorBody = await recordingResponse.text();
+      } catch (e) {
+        errorBody = 'Could not read error body';
+      }
+
+      console.error('Failed to fetch recording from Vapi API:', {
+        callId,
+        recordingType,
+        endpoint: vapiEndpoint,
+        status: recordingResponse.status,
+        statusText: recordingResponse.statusText,
+        errorBody: errorBody.substring(0, 500),
+      });
+
+      // If 404, the recording might not exist or the call is too old
+      if (recordingResponse.status === 404) {
+        return res.status(404).json({
+          error: 'Recording not found',
+          details: 'The recording may no longer be available in Vapi storage',
+          vapiError: errorBody.substring(0, 200),
+        });
+      }
+
+      return res.status(recordingResponse.status).json({
+        error: 'Failed to fetch recording from Vapi API',
+        status: recordingResponse.status,
+        statusText: recordingResponse.statusText,
+        vapiError: errorBody.substring(0, 200),
+      });
+    }
+
+    const contentType = recordingResponse.headers.get('content-type') || 'audio/wav';
+    const contentLength = recordingResponse.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    res.setHeader('Cache-Control', 'private, max-age=3600'); // 1 hour cache
+
+    // Stream the response
+    const buffer = await recordingResponse.arrayBuffer();
+    res.send(Buffer.from(buffer));
+
+    console.log('Successfully proxied Vapi recording via API:', {
+      callId,
+      recordingType,
+      size: buffer.byteLength,
+      contentType,
+    });
+  } catch (error) {
+    console.error('Vapi storage proxy error:', {
+      storageUrl,
+      error: String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({
+      error: 'Failed to proxy Vapi storage recording',
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 
