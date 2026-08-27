@@ -2942,7 +2942,7 @@ async function findAdminCampaignCallRows(campaign: { id: string; campaignId: str
       timeToTransferSec,
       sellerTalkSec,
       transcript: metric?.fullTranscript ?? metric?.transferTranscript ?? metric?.transcript ?? "",
-      recordingUrl: convertToPublicRecordingUrl(metric?.transferRecordingUrl ?? metric?.recordingUrl),
+      recordingUrl: convertToPublicRecordingUrl(metric?.transferRecordingUrl),
     };
   });
 }
