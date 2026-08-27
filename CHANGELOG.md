@@ -2,6 +2,97 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## 2026-08-27 - Fix Admin Recording URL (Develop)
+
+### Resumen
+Ajuste en panel de admin para mostrar únicamente grabaciones de Twilio (conversación con agente humano) en lugar de grabaciones de Vapi (conversación con IA). Cambio pushed a develop branch.
+
+### Cambios realizados
+1. **Modificación de lógica de recording URL:**
+   - Removido fallback a `recordingUrl` (Vapi recording)
+   - Admin ahora muestra solo `transferRecordingUrl` (Twilio recording)
+   - Aplica tanto para tabla de admin como para export CSV
+
+### Archivos modificados
+- `apps/api/src/server.ts:2945` - Removido fallback `?? metric?.recordingUrl`
+
+### Decisiones técnicas
+- Se eligió mostrar solo Twilio recordings porque capturan la conversación valiosa (agente humano ↔ cliente)
+- Vapi recordings solo capturan la conversación inicial (IA ↔ cliente) antes del transfer
+- Si no hay Twilio recording, el campo estará vacío en vez de mostrar Vapi recording
+
+### Próximos pasos
+- Monitorear en staging (develop) que las grabaciones se muestren correctamente
+- Si se confirma funcionamiento, mergear a main para producción
+
+### Commit
+- `a28c8a0` - fix(admin): show only Twilio recording URL without Vapi fallback
+
+---
+
+## 2026-08-27 - Deploy a Producción: Vapi Retention + Análisis de Campaña Purifika
+
+### Resumen
+Merged develop → main y deployed a producción. Incluye fix de manejo de retención de Vapi (14 días) y documentación de análisis de fallo en campaña Purifika donde el transfer no se ejecutaba debido a configuración de voicemail detection.
+
+### Cambios desplegados a producción
+1. **Fix Vapi Retention (de sesión 2026-08-25):**
+   - Manejo graceful de errores cuando llamadas >14 días
+   - Proxy endpoints para grabaciones de Vapi
+   - Limpieza automática de URLs inválidas
+   - Uso de endpoints oficiales de Vapi API
+
+2. **Documentación de análisis:**
+   - `ANALYSIS-2026-campaign-failure-vapi-assistant.html` - Análisis completo de problema de transfer
+   - `ANALYSIS-2026-campaign-failure-vapi-assistant.md` - Versión markdown del análisis
+   - `ANALYSIS-2026-ghl-opportunity-id-fallback-issue.md` - Análisis de problema secundario de GHL opportunity ID
+
+### Problema identificado en campaña Purifika
+**Síntoma:** Transfer nunca se ejecutaba (0 eventos `transfer-destination-request`)
+**Causa raíz:** Voicemail detection bloqueando firstMessage del assistant
+- `beepMaxAwaitSeconds: 20` + `silenceTimeoutSeconds: 30` = solo 10 seg de margen
+- 44.4% de llamadas terminaban con `silence-timed-out`
+- Assistant nunca llegaba a ejecutar `transferCall`
+
+**Solución aplicada (en Vapi Dashboard, no código):**
+- Reducir `beepMaxAwaitSeconds` de 20 a 10 segundos
+- Aumentar `silenceTimeoutSeconds` de 30 a 45 segundos
+- Resultado esperado: Más tiempo para que assistant hable y ejecute transfer
+
+### Archivos modificados
+- `CHANGELOG.md` - Este resumen
+- `apps/api/src/routes/metrics.ts` - Manejo de retención
+- `apps/api/src/server.ts` - Proxy endpoints de Vapi
+- `apps/api/src/lib/vapi-recording-extraction.ts` - Extracción unificada de URLs
+- `apps/admin/public/app.js` - Uso de proxy para grabaciones
+- `dashboard-v2/App.tsx` - Uso de proxy para grabaciones
+- `apps/api/test/vapi-recording-extraction.test.ts` - Tests de extracción
+
+### Commits incluidos en este deploy
+- `3e41853` - docs: add campaign failure analysis for Vapi voicemail detection issue
+- `2768b06` - docs(changelog): session summary 2026-08-25 Vapi retention handling
+- `df461f8` - docs: update changelog with retention fix commit SHA
+- `91e0ad2` - fix(api): handle Vapi retention window gracefully in sync ⭐
+- `92cf9ca` - fix(dashboard-v2): use proxy endpoint for Vapi storage recordings
+- `834c24d` - fix(api): use Vapi official API endpoints to download old recordings
+- `324cd7d` - fix(api+admin): add direct storage proxy for old Vapi recordings
+- `55fa22b` - fix(admin): use proxy endpoint for Vapi recordings
+- `612a5fb` - refactor(api): unify Vapi recording extraction across webhooks and sync worker
+- `44de54d` - fix(api): improve Vapi recording extraction and add proxy endpoint
+
+### Estado
+- ✅ Merged develop → main
+- ✅ Pushed to origin/main
+- ✅ Deploy automático a Railway production
+- ✅ Configuración de Vapi ajustada manualmente en dashboard
+
+### Próximos pasos
+- Monitorear logs de producción para verificar que transfer funciona correctamente
+- Verificar que eventos `transfer-destination-request` aparecen en logs nuevos
+- Si problema persiste, verificar configuración del tool `transferCall` en Vapi (ID: `813f90ad-2375-4e4f-a8f4-efac058db4d6`)
+
+---
+
 ## 2026-08-25 - Sesión: Manejo de ventana de retención de Vapi (14 días)
 
 ### Resumen
