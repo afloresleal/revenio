@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análisis: Campaña Purifika - Transfer No Funciona</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 { color: #e11d48; border-bottom: 3px solid #e11d48; padding-bottom: 10px; }
+        h2 { color: #0284c7; margin-top: 40px; }
+        h3 { color: #7c3aed; margin-top: 30px; }
+        .summary-box {
+            background: #fef2f2;
+            border-left: 4px solid #e11d48;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .success-box {
+            background: #f0fdf4;
+            border-left: 4px solid #22c55e;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .warning-box {
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .metric {
+            display: inline-block;
+            background: #3b82f6;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            margin: 5px;
+            font-weight: 600;
+        }
+        .metric.bad { background: #ef4444; }
+        .metric.warning { background: #f59e0b; }
+        .metric.good { background: #22c55e; }
+        ul { padding-left: 20px; }
+        li { margin: 10px 0; }
+        strong { color: #0284c7; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚨 Análisis: Campaña Purifika - Transfer No Funciona</h1>
+
+    <div class="summary-box">
+        <h3>Problema Reportado</h3>
+        <p><strong>"Entra la llamada, responde el agente Vapi y hace el transfer... después de esto no pasa nada pero debería enlazar con un agente."</strong></p>
+    </div>
+
+    <h2>📊 Análisis de Logs (990 eventos)</h2>
+
+    <h3>Distribución de EndedReasons</h3>
+    <div>
+        <span class="metric bad">silence-timed-out: 44.4%</span>
+        <span class="metric bad">customer-did-not-answer: 22.2%</span>
+        <span class="metric warning">customer-ended-call: 22.2%</span>
+        <span class="metric warning">voicemail: 11.1%</span>
+    </div>
+
+    <h3>🎯 Hallazgo Principal</h3>
+    <div class="summary-box">
+        <h4>El transfer NUNCA se está ejecutando</h4>
+        <div class="code">
+transfer-destination-request eventos recibidos: 0
+transferAttempted: false
+hadTransferredAt: false
+endedReasonIndicatesTransfer: false
+        </div>
+        <p><strong>Conclusión:</strong> Vapi NO está llamando al webhook de transfer. El assistant NO está ejecutando el tool <code>transferCall</code>.</p>
+    </div>
+
+    <h2>🔍 Causa Raíz Identificada</h2>
+
+    <div class="warning-box">
+        <h3>Problema 1: Voicemail Detection Bloqueando FirstMessage</h3>
+        <p><strong>44.4% de llamadas terminan con "silence-timed-out"</strong></p>
+
+        <p>Esto ocurre cuando:</p>
+        <ol>
+            <li>Cliente contesta el teléfono</li>
+            <li>Vapi inicia detección de buzón (espera hasta 20 segundos)</li>
+            <li>Durante la detección, el assistant NO habla</li>
+            <li>Si la detección tarda >10 segundos, se llega al timeout de silencio (30 seg)</li>
+            <li>Llamada termina sin que el assistant haya dicho nada</li>
+        </ol>
+
+        <p><strong>Configuración actual:</strong></p>
+        <div class="code">
+"voicemailDetection": {
+  "provider": "vapi",
+  "backoffPlan": {
+    "maxRetries": 6,
+    "startAtSeconds": 2,
+    "frequencySeconds": 2.5
+  },
+  "beepMaxAwaitSeconds": 20  ← Espera hasta 20 segundos
+}
+"silenceTimeoutSeconds": 30    ← Timeout a los 30 segundos
+        </div>
+
+        <p><strong>El problema:</strong> Solo hay 10 segundos de margen entre el máximo de detección (20s) y el timeout de silencio (30s).</p>
+    </div>
+
+    <div class="warning-box">
+        <h3>Problema 2: Assistant No Ejecuta transferCall</h3>
+
+        <p><strong>Prompt del assistant:</strong></p>
+        <div class="code">
+If you detect voicemail, an answering machine, or a recorded greeting from the customer,
+stop speaking immediately and end the call. Do not execute transferCall.
+
+If a human answers, deliver the first message in Spanish. Immediately after the first
+message is fully spoken, execute transferCall. Do not wait for any response.
+        </div>
+
+        <p><strong>Problema identificado:</strong></p>
+        <ul>
+            <li>El prompt depende de que Vapi detecte correctamente si es humano o buzón</li>
+            <li>Si la detección falla o es incorrecta, el assistant se confunde</li>
+            <li>El assistant puede pensar que es buzón cuando en realidad es humano</li>
+            <li>Resultado: NO ejecuta transferCall</li>
+        </ul>
+    </div>
+
+    <h2>✅ Soluciones Propuestas</h2>
+
+    <div class="success-box">
+        <h3>Opción 1: Reducir beepMaxAwaitSeconds (RECOMENDADO - Fix Rápido)</h3>
+
+        <p><strong>Cambio en Vapi Dashboard:</strong></p>
+        <div class="code">
+"voicemailDetection": {
+  "provider": "vapi",
+  "backoffPlan": {
+    "maxRetries": 6,
+    "startAtSeconds": 2,
+    "frequencySeconds": 2.5
+  },
+  "beepMaxAwaitSeconds": 10  ← Reducir de 20 a 10 segundos
+}
+        </div>
+
+        <p><strong>Beneficios:</strong></p>
+        <ul>
+            <li>Reduce el tiempo de espera de detección a la mitad</li>
+            <li>Deja 20 segundos de margen antes del silence timeout</li>
+            <li>El assistant tiene más tiempo para hablar y ejecutar transferCall</li>
+            <li>Fix inmediato, sin cambios de código</li>
+        </ul>
+
+        <p><strong>Riesgo:</strong> Puede aumentar ligeramente los falsos positivos de voicemail detection.</p>
+    </div>
+
+    <div class="success-box">
+        <h3>Opción 2: Aumentar silenceTimeoutSeconds</h3>
+
+        <p><strong>Cambio en Vapi Dashboard:</strong></p>
+        <div class="code">
+"silenceTimeoutSeconds": 45  ← Aumentar de 30 a 45 segundos
+        </div>
+
+        <p><strong>Beneficios:</strong></p>
+        <ul>
+            <li>Da más tiempo para que complete la detección de voicemail</li>
+            <li>Permite que el assistant hable incluso si la detección tarda</li>
+            <li>Reduce los timeouts prematuros</li>
+        </ul>
+
+        <p><strong>Riesgo:</strong> Las llamadas con humanos que no responden durarán más (45 seg en vez de 30).</p>
+    </div>
+
+    <div class="warning-box">
+        <h3>Opción 3: Deshabilitar Voicemail Detection (Temporal para Debug)</h3>
+
+        <p><strong>Cambio en Vapi Dashboard:</strong></p>
+        <div class="code">
+// Comentar o remover voicemailDetection temporalmente
+// "voicemailDetection": { ... }
+        </div>
+
+        <p><strong>Objetivo:</strong> Verificar si el problema es la voicemail detection.</p>
+
+        <p><strong>Proceso:</strong></p>
+        <ol>
+            <li>Deshabilitar voicemail detection</li>
+            <li>Hacer 10 llamadas de prueba</li>
+            <li>Verificar si el assistant habla y ejecuta transferCall</li>
+            <li>Si funciona, confirma que el problema es la voicemail detection</li>
+        </ol>
+
+        <p><strong>⚠️ ADVERTENCIA:</strong> Esto hará que se dejen mensajes en buzones de voz. Solo para debug, no para producción.</p>
+    </div>
+
+    <div class="warning-box">
+        <h3>Opción 4: Modificar Prompt del Assistant</h3>
+
+        <p><strong>Problema actual:</strong> El prompt usa lógica condicional basada en detección de voicemail.</p>
+
+        <p><strong>Nuevo prompt sugerido:</strong></p>
+        <div class="code">
+You are a virtual assistant for a Real Estate company.
+
+Your task:
+1. Wait for the customer to say "hello" or similar greeting
+2. Deliver the first message in Spanish
+3. Immediately execute transferCall after finishing the first message
+4. Do not wait for any response after executing transferCall
+
+If you detect the call was answered by voicemail or an answering machine:
+- Do not speak
+- End the call immediately
+- Do not execute transferCall
+        </div>
+
+        <p><strong>Cambios clave:</strong></p>
+        <ul>
+            <li>Instrucciones más claras y directas</li>
+            <li>Espera señal del cliente ("hello") antes de hablar</li>
+            <li>Instrucción de voicemail al final (menor prioridad)</li>
+        </ul>
+    </div>
+
+    <h2>🎯 Recomendación Final</h2>
+
+    <div class="success-box">
+        <h3>Plan de Acción Inmediato</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Paso</th>
+                    <th>Acción</th>
+                    <th>Tiempo</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>1</strong></td>
+                    <td>Reducir <code>beepMaxAwaitSeconds</code> de 20 a 10 en Vapi Dashboard</td>
+                    <td>2 min</td>
+                </tr>
+                <tr>
+                    <td><strong>2</strong></td>
+                    <td>Aumentar <code>silenceTimeoutSeconds</code> de 30 a 45</td>
+                    <td>1 min</td>
+                </tr>
+                <tr>
+                    <td><strong>3</strong></td>
+                    <td>Hacer 10 llamadas de prueba</td>
+                    <td>15 min</td>
+                </tr>
+                <tr>
+                    <td><strong>4</strong></td>
+                    <td>Revisar logs y verificar que aparezcan eventos <code>transfer-destination-request</code></td>
+                    <td>5 min</td>
+                </tr>
+                <tr>
+                    <td><strong>5</strong></td>
+                    <td>Si no funciona, proceder con Opción 3 (deshabilitar voicemail detection temporalmente)</td>
+                    <td>5 min</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p><strong>Expectativa:</strong> Con estos cambios, el 44% de llamadas que terminaban con silence-timed-out deberían completarse exitosamente y ejecutar el transfer.</p>
+    </div>
+
+    <h2>📋 Cómo Verificar el Fix</h2>
+
+    <div class="warning-box">
+        <h3>Indicadores de Éxito</h3>
+
+        <p><strong>En los logs, deben aparecer:</strong></p>
+        <div class="code">
+transfer-destination-request received  ← Vapi pidió el número de transfer
+transferAttempted: true                ← Se intentó el transfer
+hadTransferredAt: true                 ← Transfer ejecutado
+endedReasonIndicatesTransfer: true     ← Terminó por transfer
+        </div>
+
+        <p><strong>EndedReasons esperados:</strong></p>
+        <ul>
+            <li><code>assistant-forwarded-call</code> - Transfer exitoso</li>
+            <li><code>voicemail</code> - Buzón detectado correctamente</li>
+            <li><code>customer-did-not-answer</code> - Cliente no contestó (esperado)</li>
+        </ul>
+
+        <p><strong>EndedReasons que NO deberían aparecer:</strong></p>
+        <ul>
+            <li><strike><code>silence-timed-out</code></strike> - Esto indica que el fix NO funcionó</li>
+        </ul>
+    </div>
+
+    <h2>🔧 Verificar Configuración del Tool en Vapi</h2>
+
+    <div class="warning-box">
+        <h3>IMPORTANTE: Verificar que el tool esté configurado correctamente</h3>
+
+        <p><strong>Tool ID en el assistant:</strong> <code>813f90ad-2375-4e4f-a8f4-efac058db4d6</code></p>
+
+        <p><strong>Pasos para verificar:</strong></p>
+        <ol>
+            <li>Ir a Vapi Dashboard → Tools</li>
+            <li>Buscar el tool con ID <code>813f90ad-2375-4e4f-a8f4-efac058db4d6</code></li>
+            <li>Verificar que el tool sea de tipo <code>transferCall</code></li>
+            <li>Verificar que NO tenga destinations hardcoded</li>
+            <li>Confirmar que el webhook esté configurado: <code>https://revenioapi-production.up.railway.app/webhooks/vapi/events</code></li>
+        </ol>
+
+        <p><strong>Si el tool NO es transferCall:</strong></p>
+        <ul>
+            <li>Crear un nuevo tool de tipo <code>transferCall</code></li>
+            <li>Actualizar el assistant para usar el nuevo tool ID</li>
+            <li>Asegurarse de que <code>transfer-destination-request</code> esté en <code>serverMessages</code></li>
+        </ul>
+    </div>
+
+    <h2>📞 Próximos Pasos</h2>
+
+    <ol>
+        <li><strong>Aplicar Opción 1 + 2</strong> (reducir beepMaxAwaitSeconds y aumentar silenceTimeout)</li>
+        <li><strong>Hacer llamadas de prueba</strong> y capturar logs</li>
+        <li><strong>Compartir logs nuevos</strong> si el problema persiste</li>
+        <li><strong>Si persiste</strong>, proceder con debugging del tool configuration en Vapi</li>
+    </ol>
+
+    <div class="summary-box">
+        <h3>🎯 Resumen Ejecutivo</h3>
+        <p><strong>Problema:</strong> El transfer NO se ejecuta porque la voicemail detection está bloqueando al assistant.</p>
+        <p><strong>Síntoma:</strong> 44% de llamadas terminan con silence-timed-out (30 seg de silencio).</p>
+        <p><strong>Causa:</strong> Voicemail detection espera hasta 20 segundos, dejando solo 10 segundos antes del timeout.</p>
+        <p><strong>Fix rápido:</strong> Reducir beepMaxAwaitSeconds de 20 a 10 y aumentar silenceTimeoutSeconds de 30 a 45.</p>
+        <p><strong>Tiempo estimado:</strong> 3 minutos para aplicar cambios + 15 minutos de pruebas.</p>
+    </div>
+
+</body>
+</html>
