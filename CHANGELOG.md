@@ -2,6 +2,34 @@
 
 Todos los cambios notables en este proyecto serán documentados aquí.
 
+## 2026-08-27 - Fix Admin Recording URL (Develop)
+
+### Resumen
+Ajuste en panel de admin para mostrar únicamente grabaciones de Twilio (conversación con agente humano) en lugar de grabaciones de Vapi (conversación con IA). Cambio pushed a develop branch.
+
+### Cambios realizados
+1. **Modificación de lógica de recording URL:**
+   - Removido fallback a `recordingUrl` (Vapi recording)
+   - Admin ahora muestra solo `transferRecordingUrl` (Twilio recording)
+   - Aplica tanto para tabla de admin como para export CSV
+
+### Archivos modificados
+- `apps/api/src/server.ts:2945` - Removido fallback `?? metric?.recordingUrl`
+
+### Decisiones técnicas
+- Se eligió mostrar solo Twilio recordings porque capturan la conversación valiosa (agente humano ↔ cliente)
+- Vapi recordings solo capturan la conversación inicial (IA ↔ cliente) antes del transfer
+- Si no hay Twilio recording, el campo estará vacío en vez de mostrar Vapi recording
+
+### Próximos pasos
+- Monitorear en staging (develop) que las grabaciones se muestren correctamente
+- Si se confirma funcionamiento, mergear a main para producción
+
+### Commit
+- `a28c8a0` - fix(admin): show only Twilio recording URL without Vapi fallback
+
+---
+
 ## 2026-08-27 - Deploy a Producción: Vapi Retention + Análisis de Campaña Purifika
 
 ### Resumen
