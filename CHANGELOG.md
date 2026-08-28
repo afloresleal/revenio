@@ -30,6 +30,21 @@ Ajuste en panel de admin para mostrar únicamente grabaciones de Twilio (convers
 - `a28c8a0` - fix(admin): show only Twilio recording URL without Vapi fallback
 - `d370c51` - docs(changelog): add recording URL fix entry
 - `0ed5949` - Merge branch 'develop'
+- `62f7ffc` - docs(changelog): update recording URL fix as deployed to production
+
+### Testing y Validación
+- **Estado:** Deploy completado, equipo notificado para realizar pruebas
+- **Fecha de notificación:** 2026-08-27
+- **Áreas a validar:**
+  - Panel de admin muestra correctamente solo URLs de Twilio
+  - Exportación CSV incluye solo URLs de Twilio
+  - Casos donde no existe grabación de Twilio (campo vacío esperado)
+  - Verificar que grabaciones de Twilio se reproduzcan correctamente
+
+### Comportamiento esperado
+- **Con transfer exitoso:** Se muestra URL de grabación de Twilio (conversación agente humano ↔ cliente)
+- **Sin transfer o transfer fallido:** Campo de grabación vacío (no se muestra grabación de Vapi)
+- **Cambio visual:** Menos grabaciones visibles en admin, pero más relevantes para análisis de calidad
 
 ---
 
